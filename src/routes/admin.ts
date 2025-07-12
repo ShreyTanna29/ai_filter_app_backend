@@ -1,13 +1,17 @@
 import { Router, Request, Response } from "express";
-import { requireRole, ROLES } from "../middleware/roles";
+import { verifyAccessToken, requireRole, ROLES } from "../middleware/auth";
 
 const router = Router();
 
 router.get(
   "/dashboard",
+  verifyAccessToken,
   requireRole(ROLES.ADMIN),
   (req: Request, res: Response) => {
-    res.json({ message: "Welcome to the admin dashboard!" });
+    res.json({
+      message: "Welcome to the admin dashboard!",
+      user: req.user,
+    });
   }
 );
 

@@ -1,13 +1,21 @@
 import express, { Request, Response, NextFunction } from "express";
 import cors from "cors";
 import dotenv from "dotenv";
-import session from "express-session";
 import bcrypt from "bcryptjs";
 import { PrismaClient } from "./generated/prisma";
 import sgMail from "@sendgrid/mail";
 import authRouter from "./routes/auth";
 import adminRouter from "./routes/admin";
 import facetrixfiltersRouter from "./filters/filter_endpoints";
+import {
+  generateAccessToken,
+  generateRefreshToken,
+  verifyRefreshToken,
+  storeRefreshToken,
+  validateRefreshToken,
+  revokeRefreshToken,
+  ROLES,
+} from "./middleware/auth";
 
 // Load environment variables
 dotenv.config();
@@ -18,42 +26,8 @@ const PORT = process.env.PORT || 3000;
 // Middleware
 app.use(cors());
 app.use(express.json());
-app.use(
-  session({
-    secret: process.env.SESSION_SECRET || "supersecret",
-    resave: false,
-    saveUninitialized: false,
-    cookie: { secure: false, httpOnly: true },
-  })
-);
-
-// Extend session type to include user
-import { SessionData } from "express-session";
-declare module "express-session" {
-  interface SessionData {
-    user?: { id: number; email: string; role: string };
-  }
-}
-
-// User roles
-const ROLES = {
-  ADMIN: "admin",
-  SUB_ADMIN: "sub-admin",
-  RESELLER: "reseller",
-};
 
 const prisma = new PrismaClient();
-
-// Middleware for role-based access
-function requireRole(role: string) {
-  return (req: Request, res: Response, next: NextFunction): void => {
-    if (req.session && req.session.user && req.session.user.role === role) {
-      next();
-      return;
-    }
-    res.status(403).json({ message: "Forbidden: insufficient role" });
-  };
-}
 
 // Temporary in-memory OTP store (for demo, should use DB or cache in production)
 const otpStore: { [email: string]: string } = {};
@@ -85,13 +59,12 @@ app.post(
       res.json({ message: "OTP sent to email" });
     } catch (error) {
       console.log(error);
-
       res.status(500).json({ message: "Failed to send OTP", error });
     }
   }
 );
 
-// Admin login (OTP)
+// Admin login (OTP) - JWT version
 app.post(
   "/auth/login-otp",
   async (req: Request, res: Response): Promise<void> => {
@@ -106,15 +79,37 @@ app.post(
       return;
     }
     delete otpStore[email]; // Invalidate OTP after use
-    req.session.user = { id: user.id, email: user.email, role: user.role };
+
+    // Generate tokens
+    const accessToken = generateAccessToken({
+      id: user.id,
+      email: user.email,
+      role: user.role,
+    });
+    const refreshToken = generateRefreshToken({
+      id: user.id,
+      email: user.email,
+      role: user.role,
+    });
+
+    // Store refresh token in database
+    try {
+      await storeRefreshToken(user.id, refreshToken);
+    } catch (error) {
+      console.error("Error storing refresh token:", error);
+      // Continue anyway for now
+    }
+
     res.json({
       message: "OTP login successful",
       user: { email: user.email, role: user.role },
+      accessToken,
+      refreshToken,
     });
   }
 );
 
-// Admin login (email/password)
+// Admin login (email/password) - JWT version
 app.post("/auth/login", async (req: Request, res: Response): Promise<void> => {
   const { email, password } = req.body;
   const user = await prisma.user.findUnique({ where: { email } });
@@ -127,32 +122,113 @@ app.post("/auth/login", async (req: Request, res: Response): Promise<void> => {
     res.status(401).json({ message: "Invalid credentials" });
     return;
   }
-  req.session.user = { id: user.id, email: user.email, role: user.role };
+
+  // Generate tokens
+  const accessToken = generateAccessToken({
+    id: user.id,
+    email: user.email,
+    role: user.role,
+  });
+  const refreshToken = generateRefreshToken({
+    id: user.id,
+    email: user.email,
+    role: user.role,
+  });
+
+  // Store refresh token in database
+  try {
+    await storeRefreshToken(user.id, refreshToken);
+  } catch (error) {
+    console.error("Error storing refresh token:", error);
+    // Continue anyway for now
+  }
+
   res.json({
     message: "Login successful",
     user: { email: user.email, role: user.role },
+    accessToken,
+    refreshToken,
   });
 });
 
-// Logout
-app.post("/auth/logout", (req: Request, res: Response): void => {
-  req.session.destroy((err) => {
-    if (err) {
-      res.status(500).json({ message: "Logout failed" });
+// Refresh token endpoint
+app.post(
+  "/auth/refresh",
+  async (req: Request, res: Response): Promise<void> => {
+    const { refreshToken } = req.body;
+
+    if (!refreshToken) {
+      res.status(401).json({ message: "Refresh token required" });
       return;
     }
-    res.json({ message: "Logged out" });
-  });
-});
 
-// Protected route example
-app.get(
-  "/admin/dashboard",
-  requireRole(ROLES.ADMIN),
-  (req: Request, res: Response) => {
-    res.json({ message: "Welcome to the admin dashboard!" });
+    try {
+      // Verify refresh token
+      const decoded = verifyRefreshToken(refreshToken);
+      if (!decoded) {
+        res.status(403).json({ message: "Invalid refresh token" });
+        return;
+      }
+
+      // Validate refresh token from database
+      const isValid = await validateRefreshToken(decoded.id, refreshToken);
+      if (!isValid) {
+        res
+          .status(403)
+          .json({ message: "Refresh token not found in database" });
+        return;
+      }
+
+      // Get user from database
+      const user = await prisma.user.findUnique({ where: { id: decoded.id } });
+      if (!user) {
+        res.status(404).json({ message: "User not found" });
+        return;
+      }
+
+      // Generate new tokens
+      const newAccessToken = generateAccessToken({
+        id: user.id,
+        email: user.email,
+        role: user.role,
+      });
+      const newRefreshToken = generateRefreshToken({
+        id: user.id,
+        email: user.email,
+        role: user.role,
+      });
+
+      // Store new refresh token
+      await storeRefreshToken(user.id, newRefreshToken);
+
+      res.json({
+        message: "Token refreshed successfully",
+        accessToken: newAccessToken,
+        refreshToken: newRefreshToken,
+      });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to refresh token", error });
+    }
   }
 );
+
+// Logout - JWT version
+app.post("/auth/logout", async (req: Request, res: Response): Promise<void> => {
+  const { refreshToken } = req.body;
+
+  if (refreshToken) {
+    try {
+      const decoded = verifyRefreshToken(refreshToken);
+      if (decoded) {
+        await revokeRefreshToken(decoded.id);
+      }
+    } catch (error) {
+      console.error("Error during logout:", error);
+    }
+  }
+
+  res.json({ message: "Logged out successfully" });
+});
 
 // User signup endpoint
 app.post("/auth/signup", async (req: Request, res: Response): Promise<void> => {
