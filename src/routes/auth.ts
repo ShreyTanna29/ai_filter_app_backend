@@ -20,6 +20,10 @@ const otpStore: { [email: string]: string } = {};
 // Send OTP endpoint
 router.post("/send-otp", async (req: Request, res: Response): Promise<void> => {
   const { email } = req.body;
+  if (!email) {
+    res.status(400).json({ message: "Email is required" });
+    return;
+  }
   const user = await prisma.user.findUnique({ where: { email } });
   if (!user) {
     res.status(404).json({ message: "User not found" });
@@ -48,6 +52,10 @@ router.post(
   "/login-otp",
   async (req: Request, res: Response): Promise<void> => {
     const { email, otp } = req.body;
+    if (!email || !otp) {
+      res.status(400).json({ message: "Email and OTP are required" });
+      return;
+    }
     const user = await prisma.user.findUnique({ where: { email } });
     if (!user) {
       res.status(401).json({ message: "Invalid credentials" });
@@ -86,6 +94,10 @@ router.post(
 // Admin login (email/password) - JWT version
 router.post("/login", async (req: Request, res: Response): Promise<void> => {
   const { email, password } = req.body;
+  if (!email || !password) {
+    res.status(400).json({ message: "Email and password are required" });
+    return;
+  }
   const user = await prisma.user.findUnique({ where: { email } });
   if (!user) {
     res.status(401).json({ message: "Invalid credentials" });
@@ -125,7 +137,7 @@ router.post("/refresh", async (req: Request, res: Response): Promise<void> => {
   const { refreshToken } = req.body;
 
   if (!refreshToken) {
-    res.status(401).json({ message: "Refresh token required" });
+    res.status(400).json({ message: "Refresh token is required" });
     return;
   }
 
@@ -179,6 +191,11 @@ router.post("/refresh", async (req: Request, res: Response): Promise<void> => {
 // Logout - JWT version
 router.post("/logout", async (req: Request, res: Response): Promise<void> => {
   const { refreshToken } = req.body;
+
+  if (!refreshToken) {
+    res.status(400).json({ message: "Refresh token is required" });
+    return;
+  }
 
   if (refreshToken) {
     try {
