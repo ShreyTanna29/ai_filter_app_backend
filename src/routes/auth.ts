@@ -19,6 +19,10 @@ const otpStore: { [email: string]: string } = {};
 
 // Send OTP endpoint
 router.post("/send-otp", async (req: Request, res: Response): Promise<void> => {
+  if (!req.body || typeof req.body !== "object") {
+    res.status(400).json({ message: "Request body is required" });
+    return;
+  }
   const { email } = req.body;
   if (!email) {
     res.status(400).json({ message: "Email is required" });
@@ -51,6 +55,10 @@ router.post("/send-otp", async (req: Request, res: Response): Promise<void> => {
 router.post(
   "/login-otp",
   async (req: Request, res: Response): Promise<void> => {
+    if (!req.body || typeof req.body !== "object") {
+      res.status(400).json({ message: "Request body is required" });
+      return;
+    }
     const { email, otp } = req.body;
     if (!email || !otp) {
       res.status(400).json({ message: "Email and OTP are required" });
@@ -93,6 +101,10 @@ router.post(
 
 // Admin login (email/password) - JWT version
 router.post("/login", async (req: Request, res: Response): Promise<void> => {
+  if (!req.body || typeof req.body !== "object") {
+    res.status(400).json({ message: "Request body is required" });
+    return;
+  }
   const { email, password } = req.body;
   if (!email || !password) {
     res.status(400).json({ message: "Email and password are required" });
@@ -134,6 +146,10 @@ router.post("/login", async (req: Request, res: Response): Promise<void> => {
 
 // Refresh token endpoint
 router.post("/refresh", async (req: Request, res: Response): Promise<void> => {
+  if (!req.body || typeof req.body !== "object") {
+    res.status(400).json({ message: "Request body is required" });
+    return;
+  }
   const { refreshToken } = req.body;
 
   if (!refreshToken) {
@@ -190,6 +206,10 @@ router.post("/refresh", async (req: Request, res: Response): Promise<void> => {
 
 // Logout - JWT version
 router.post("/logout", async (req: Request, res: Response): Promise<void> => {
+  if (!req.body || typeof req.body !== "object") {
+    res.status(400).json({ message: "Request body is required" });
+    return;
+  }
   const { refreshToken } = req.body;
 
   if (!refreshToken) {
@@ -213,6 +233,10 @@ router.post("/logout", async (req: Request, res: Response): Promise<void> => {
 
 // User signup endpoint
 router.post("/signup", async (req: Request, res: Response): Promise<void> => {
+  if (!req.body || typeof req.body !== "object") {
+    res.status(400).json({ message: "Request body is required" });
+    return;
+  }
   const { email, password, role } = req.body;
   if (!email || !password || !role) {
     res.status(400).json({ message: "Email, password, and role are required" });

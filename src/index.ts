@@ -1,21 +1,14 @@
 import express, { Request, Response, NextFunction } from "express";
 import cors from "cors";
 import dotenv from "dotenv";
-import bcrypt from "bcryptjs";
 import { PrismaClient } from "./generated/prisma";
-import sgMail from "@sendgrid/mail";
-import authRouter from "./routes/auth";
-import adminRouter from "./routes/admin";
-import facetrixfiltersRouter from "./filters/filter_endpoints";
-import {
-  generateAccessToken,
-  generateRefreshToken,
-  verifyRefreshToken,
-  storeRefreshToken,
-  validateRefreshToken,
-  revokeRefreshToken,
-  ROLES,
-} from "./middleware/auth";
+import facetrixfiltersRouter from "./routes/filter_endpoints";
+import { features } from "./filters/features";
+import fs from "fs";
+import path from "path";
+import templatesRouter from "./routes/templates";
+import cloudinaryRouter from "./routes/cloudinary";
+import videoGenerationRouter from "./routes/generate-video";
 
 // Load environment variables
 dotenv.config();
@@ -26,246 +19,77 @@ const PORT = process.env.PORT || 3000;
 // Middleware
 app.use(cors());
 app.use(express.json());
+app.use(express.static("public")); // Serve static files from public directory
 
 const prisma = new PrismaClient();
 
-// Temporary in-memory OTP store (for demo, should use DB or cache in production)
-const otpStore: { [email: string]: string } = {};
+// Feature management routes
+app.get("/api/features", (req: Request, res: Response): void => {
+  res.json(features);
+});
 
-// Send OTP endpoint
-app.post(
-  "/auth/send-otp",
-  async (req: Request, res: Response): Promise<void> => {
-    const { email } = req.body;
-    const user = await prisma.user.findUnique({ where: { email } });
-    if (!user) {
-      res.status(404).json({ message: "User not found" });
-      return;
-    }
-    // Generate 6-digit OTP
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    otpStore[email] = otp;
-    // Send email
-    const msg = {
-      to: email,
-      from: process.env.SENDGRID_FROM_EMAIL || "noreply@example.com",
-      subject: "Your OTP Code",
-      text: `Your OTP code is: ${otp}`,
-      html: `<strong>Your OTP code is: ${otp}</strong>`,
-    };
-    try {
-      await sgMail.setApiKey(process.env.SENDGRID_API_KEY || "");
-      await sgMail.send(msg);
-      res.json({ message: "OTP sent to email" });
-    } catch (error) {
-      console.log(error);
-      res.status(500).json({ message: "Failed to send OTP", error });
-    }
+app.put("/api/features/:endpoint", (req: Request, res: Response): void => {
+  const { endpoint } = req.params;
+  const { prompt } = req.body;
+
+  if (!prompt) {
+    res.status(400).json({ message: "Prompt is required" });
+    return;
   }
-);
 
-// Admin login (OTP) - JWT version
-app.post(
-  "/auth/login-otp",
-  async (req: Request, res: Response): Promise<void> => {
-    const { email, otp } = req.body;
-    const user = await prisma.user.findUnique({ where: { email } });
-    if (!user) {
-      res.status(401).json({ message: "Invalid credentials" });
-      return;
-    }
-    if (otpStore[email] !== otp) {
-      res.status(401).json({ message: "Invalid OTP" });
-      return;
-    }
-    delete otpStore[email]; // Invalidate OTP after use
+  // Find the feature in the array
+  const featureIndex = features.findIndex((f) => f.endpoint === endpoint);
 
-    // Generate tokens
-    const accessToken = generateAccessToken({
-      id: user.id,
-      email: user.email,
-      role: user.role,
-    });
-    const refreshToken = generateRefreshToken({
-      id: user.id,
-      email: user.email,
-      role: user.role,
-    });
+  if (featureIndex === -1) {
+    res.status(404).json({ message: "Feature not found" });
+    return;
+  }
 
-    // Store refresh token in database
-    try {
-      await storeRefreshToken(user.id, refreshToken);
-    } catch (error) {
-      console.error("Error storing refresh token:", error);
-      // Continue anyway for now
-    }
+  // Update the prompt
+  features[featureIndex].prompt = prompt;
 
+  // Write the updated features back to the file
+  const featuresPath = path.join(__dirname, "filters", "features.ts");
+  const featuresContent = `export const features = ${JSON.stringify(
+    features,
+    null,
+    2
+  )};`;
+
+  try {
+    fs.writeFileSync(featuresPath, featuresContent);
     res.json({
-      message: "OTP login successful",
-      user: { email: user.email, role: user.role },
-      accessToken,
-      refreshToken,
-    });
-  }
-);
-
-// Admin login (email/password) - JWT version
-app.post("/auth/login", async (req: Request, res: Response): Promise<void> => {
-  const { email, password } = req.body;
-  const user = await prisma.user.findUnique({ where: { email } });
-  if (!user) {
-    res.status(401).json({ message: "Invalid credentials" });
-    return;
-  }
-  const valid = await bcrypt.compare(password, user.password);
-  if (!valid) {
-    res.status(401).json({ message: "Invalid credentials" });
-    return;
-  }
-
-  // Generate tokens
-  const accessToken = generateAccessToken({
-    id: user.id,
-    email: user.email,
-    role: user.role,
-  });
-  const refreshToken = generateRefreshToken({
-    id: user.id,
-    email: user.email,
-    role: user.role,
-  });
-
-  // Store refresh token in database
-  try {
-    await storeRefreshToken(user.id, refreshToken);
-  } catch (error) {
-    console.error("Error storing refresh token:", error);
-    // Continue anyway for now
-  }
-
-  res.json({
-    message: "Login successful",
-    user: { email: user.email, role: user.role },
-    accessToken,
-    refreshToken,
-  });
-});
-
-// Refresh token endpoint
-app.post(
-  "/auth/refresh",
-  async (req: Request, res: Response): Promise<void> => {
-    const { refreshToken } = req.body;
-
-    if (!refreshToken) {
-      res.status(401).json({ message: "Refresh token required" });
-      return;
-    }
-
-    try {
-      // Verify refresh token
-      const decoded = verifyRefreshToken(refreshToken);
-      if (!decoded) {
-        res.status(403).json({ message: "Invalid refresh token" });
-        return;
-      }
-
-      // Validate refresh token from database
-      const isValid = await validateRefreshToken(decoded.id, refreshToken);
-      if (!isValid) {
-        res
-          .status(403)
-          .json({ message: "Refresh token not found in database" });
-        return;
-      }
-
-      // Get user from database
-      const user = await prisma.user.findUnique({ where: { id: decoded.id } });
-      if (!user) {
-        res.status(404).json({ message: "User not found" });
-        return;
-      }
-
-      // Generate new tokens
-      const newAccessToken = generateAccessToken({
-        id: user.id,
-        email: user.email,
-        role: user.role,
-      });
-      const newRefreshToken = generateRefreshToken({
-        id: user.id,
-        email: user.email,
-        role: user.role,
-      });
-
-      // Store new refresh token
-      await storeRefreshToken(user.id, newRefreshToken);
-
-      res.json({
-        message: "Token refreshed successfully",
-        accessToken: newAccessToken,
-        refreshToken: newRefreshToken,
-      });
-    } catch (error) {
-      res.status(500).json({ message: "Failed to refresh token", error });
-    }
-  }
-);
-
-// Logout - JWT version
-app.post("/auth/logout", async (req: Request, res: Response): Promise<void> => {
-  const { refreshToken } = req.body;
-
-  if (refreshToken) {
-    try {
-      const decoded = verifyRefreshToken(refreshToken);
-      if (decoded) {
-        await revokeRefreshToken(decoded.id);
-      }
-    } catch (error) {
-      console.error("Error during logout:", error);
-    }
-  }
-
-  res.json({ message: "Logged out successfully" });
-});
-
-// User signup endpoint
-app.post("/auth/signup", async (req: Request, res: Response): Promise<void> => {
-  const { email, password, role } = req.body;
-  if (!email || !password || !role) {
-    res.status(400).json({ message: "Email, password, and role are required" });
-    return;
-  }
-  const existingUser = await prisma.user.findUnique({ where: { email } });
-  if (existingUser) {
-    res.status(409).json({ message: "User with this email already exists" });
-    return;
-  }
-  const hashedPassword = await bcrypt.hash(password, 10);
-  try {
-    const user = await prisma.user.create({
-      data: {
-        email,
-        password: hashedPassword,
-        role,
-      },
-    });
-    res.status(201).json({
-      message: "User registered successfully",
-      user: { email: user.email, role: user.role },
+      message: "Feature updated successfully",
+      feature: features[featureIndex],
     });
   } catch (error) {
-    res.status(500).json({ message: "Failed to register user", error });
+    console.error("Error writing features file:", error);
+    res.status(500).json({ message: "Failed to update feature" });
   }
 });
 
-app.use("/auth", authRouter);
-app.use("/admin", adminRouter);
 app.use("/api", facetrixfiltersRouter);
+app.use("/api", templatesRouter);
+app.use("/api", videoGenerationRouter);
+app.use("", cloudinaryRouter);
 
+// Serve admin panel HTML
 app.get("/", (req: Request, res: Response) => {
-  res.send("Hello, world!");
+  res.sendFile("index.html", { root: "./public" });
+});
+
+// Catch JSON parsing errors
+app.use(function (err: any, req: any, res: any, next: any) {
+  if (err instanceof SyntaxError && "body" in err) {
+    return res.status(400).json({ message: "Invalid JSON body" });
+  }
+  next(err);
+});
+
+// Global error handler (fallback)
+app.use(function (err: any, req: any, res: any, next: any) {
+  console.error("Unhandled error:", err);
+  res.status(500).json({ message: "Internal server error" });
 });
 
 app.listen(PORT, () => {
