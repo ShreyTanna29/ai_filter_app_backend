@@ -815,6 +815,22 @@
       let features = [];
       let templates = [];
       let availableEndpoints = [];
+      let featureGraphics = {};
+      // Load persisted feature graphics from backend
+      async function loadFeatureGraphics() {
+        try {
+          const res = await fetch("/api/feature-graphic");
+          const data = await res.json();
+          featureGraphics = {};
+          if (Array.isArray(data)) {
+            data.forEach((g) => {
+              featureGraphics[g.endpoint] = g.graphicUrl;
+            });
+          }
+        } catch (e) {
+          featureGraphics = {};
+        }
+      }
 
       // Tab functionality
       function showTab(tabName) {
@@ -861,21 +877,24 @@
         );
 
         grid.innerHTML = filteredFeatures
-          .map(
-            (feature) => `
+          .map((feature) => {
+            const videoUrl =
+              featureGraphics[feature.endpoint] ||
+              `https://res.cloudinary.com/do60wtwwc/video/upload/v1754319544/generated-videos/generated-videos/${feature.endpoint}.mp4#t=0.5`;
+            return `
           <div class="feature-card" onclick="openFeatureModal('${feature.endpoint}')">
             <div class="feature-header">
               <div class="feature-name">${feature.endpoint}</div>
             </div>
             <div class="video-preview">
               <video controls preload="metadata" style="width: 100%;">
-                <source src="https://res.cloudinary.com/do60wtwwc/video/upload/v1754319544/generated-videos/generated-videos/${feature.endpoint}.mp4#t=0.5" type="video/mp4">
+                <source src="${videoUrl}" type="video/mp4">
                 Your browser does not support the video tag.
               </video>
             </div>
           </div>
-            `
-          )
+            `;
+          })
           .join("");
       }
 
@@ -1498,8 +1517,8 @@
             }
           });
         // Set the selected video as the graphic for the feature card
-        function setFeatureCardGraphic(endpoint, videoUrl) {
-          // Find the feature card
+        async function setFeatureCardGraphic(endpoint, videoUrl) {
+          // Update UI immediately
           const card = document.querySelector(
             `.feature-card[onclick*="${endpoint}"]`
           );
@@ -1507,14 +1526,22 @@
             const videoPreview = card.querySelector(".video-preview video");
             if (videoPreview) {
               videoPreview.src = videoUrl;
-              // Optionally, update the <source> as well for consistency
               const source = videoPreview.querySelector("source");
               if (source) source.src = videoUrl;
               videoPreview.load();
             }
           }
-          // Optionally, close the modal after selection
-          // closeFeatureModal();
+          // Persist to backend
+          try {
+            await fetch(`/api/feature-graphic/${endpoint}`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ url: videoUrl }),
+            });
+            featureGraphics[endpoint] = videoUrl;
+          } catch (e) {
+            alert("Failed to save graphic video!");
+          }
         }
 
         document.getElementById("featureModalSavePrompt").onclick = (event) =>
@@ -1572,8 +1599,12 @@
       };
 
       // Initialize
-      loadFeatures();
-      loadTemplates();
+      async function loadFeaturesAndGraphics() {
+        await loadFeatureGraphics();
+        await loadFeatures();
+        loadTemplates();
+      }
+      loadFeaturesAndGraphics();
     </script>
   </body>
 </html>

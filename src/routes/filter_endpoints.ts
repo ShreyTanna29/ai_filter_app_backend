@@ -2,7 +2,10 @@ import { Router, Request, Response } from "express";
 import axios from "axios";
 import { features } from "../filters/features";
 
+// ...existing code...
 const router = Router();
+
+// ...existing code...
 
 // Check for duplicate endpoints
 const endpointSet = new Set<string>();
@@ -213,6 +216,48 @@ router.get("/videos/:endpoint", async (req: Request, res: Response) => {
     console.error("Error fetching videos:", error);
     res.status(500).json({ error: "Failed to fetch videos" });
   }
+});
+
+// Set the graphic video for an endpoint
+router.post(
+  "/feature-graphic/:endpoint",
+  function (req: Request, res: Response) {
+    (async () => {
+      const endpoint = req.params.endpoint;
+      const { url } = req.body;
+      if (!url) {
+        return res.status(400).json({ error: "Missing video url" });
+      }
+      try {
+        const { PrismaClient } = require("../generated/prisma/client");
+        const prisma = new PrismaClient();
+        const upserted = await prisma.featureGraphic.upsert({
+          where: { endpoint },
+          update: { graphicUrl: url },
+          create: { endpoint, graphicUrl: url },
+        });
+        res.json(upserted);
+      } catch (error) {
+        console.error("Error saving feature graphic:", error);
+        res.status(500).json({ error: "Failed to save feature graphic" });
+      }
+    })();
+  }
+);
+
+// Get the graphic video for all endpoints
+router.get("/feature-graphic", function (req: Request, res: Response) {
+  (async () => {
+    try {
+      const { PrismaClient } = require("../generated/prisma/client");
+      const prisma = new PrismaClient();
+      const all = await prisma.featureGraphic.findMany();
+      res.json(all);
+    } catch (error) {
+      console.error("Error fetching feature graphics:", error);
+      res.status(500).json({ error: "Failed to fetch feature graphics" });
+    }
+  })();
 });
 
 // Create endpoints for each feature
