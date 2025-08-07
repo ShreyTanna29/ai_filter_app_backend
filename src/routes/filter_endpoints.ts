@@ -151,6 +151,19 @@ async function alibabaImageToVideo(
     // Poll for completion
     const result = await pollTaskStatus(taskId);
 
+    // Store generated video URL in DB
+    try {
+      const { PrismaClient } = require("../generated/prisma/client");
+      const prisma = new PrismaClient();
+      await prisma.generatedVideo.create({
+        data: {
+          feature: req.params.endpoint || req.path.replace("/", ""),
+          url: result.output.video_url,
+        },
+      });
+    } catch (dbError) {
+      console.error("Failed to save generated video to DB:", dbError);
+    }
     // Return the result in a format similar to the original Fal AI response
     res.json({
       video: {
@@ -185,6 +198,22 @@ async function alibabaImageToVideo(
     }
   }
 }
+
+// Endpoint to get all generated videos for a feature (must be outside the main function)
+router.get("/videos/:endpoint", async (req: Request, res: Response) => {
+  try {
+    const { PrismaClient } = require("../generated/prisma/client");
+    const prisma = new PrismaClient();
+    const videos = await prisma.generatedVideo.findMany({
+      where: { feature: req.params.endpoint },
+      orderBy: { createdAt: "desc" },
+    });
+    res.json(videos);
+  } catch (error) {
+    console.error("Error fetching videos:", error);
+    res.status(500).json({ error: "Failed to fetch videos" });
+  }
+});
 
 // Create endpoints for each feature
 for (const feature of features) {

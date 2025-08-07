@@ -9,7 +9,7 @@ export const features = [
   },
   {
     "endpoint": "ai-mermaid",
-    "prompt": "transform this image character(s) into an mermaid."
+    "prompt": "a mermaid swimming in ocean."
   },
   {
     "endpoint": "ai-kiss",

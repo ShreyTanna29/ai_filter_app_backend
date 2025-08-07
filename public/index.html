@@ -1036,36 +1036,98 @@
         const stepsContainer = document.getElementById("templateSteps");
         const stepIndex = stepsContainer.children.length;
         const stepHtml = `
-          <div class="step-item">
-            <div class="step-order">${stepIndex + 1}</div>
-            <div class="step-content">
-              <div class="form-group">
-                <label>Endpoint:</label>
-                <select class="step-endpoint-select">
-                  <option value="">Select endpoint...</option>
-                  ${availableEndpoints
-                    .map(
-                      (endpoint) =>
-                        `<option value="${endpoint.endpoint}" ${
-                          selectedEndpoint === endpoint.endpoint
-                            ? "selected"
-                            : ""
-                        }>${endpoint.endpoint}</option>`
-                    )
-                    .join("")}
-                </select>
+          <div class="step-item" style="display: flex; flex-direction: column; gap: 10px; background: #f8f9fa; border-radius: 8px; padding: 15px; margin-bottom: 15px;">
+            <div style="display: flex; align-items: flex-start; gap: 15px; width: 100%;">
+              <div class="step-order">${stepIndex + 1}</div>
+              <div class="step-content" style="flex:1;">
+                <div class="form-group">
+                  <label>Endpoint:</label>
+                  <select class="step-endpoint-select">
+                    <option value="">Select endpoint...</option>
+                    ${availableEndpoints
+                      .map(
+                        (endpoint) =>
+                          `<option value="${endpoint.endpoint}" ${
+                            selectedEndpoint === endpoint.endpoint
+                              ? "selected"
+                              : ""
+                          }>${endpoint.endpoint}</option>`
+                      )
+                      .join("")}
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label>Custom Prompt (optional):</label>
+                  <textarea class="step-prompt-input" placeholder="Leave empty to use default prompt">${
+                    promptValue || ""
+                  }</textarea>
+                </div>
               </div>
-              <div class="form-group">
-                <label>Custom Prompt (optional):</label>
-                <textarea class="step-prompt-input" placeholder="Leave empty to use default prompt">${
-                  promptValue || ""
-                }</textarea>
-              </div>
+              <button class="remove-step" onclick="removeStep(this)">Remove</button>
             </div>
-            <button class="remove-step" onclick="removeStep(this)">Remove</button>
+            <div class="step-actions" style="display: flex; align-items: center; gap: 10px; margin-top: 10px;">
+              <input type="text" class="step-image-url form-control" placeholder="Image URL for this step" style="flex:2;" />
+              <button class="btn btn-primary step-generate-btn" style="flex:1; min-width:120px;">
+                <i class="fas fa-magic"></i> Generate Video
+              </button>
+            </div>
+            <div class="step-status-message" style="font-size:13px; min-height:18px; margin-top:5px;"></div>
+            <div class="step-video-preview" style="margin-top:10px; display:none;"></div>
           </div>
         `;
         stepsContainer.insertAdjacentHTML("beforeend", stepHtml);
+        // Add event listener for generate button
+        const newStep = stepsContainer.lastElementChild;
+        const generateBtn = newStep.querySelector(".step-generate-btn");
+        const imageUrlInput = newStep.querySelector(".step-image-url");
+        const endpointSelect = newStep.querySelector(".step-endpoint-select");
+        const promptInput = newStep.querySelector(".step-prompt-input");
+        const statusDiv = newStep.querySelector(".step-status-message");
+        const videoPreviewDiv = newStep.querySelector(".step-video-preview");
+        generateBtn.onclick = async function () {
+          const endpoint = endpointSelect.value;
+          const prompt = promptInput.value;
+          const imageUrl = imageUrlInput.value;
+          if (!endpoint) {
+            statusDiv.textContent = "Please select an endpoint.";
+            statusDiv.className = "step-status-message error";
+            return;
+          }
+          if (!imageUrl) {
+            statusDiv.textContent = "Please enter an image URL.";
+            statusDiv.className = "step-status-message error";
+            return;
+          }
+          statusDiv.textContent = "Generating video...";
+          statusDiv.className = "step-status-message info";
+          generateBtn.disabled = true;
+          generateBtn.innerHTML =
+            '<i class="fas fa-spinner fa-spin"></i> Generating...';
+          try {
+            const response = await fetch(`/api/${endpoint}`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ image_url: imageUrl, prompt }),
+            });
+            const data = await response.json();
+            if (!response.ok || !data.video || !data.video.url) {
+              throw new Error(data.error || "Failed to generate video");
+            }
+            statusDiv.textContent = "Video generated!";
+            statusDiv.className = "step-status-message success";
+            videoPreviewDiv.style.display = "block";
+            videoPreviewDiv.innerHTML = `<video src="${data.video.url}" controls style="width:100%;max-width:400px;"></video>`;
+          } catch (err) {
+            statusDiv.textContent = "Error: " + (err.message || err);
+            statusDiv.className = "step-status-message error";
+            videoPreviewDiv.style.display = "none";
+            videoPreviewDiv.innerHTML = "";
+          } finally {
+            generateBtn.disabled = false;
+            generateBtn.innerHTML =
+              '<i class="fas fa-magic"></i> Generate Video';
+          }
+        };
       }
 
       function removeStep(button) {
@@ -1386,6 +1448,74 @@
         document.getElementById("featureModalPrompt").value = feature.prompt;
         document.getElementById("featureModalImageUrl").value = "";
         document.getElementById("featureModalStatus").innerHTML = "";
+
+        // Fetch and show all generated videos for this endpoint
+        fetch(`/api/videos/${endpoint}`)
+          .then((res) => res.json())
+          .then((videos) => {
+            const container = document.getElementById("featureModal");
+            let videoList = container.querySelector(".generated-videos-list");
+            if (!videoList) {
+              videoList = document.createElement("div");
+              videoList.className = "generated-videos-list";
+              videoList.style.marginTop = "20px";
+              container.querySelector(".modal-content").appendChild(videoList);
+            }
+            if (Array.isArray(videos) && videos.length > 0) {
+              videoList.innerHTML =
+                `<h4>Generated Videos</h4>` +
+                videos
+                  .map(
+                    (v) => `
+                <div style="margin-bottom:10px">
+                  <video src="${
+                    v.url
+                  }" controls style="width:100%;max-width:400px;"></video>
+                  <div style="font-size:12px;color:#888">${new Date(
+                    v.createdAt
+                  ).toLocaleString()}</div>
+                  <button class="btn btn-secondary set-graphic-btn" data-video-url="${
+                    v.url
+                  }" style="margin-top:5px;">
+                    <i class="fas fa-image"></i> Set as Graphic
+                  </button>
+                </div>
+              `
+                  )
+                  .join("");
+              // Add event listeners for set as graphic buttons
+              videoList.querySelectorAll(".set-graphic-btn").forEach((btn) => {
+                btn.onclick = function () {
+                  setFeatureCardGraphic(
+                    endpoint,
+                    btn.getAttribute("data-video-url")
+                  );
+                };
+              });
+            } else {
+              videoList.innerHTML =
+                '<h4>Generated Videos</h4><div style="color:#888">No videos generated yet.</div>';
+            }
+          });
+        // Set the selected video as the graphic for the feature card
+        function setFeatureCardGraphic(endpoint, videoUrl) {
+          // Find the feature card
+          const card = document.querySelector(
+            `.feature-card[onclick*="${endpoint}"]`
+          );
+          if (card) {
+            const videoPreview = card.querySelector(".video-preview video");
+            if (videoPreview) {
+              videoPreview.src = videoUrl;
+              // Optionally, update the <source> as well for consistency
+              const source = videoPreview.querySelector("source");
+              if (source) source.src = videoUrl;
+              videoPreview.load();
+            }
+          }
+          // Optionally, close the modal after selection
+          // closeFeatureModal();
+        }
 
         document.getElementById("featureModalSavePrompt").onclick = (event) =>
           updatePrompt(endpoint, event);
