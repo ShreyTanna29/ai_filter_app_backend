@@ -3,7 +3,71 @@ import { PrismaClient } from "../generated/prisma";
 import { features } from "../filters/features";
 import axios from "axios";
 
+// Cloudinary config (assume env vars set)
+
+const cloudinary = require("cloudinary").v2;
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
+
 const router = Router();
+
+// In-memory map to track registered template routes
+const templateRouteMap: Record<string, any> = {};
+
+// Helper to register a dynamic endpoint for a template
+async function registerTemplateEndpoint(template: any) {
+  const endpoint = `/template-endpoint/${encodeURIComponent(template.name)}`;
+  // Remove existing route if present
+  if (templateRouteMap[endpoint]) {
+    router.stack = router.stack.filter(
+      (layer: any) => !(layer.route && layer.route.path === endpoint)
+    );
+    delete templateRouteMap[endpoint];
+  }
+  // Register new route
+  const handler = async (req: Request, res: Response) => {
+    try {
+      // Always fetch latest template data
+      const dbTemplate = await prisma.template.findUnique({
+        where: { id: template.id },
+        include: {
+          steps: { orderBy: { order: "asc" } },
+        },
+      });
+      if (!dbTemplate)
+        return res.status(404).json({ error: "Template not found" });
+      const stepVideos = await prisma.templateStepVideo.findMany({
+        where: { templateId: template.id },
+        orderBy: { stepIndex: "asc" },
+      });
+      res.json({
+        id: dbTemplate.id,
+        name: dbTemplate.name,
+        description: dbTemplate.description,
+        steps: dbTemplate.steps,
+        stepVideos,
+      });
+    } catch (e) {
+      res.status(500).json({ error: "Failed to fetch template data" });
+    }
+  };
+  router.get(endpoint, handler as any);
+  templateRouteMap[endpoint] = handler;
+}
+
+// Helper to unregister a template endpoint
+function unregisterTemplateEndpoint(template: any) {
+  const endpoint = `/template-endpoint/${encodeURIComponent(template.name)}`;
+  if (templateRouteMap[endpoint]) {
+    router.stack = router.stack.filter(
+      (layer: any) => !(layer.route && layer.route.path === endpoint)
+    );
+    delete templateRouteMap[endpoint];
+  }
+}
 const prisma = new PrismaClient();
 
 // Get all templates
@@ -71,6 +135,9 @@ router.post(
         },
       });
 
+      // Register dynamic endpoint for this template
+      await registerTemplateEndpoint(template);
+
       res.status(201).json(template);
     } catch (error) {
       console.error("Error creating template:", error);
@@ -91,6 +158,11 @@ router.put(
         res.status(400).json({ error: "Name and steps array are required" });
         return;
       }
+
+      // Get old template for route removal
+      const oldTemplate = await prisma.template.findUnique({
+        where: { id: parseInt(id) },
+      });
 
       // Delete existing steps
       await prisma.templateStep.deleteMany({
@@ -120,6 +192,13 @@ router.put(
         },
       });
 
+      // Remove old endpoint if name changed
+      if (oldTemplate && oldTemplate.name !== name) {
+        unregisterTemplateEndpoint(oldTemplate);
+      }
+      // Register/replace endpoint for updated template
+      await registerTemplateEndpoint(template);
+
       res.json(template);
     } catch (error) {
       console.error("Error updating template:", error);
@@ -135,9 +214,37 @@ router.delete(
     try {
       const { id } = req.params;
 
+      // Get template for route removal
+      const template = await prisma.template.findUnique({
+        where: { id: parseInt(id) },
+      });
+
+      // Delete all step videos for this template (and from Cloudinary)
+      const stepVideos = await prisma.templateStepVideo.findMany({
+        where: { templateId: parseInt(id) },
+      });
+      for (const vid of stepVideos) {
+        // Extract public_id from videoUrl
+        const match = vid.videoUrl.match(/\/upload\/v\d+\/([^\.]+)\.mp4/);
+        if (match) {
+          try {
+            await cloudinary.v2.uploader.destroy(
+              `generated-videos/${match[1]}`,
+              { resource_type: "video" }
+            );
+          } catch {}
+        }
+      }
+      await prisma.templateStepVideo.deleteMany({
+        where: { templateId: parseInt(id) },
+      });
+
       await prisma.template.delete({
         where: { id: parseInt(id) },
       });
+
+      // Unregister dynamic endpoint for this template
+      if (template) unregisterTemplateEndpoint(template);
 
       res.json({ message: "Template deleted successfully" });
     } catch (error) {
@@ -146,6 +253,14 @@ router.delete(
     }
   }
 );
+// On server start, register endpoints for all templates
+async function registerAllTemplateEndpoints() {
+  const allTemplates = await prisma.template.findMany();
+  for (const t of allTemplates) {
+    await registerTemplateEndpoint(t);
+  }
+}
+registerAllTemplateEndpoints();
 
 // Execute a template
 router.post(
@@ -160,14 +275,11 @@ router.post(
         return;
       }
 
+      // Fetch template and steps
       const template = await prisma.template.findUnique({
         where: { id: parseInt(id) },
         include: {
-          steps: {
-            orderBy: {
-              order: "asc",
-            },
-          },
+          steps: { orderBy: { order: "asc" } },
         },
       });
 
@@ -227,6 +339,89 @@ router.post(
         res.status(500).json({ error: "Failed to execute template" });
       }
     }
+  }
+);
+
+// Upload and persist a template step video
+
+router.post("/templates/:templateId/step-video", function (req, res) {
+  (async () => {
+    try {
+      const { templateId } = req.params;
+      let { stepIndex, endpoint, videoUrl } = req.body;
+      if (typeof stepIndex === "string") stepIndex = parseInt(stepIndex);
+      if (typeof stepIndex !== "number" || isNaN(stepIndex)) {
+        return res.status(400).json({ error: "stepIndex required" });
+      }
+      if (!endpoint || !videoUrl) {
+        return res
+          .status(400)
+          .json({ error: "endpoint and videoUrl required" });
+      }
+      // Save to DB
+      const saved = await prisma.templateStepVideo.create({
+        data: {
+          templateId: parseInt(templateId),
+          stepIndex,
+          endpoint,
+          videoUrl,
+        },
+      });
+      res.json(saved);
+    } catch (e) {
+      res.status(500).json({ error: "Failed to save step video" });
+    }
+  })();
+});
+
+// Get all step videos for a template
+
+router.get("/templates/:templateId/step-videos", function (req, res) {
+  (async () => {
+    try {
+      const { templateId } = req.params;
+      const vids = await prisma.templateStepVideo.findMany({
+        where: { templateId: parseInt(templateId) },
+        orderBy: { stepIndex: "asc" },
+      });
+      res.json(vids);
+    } catch (e) {
+      res.status(500).json({ error: "Failed to fetch step videos" });
+    }
+  })();
+});
+
+// Delete a single step video (and from Cloudinary)
+
+router.delete(
+  "/templates/:templateId/step-video/:stepIndex",
+  function (req, res) {
+    (async () => {
+      try {
+        const { templateId, stepIndex } = req.params;
+        const vid = await prisma.templateStepVideo.findFirst({
+          where: {
+            templateId: parseInt(templateId),
+            stepIndex: parseInt(stepIndex),
+          },
+        });
+        if (vid) {
+          const match = vid.videoUrl.match(/\/upload\/v\d+\/([^\.]+)\.mp4/);
+          if (match) {
+            try {
+              await cloudinary.uploader.destroy(
+                `generated-videos/${match[1]}`,
+                { resource_type: "video" }
+              );
+            } catch {}
+          }
+          await prisma.templateStepVideo.delete({ where: { id: vid.id } });
+        }
+        res.json({ success: true });
+      } catch (e) {
+        res.status(500).json({ error: "Failed to delete step video" });
+      }
+    })();
   }
 );
 

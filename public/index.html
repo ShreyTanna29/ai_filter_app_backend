@@ -1010,7 +1010,7 @@
       }
 
       // Open modal for editing an existing template
-      function editTemplate(templateId) {
+      async function editTemplate(templateId) {
         const template = templates.find((t) => t.id === templateId);
         if (!template) return;
         editingTemplateId = templateId;
@@ -1019,10 +1019,30 @@
         document.getElementById("templateDescription").value =
           template.description || "";
         document.getElementById("templateSteps").innerHTML = "";
-        loadAvailableEndpoints().then(() => {
-          template.steps.forEach((step, idx) => {
-            addTemplateStep(step.endpoint, step.prompt);
-          });
+        await loadAvailableEndpoints();
+        // Fetch persisted step videos
+        let stepVideos = [];
+        try {
+          const res = await fetch(`/api/templates/${templateId}/step-videos`);
+          if (res.ok) stepVideos = await res.json();
+        } catch {}
+        template.steps.forEach((step, idx) => {
+          addTemplateStep(step.endpoint, step.prompt);
+          // After adding, show video if exists
+          const videoObj = stepVideos.find((v) => v.stepIndex === idx);
+          if (videoObj && videoObj.videoUrl) {
+            const stepsContainer = document.getElementById("templateSteps");
+            const stepItem = stepsContainer.children[idx];
+            if (stepItem) {
+              const videoPreviewDiv = stepItem.querySelector(
+                ".step-video-preview"
+              );
+              if (videoPreviewDiv) {
+                videoPreviewDiv.style.display = "block";
+                videoPreviewDiv.innerHTML = `<video src="${videoObj.videoUrl}" controls style="width:100%;max-width:400px;"></video>`;
+              }
+            }
+          }
         });
         // Change modal title
         document.querySelector("#createTemplateModal h2").textContent =
@@ -1136,6 +1156,23 @@
             statusDiv.className = "step-status-message success";
             videoPreviewDiv.style.display = "block";
             videoPreviewDiv.innerHTML = `<video src="${data.video.url}" controls style="width:100%;max-width:400px;"></video>`;
+
+            // Persist step video to DB if editing a template
+            if (editingTemplateId) {
+              try {
+                await fetch(`/api/templates/${editingTemplateId}/step-video`, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    stepIndex,
+                    endpoint,
+                    videoUrl: data.video.url,
+                  }),
+                });
+              } catch (e) {
+                // Optionally show a warning
+              }
+            }
           } catch (err) {
             statusDiv.textContent = "Error: " + (err.message || err);
             statusDiv.className = "step-status-message error";

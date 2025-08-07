@@ -60,12 +60,13 @@ model GeneratedVideo {
 }
 
 model Template {
-  id          Int            @id @default(autoincrement())
+  id          Int                 @id @default(autoincrement())
   name        String
   description String?
-  createdAt   DateTime       @default(now())
-  updatedAt   DateTime       @updatedAt
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
   steps       TemplateStep[]
+  stepVideos  TemplateStepVideo[]
 }
 
 model TemplateStep {
@@ -77,4 +78,15 @@ model TemplateStep {
   order      Int // Order of execution
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
+}
+
+model TemplateStepVideo {
+  id         Int      @id @default(autoincrement())
+  templateId Int
+  stepIndex  Int
+  endpoint   String
+  videoUrl   String
+  createdAt  DateTime @default(now())
+
+  template Template @relation(fields: [templateId], references: [id], onDelete: Cascade)
 }
