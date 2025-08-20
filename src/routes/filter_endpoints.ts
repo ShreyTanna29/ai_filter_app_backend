@@ -1,11 +1,9 @@
 import { Router, Request, Response } from "express";
 import axios from "axios";
 import { features } from "../filters/features";
+import type { RequestHandler } from "express";
 
-// ...existing code...
 const router = Router();
-
-// ...existing code...
 
 // Check for duplicate endpoints
 const endpointSet = new Set<string>();
@@ -154,19 +152,6 @@ async function alibabaImageToVideo(
     // Poll for completion
     const result = await pollTaskStatus(taskId);
 
-    // Store generated video URL in DB
-    try {
-      const { PrismaClient } = require("../generated/prisma/client");
-      const prisma = new PrismaClient();
-      await prisma.generatedVideo.create({
-        data: {
-          feature: req.params.endpoint || req.path.replace("/", ""),
-          url: result.output.video_url,
-        },
-      });
-    } catch (dbError) {
-      console.error("Failed to save generated video to DB:", dbError);
-    }
     // Return the result in a format similar to the original Fal AI response
     res.json({
       video: {
@@ -202,16 +187,39 @@ async function alibabaImageToVideo(
   }
 }
 
-// Endpoint to get all generated videos for a feature (must be outside the main function)
+// Dynamic route to support renamed endpoints without server restart
+router.post("/:endpoint", async (req: Request, res: Response, next) => {
+  try {
+    const requested = req.params.endpoint;
+    const feature = features.find((f) => f.endpoint === requested);
+    if (!feature) {
+      return next(); // not a known feature endpoint; allow other routes to handle
+    }
+    return alibabaImageToVideo(req, res, feature.prompt);
+  } catch (e) {
+    return next(e);
+  }
+});
+
+// Endpoint to get all generated videos for a feature
 router.get("/videos/:endpoint", async (req: Request, res: Response) => {
   try {
     const { PrismaClient } = require("../generated/prisma/client");
     const prisma = new PrismaClient();
-    // FIX: Use featureId instead of feature in Prisma query
-    const videos = await prisma.generatedVideo.findMany({
-      where: { feature: req.params.endpoint },
-      orderBy: { createdAt: "desc" },
-    });
+    // Attempt using 'feature', fallback to 'featureId'
+    let videos: any[] = [];
+    try {
+      videos = await prisma.generatedVideo.findMany({
+        where: { feature: req.params.endpoint },
+        orderBy: { createdAt: "desc" },
+      });
+    } catch (e) {
+      // fallback if schema uses featureId
+      videos = await prisma.generatedVideo.findMany({
+        where: { featureId: req.params.endpoint },
+        orderBy: { createdAt: "desc" },
+      });
+    }
     res.json(videos);
   } catch (error) {
     console.error("Error fetching videos:", error);
@@ -219,53 +227,64 @@ router.get("/videos/:endpoint", async (req: Request, res: Response) => {
   }
 });
 
-// Set the graphic video for an endpoint
-router.post(
-  "/feature-graphic/:endpoint",
-  function (req: Request, res: Response) {
-    (async () => {
-      const endpoint = req.params.endpoint;
-      const { url } = req.body;
-      if (!url) {
-        return res.status(400).json({ error: "Missing video url" });
-      }
-      try {
-        const { PrismaClient } = require("../generated/prisma/client");
-        const prisma = new PrismaClient();
-        const upserted = await prisma.featureGraphic.upsert({
-          where: { endpoint },
-          update: { graphicUrl: url },
-          create: { endpoint, graphicUrl: url },
-        });
-        res.json(upserted);
-      } catch (error) {
-        console.error("Error saving feature graphic:", error);
-        res.status(500).json({ error: "Failed to save feature graphic" });
-      }
-    })();
-  }
-);
-
-// Get the graphic video for all endpoints
-router.get("/feature-graphic", function (req: Request, res: Response) {
-  (async () => {
-    try {
-      const { PrismaClient } = require("../generated/prisma/client");
-      const prisma = new PrismaClient();
-      const all = await prisma.featureGraphic.findMany();
-      res.json(all);
-    } catch (error) {
-      console.error("Error fetching feature graphics:", error);
-      res.status(500).json({ error: "Failed to fetch feature graphics" });
+// Use GeneratedVideo instead of FeatureGraphic: return latest video per endpoint
+router.get("/feature-graphic", async (req: Request, res: Response) => {
+  try {
+    const { PrismaClient } = require("../generated/prisma/client");
+    const prisma = new PrismaClient();
+    // Get recent videos
+    const all: any[] = await prisma.generatedVideo.findMany({
+      orderBy: { createdAt: "desc" },
+    });
+    const seen = new Set<string>();
+    const result: Array<{ endpoint: string; graphicUrl: string }> = [];
+    for (const v of all) {
+      const endpoint = (v.feature ?? v.featureId) as string;
+      if (!endpoint || seen.has(endpoint)) continue;
+      seen.add(endpoint);
+      if (v.url) result.push({ endpoint, graphicUrl: v.url });
     }
-  })();
+    res.json(result);
+  } catch (error) {
+    console.error("Error computing feature graphics:", error);
+    res.status(500).json({ error: "Failed to get feature graphics" });
+  }
 });
 
-// Create endpoints for each feature
-for (const feature of features) {
-  router.post(`/${feature.endpoint}`, (req: Request, res: Response) =>
-    alibabaImageToVideo(req, res, feature.prompt)
-  );
-}
+const validateFeatureGraphic: RequestHandler = async (
+  req,
+  res
+): Promise<void> => {
+  try {
+    const { url } = req.body as { url?: string };
+    const endpoint = req.params.endpoint;
+    if (!url) {
+      res.status(400).json({ error: "Missing video url" });
+      return;
+    }
+    const { PrismaClient } = require("../generated/prisma/client");
+    const prisma = new PrismaClient();
+    let exists: any = null;
+    try {
+      exists = await prisma.generatedVideo.findFirst({
+        where: { feature: endpoint, url },
+      });
+    } catch (e) {
+      exists = await prisma.generatedVideo.findFirst({
+        where: { featureId: endpoint, url },
+      });
+    }
+    if (!exists) {
+      res.status(404).json({ error: "Video url not found for endpoint" });
+      return;
+    }
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Error validating feature graphic:", error);
+    res.status(500).json({ error: "Failed to set feature graphic" });
+  }
+};
+
+router.post("/feature-graphic/:endpoint", validateFeatureGraphic);
 
 export default router;

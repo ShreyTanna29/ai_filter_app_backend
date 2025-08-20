@@ -735,6 +735,21 @@
           <div class="video-container">
             <video id="featureModalVideo" controls></video>
           </div>
+          <div class="form-group">
+            <label for="featureModalEndpointName">Endpoint Name:</label>
+            <input
+              id="featureModalEndpointName"
+              class="form-control"
+              placeholder="Enter endpoint name"
+            />
+            <button
+              id="featureModalRename"
+              class="btn btn-secondary mt-2"
+              style="margin-top: 10px"
+            >
+              <i class="fas fa-i-cursor"></i> Save Endpoint Name
+            </button>
+          </div>
           <div class="prompt-section">
             <label for="featureModalPrompt">Prompt:</label>
             <textarea
@@ -891,6 +906,82 @@
       </div>
     </div>
 
+    <!-- Step Detail Modal -->
+    <div id="stepDetailModal" class="modal" style="display: none">
+      <div class="modal-content">
+        <span class="close" onclick="closeStepDetailModal()">&times;</span>
+        <h2>Edit Step</h2>
+        <div class="form-group">
+          <label for="stepEndpointSelect">Endpoint</label>
+          <select id="stepEndpointSelect"></select>
+        </div>
+        <div class="form-group">
+          <label for="stepPromptTextarea">Prompt</label>
+          <textarea
+            id="stepPromptTextarea"
+            rows="5"
+            placeholder="Enter custom prompt or leave empty to use default"
+          ></textarea>
+        </div>
+        <div
+          class="image-upload-section"
+          id="stepDetailImageUploadSection"
+          style="margin-top: 12px"
+        >
+          <label for="stepDetailImageInput" class="upload-label">
+            <div class="upload-icon">
+              <i class="fas fa-cloud-upload-alt"></i>
+            </div>
+            <div class="upload-text">Click or drag an image here to upload</div>
+            <input
+              type="file"
+              id="stepDetailImageInput"
+              accept="image/*"
+              style="display: none"
+              onchange="handleStepDetailImageUpload(event)"
+            />
+          </label>
+          <img
+            id="stepDetailImagePreview"
+            style="display: none; max-width: 200px; margin: 10px auto 0"
+          />
+          <div id="stepDetailUploadStatus" class="upload-status"></div>
+          <button
+            id="stepDetailGenerateBtn"
+            class="btn btn-primary"
+            style="margin-top: 12px"
+            onclick="generateStepDetailVideo()"
+          >
+            Generate Video
+          </button>
+          <div
+            id="stepDetailVideoPreview"
+            style="display: none; margin-top: 10px"
+          ></div>
+        </div>
+        <div
+          style="
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+            margin-top: 10px;
+          "
+        >
+          <button class="btn btn-secondary" onclick="closeStepDetailModal()">
+            Cancel
+          </button>
+          <button class="btn btn-primary" onclick="saveStepDetail()">
+            Save
+          </button>
+        </div>
+        <div
+          id="stepDetailStatus"
+          class="status-message"
+          style="margin-top: 10px"
+        ></div>
+      </div>
+    </div>
+
     <script>
       let features = [];
       let templates = [];
@@ -978,6 +1069,44 @@
           .join("");
       }
 
+      async function promptRenameEndpoint(oldEndpoint) {
+        const newEndpoint = prompt("Enter new endpoint name", oldEndpoint);
+        if (!newEndpoint || newEndpoint === oldEndpoint) return;
+        try {
+          const res = await fetch(
+            `/api/features/${encodeURIComponent(oldEndpoint)}/rename`,
+            {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ newEndpoint }),
+            }
+          );
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            alert(err.message || "Failed to rename endpoint");
+            return;
+          }
+          // Update local features
+          const idx = features.findIndex((f) => f.endpoint === oldEndpoint);
+          if (idx >= 0) {
+            features[idx].endpoint = newEndpoint;
+          }
+          // Also update any template steps in-memory that reference oldEndpoint
+          templates = templates.map((t) => ({
+            ...t,
+            steps: t.steps.map((s) => ({
+              endpoint: s.endpoint === oldEndpoint ? newEndpoint : s.endpoint,
+              prompt: s.prompt || "",
+            })),
+          }));
+          displayFeatures();
+          displayTemplates();
+          alert("Endpoint renamed");
+        } catch (e) {
+          alert("Error renaming endpoint");
+        }
+      }
+
       // Load templates
       async function loadTemplates() {
         try {
@@ -1031,12 +1160,14 @@
               ${template.steps
                 .map(
                   (step, index) => `
-                <div class="step-item">
+                <div class="step-item" onclick="openStepDetailModal(${
+                  template.id
+                }, ${index}); event.stopPropagation();" style="cursor:pointer;">
                   <div class="step-order">${index + 1}</div>
                   <div class="step-content">
                     <div class="step-endpoint">${step.endpoint}</div>
-                    <div class="step-prompt" title="${step.prompt}">${
-                    step.prompt
+                    <div class="step-prompt" title="${step.prompt || ""}">${
+                    step.prompt || "(uses default prompt)"
                   }</div>
                   </div>
                 </div>
@@ -1063,10 +1194,44 @@
                 </button>
               </div>
             </div>
-          </div>
-        `
+                </div>
+            `
           )
           .join("");
+      }
+
+      async function promptRenameStep(templateId, stepIndex) {
+        const template = templates.find((t) => t.id === templateId);
+        if (!template) return;
+        const current = template.steps[stepIndex]?.endpoint || "";
+        const newEndpoint = prompt("Enter new endpoint for this step", current);
+        if (!newEndpoint || newEndpoint === current) return;
+        // Update in-memory and persist full template via PUT
+        const updatedSteps = template.steps.map((s, idx) =>
+          idx === stepIndex
+            ? { endpoint: newEndpoint, prompt: s.prompt || "" }
+            : { endpoint: s.endpoint, prompt: s.prompt || "" }
+        );
+        try {
+          const res = await fetch(`/api/templates/${templateId}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              name: template.name,
+              description: template.description || "",
+              steps: updatedSteps,
+            }),
+          });
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            alert(err.error || "Failed to rename step");
+            return;
+          }
+          await loadTemplates();
+          alert("Step renamed");
+        } catch (e) {
+          alert("Error renaming step");
+        }
       }
 
       // Template modal state
@@ -1553,6 +1718,10 @@
         const videoPlayer = document.getElementById("featureModalVideo");
         videoPlayer.src = `https://res.cloudinary.com/do60wtwwc/video/upload/v1754319544/generated-videos/generated-videos/${feature.endpoint}.mp4`;
         document.getElementById("featureModalPrompt").value = feature.prompt;
+        const endpointInput = document.getElementById(
+          "featureModalEndpointName"
+        );
+        if (endpointInput) endpointInput.value = feature.endpoint;
 
         // Reset image upload section
         const imagePreview = document.getElementById("endpointImagePreview");
@@ -1648,6 +1817,58 @@
           updatePrompt(endpoint, event);
         document.getElementById("featureModalGenerate").onclick = (event) =>
           generateVideo(endpoint, event);
+        const renameBtn = document.getElementById("featureModalRename");
+        if (renameBtn) {
+          renameBtn.onclick = async function () {
+            const input = document.getElementById("featureModalEndpointName");
+            const newEndpoint = input ? input.value.trim() : "";
+            if (!newEndpoint || newEndpoint === endpoint) return;
+            // Call backend to rename
+            const btn = renameBtn;
+            btn.disabled = true;
+            const original = btn.innerHTML;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
+            try {
+              const res = await fetch(
+                `/api/features/${encodeURIComponent(endpoint)}/rename`,
+                {
+                  method: "PUT",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ newEndpoint }),
+                }
+              );
+              if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                alert(err.message || "Failed to rename endpoint");
+                return;
+              }
+              // Update in-memory features and templates
+              const idx = features.findIndex((f) => f.endpoint === endpoint);
+              if (idx >= 0) features[idx].endpoint = newEndpoint;
+              templates = templates.map((t) => ({
+                ...t,
+                steps: t.steps.map((s) => ({
+                  endpoint: s.endpoint === endpoint ? newEndpoint : s.endpoint,
+                  prompt: s.prompt || "",
+                })),
+              }));
+              // Update modal title and video src
+              document.getElementById("featureModalTitle").textContent =
+                newEndpoint;
+              const vid = document.getElementById("featureModalVideo");
+              vid.src = `https://res.cloudinary.com/do60wtwwc/video/upload/v1754319544/generated-videos/generated-videos/${newEndpoint}.mp4`;
+              currentOpenEndpoint = newEndpoint;
+              displayFeatures();
+              displayTemplates();
+              alert("Endpoint renamed");
+            } catch (e) {
+              alert("Error renaming endpoint");
+            } finally {
+              btn.disabled = false;
+              btn.innerHTML = original;
+            }
+          };
+        }
 
         document.getElementById("featureModal").style.display = "block";
       }
@@ -1708,7 +1929,7 @@
         formData.append("image", file);
         document.getElementById("endpointUploadStatus").textContent =
           "Uploading...";
-        fetch("/upload", {
+        fetch("/api/cloudinary/upload", {
           method: "POST",
           body: formData,
         })
@@ -1733,6 +1954,227 @@
       }
 
       // --- End of Endpoint Modal Image Upload & Video Generation Logic ---
+
+      // Step detail modal state
+      let currentStepTemplateId = null;
+      let currentStepIndex = null;
+
+      async function openStepDetailModal(templateId, stepIndex) {
+        currentStepTemplateId = templateId;
+        currentStepIndex = stepIndex;
+
+        // Ensure available endpoints are loaded
+        if (
+          !Array.isArray(availableEndpoints) ||
+          availableEndpoints.length === 0
+        ) {
+          try {
+            await loadAvailableEndpoints();
+          } catch {}
+        }
+
+        const template = templates.find((t) => t.id === templateId);
+        if (!template) return;
+        const step = template.steps[stepIndex];
+        if (!step) return;
+
+        // Populate endpoint select
+        const select = document.getElementById("stepEndpointSelect");
+        if (select) {
+          select.innerHTML =
+            `<option value="">Select endpoint...</option>` +
+            availableEndpoints
+              .map(
+                (e) => `<option value="${e.endpoint}">${e.endpoint}</option>`
+              )
+              .join("");
+          select.value = step.endpoint || "";
+        }
+
+        // Populate prompt textarea
+        const ta = document.getElementById("stepPromptTextarea");
+        if (ta) ta.value = step.prompt || "";
+
+        // Clear status
+        const status = document.getElementById("stepDetailStatus");
+        if (status) status.textContent = "";
+
+        // Show modal
+        const modal = document.getElementById("stepDetailModal");
+        if (modal) modal.style.display = "block";
+      }
+
+      function closeStepDetailModal() {
+        const modal = document.getElementById("stepDetailModal");
+        if (modal) modal.style.display = "none";
+        currentStepTemplateId = null;
+        currentStepIndex = null;
+      }
+
+      // Step detail modal image upload/generate
+      let stepDetailUploadedImageUrl = null;
+
+      function handleStepDetailImageUpload(event) {
+        const file = event.target.files && event.target.files[0];
+        const status = document.getElementById("stepDetailUploadStatus");
+        const preview = document.getElementById("stepDetailImagePreview");
+        if (!file) return;
+        const formData = new FormData();
+        formData.append("image", file);
+        if (status) status.textContent = "Uploading...";
+        fetch("/api/cloudinary/upload", { method: "POST", body: formData })
+          .then((res) => res.json())
+          .then((result) => {
+            if (result && result.success && result.url) {
+              stepDetailUploadedImageUrl = result.url;
+              if (preview) {
+                preview.src = result.url;
+                preview.style.display = "block";
+              }
+              if (status) status.textContent = "Image uploaded!";
+            } else {
+              if (status) status.textContent = "Upload failed.";
+            }
+          })
+          .catch(() => {
+            if (status) status.textContent = "Upload failed.";
+          });
+      }
+
+      async function generateStepDetailVideo() {
+        const endpointSelect = document.getElementById("stepEndpointSelect");
+        const promptTextarea = document.getElementById("stepPromptTextarea");
+        const status = document.getElementById("stepDetailStatus");
+        const videoPreviewDiv = document.getElementById(
+          "stepDetailVideoPreview"
+        );
+        const generateBtn = document.getElementById("stepDetailGenerateBtn");
+        const endpoint = endpointSelect ? endpointSelect.value : "";
+        const prompt = promptTextarea ? promptTextarea.value : "";
+        if (!endpoint) {
+          if (status) {
+            status.textContent = "Please select an endpoint.";
+            status.className = "status-message status-error";
+          }
+          return;
+        }
+        if (!stepDetailUploadedImageUrl) {
+          if (status) {
+            status.textContent = "Please upload an image first.";
+            status.className = "status-message status-error";
+          }
+          return;
+        }
+        if (status) {
+          status.textContent = "Generating video...";
+          status.className = "status-message status-info";
+        }
+        if (generateBtn) generateBtn.disabled = true;
+        try {
+          const response = await fetch(`/api/${endpoint}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              image_url: stepDetailUploadedImageUrl,
+              prompt,
+            }),
+          });
+          const data = await response.json();
+          if (response.ok && data && data.video && data.video.url) {
+            if (videoPreviewDiv) {
+              videoPreviewDiv.style.display = "block";
+              videoPreviewDiv.innerHTML = `<video src="${data.video.url}" controls style="width:100%;max-width:400px;"></video>`;
+            }
+            if (status) {
+              status.textContent = "Video generated!";
+              status.className = "status-message status-success";
+            }
+          } else {
+            throw new Error((data && data.error) || "Failed to generate video");
+          }
+        } catch (e) {
+          if (status) {
+            status.textContent = `Error: ${e.message || e}`;
+            status.className = "status-message status-error";
+          }
+          if (videoPreviewDiv) {
+            videoPreviewDiv.style.display = "none";
+            videoPreviewDiv.innerHTML = "";
+          }
+        } finally {
+          if (generateBtn) generateBtn.disabled = false;
+        }
+      }
+
+      async function saveStepDetail() {
+        if (currentStepTemplateId == null || currentStepIndex == null) return;
+        const template = templates.find((t) => t.id === currentStepTemplateId);
+        if (!template) return;
+
+        const endpoint =
+          document.getElementById("stepEndpointSelect")?.value || "";
+        const prompt =
+          document.getElementById("stepPromptTextarea")?.value || "";
+        const status = document.getElementById("stepDetailStatus");
+
+        if (!endpoint) {
+          if (status) {
+            status.textContent = "Please select an endpoint.";
+            status.className = "status-message status-error";
+          }
+          return;
+        }
+
+        const updatedSteps = template.steps.map((s, idx) =>
+          idx === currentStepIndex
+            ? { endpoint, prompt }
+            : { endpoint: s.endpoint, prompt: s.prompt || "" }
+        );
+
+        // Disable save button during request
+        const btns = document.querySelectorAll(
+          "#stepDetailModal .btn.btn-primary"
+        );
+        btns.forEach(function (b) {
+          if (b instanceof HTMLButtonElement) b.disabled = true;
+        });
+        if (status) {
+          status.textContent = "Saving...";
+          status.className = "status-message status-info";
+        }
+
+        try {
+          const res = await fetch(`/api/templates/${currentStepTemplateId}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              name: template.name,
+              description: template.description || "",
+              steps: updatedSteps,
+            }),
+          });
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.error || "Failed to save step");
+          }
+          // Refresh templates list
+          await loadTemplates();
+          if (status) {
+            status.textContent = "Saved!";
+            status.className = "status-message status-success";
+          }
+          setTimeout(() => closeStepDetailModal(), 600);
+        } catch (e) {
+          if (status) {
+            status.textContent = `Error: ${e.message || e}`;
+            status.className = "status-message status-error";
+          }
+        } finally {
+          btns.forEach(function (b) {
+            if (b instanceof HTMLButtonElement) b.disabled = false;
+          });
+        }
+      }
 
       // Initialize
       async function loadFeaturesAndGraphics() {
@@ -1823,7 +2265,7 @@
         const formData = new FormData();
         formData.append("image", file);
         status.textContent = "Uploading...";
-        fetch("/upload", {
+        fetch("/api/cloudinary/upload", {
           method: "POST",
           body: formData,
         })
