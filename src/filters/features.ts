@@ -5,11 +5,11 @@ export const features = [
   },
   {
     "endpoint": "ai-twerk",
-    "prompt": "A confident and energetic woman performing an impressive twerking dance, dynamic club lighting with neon colors, electric party atmosphere, highly expressive face showing pure joy, smooth slow motion capture, ultra-high detail 8K quality, professional dance cinematography, rhythmic movement with perfect timing, vibrant energy radiating from every frame"
+    "prompt": "A confident and energetic woman performing an impressive twerking dance while facing her back, dynamic club lighting with neon colors, electric party atmosphere, highly expressive hip tweark moves showing pure joy, smooth slow motion capture, ultra-high detail 8K quality, professional dance cinematography, rhythmic movement with perfect timing, vibrant energy radiating from every frame"
   },
   {
     "endpoint": "ai-mermaid",
-    "prompt": "a mermaid swimming in ocean."
+    "prompt": "a mermaid swimming in ocean with beautiful tail and outfit."
   },
   {
     "endpoint": "ai-kiss",

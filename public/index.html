@@ -645,12 +645,78 @@
         color: #333;
       }
 
-      /* Add to CSS section */
-      .btn:hover,
-      .btn:focus,
-      button:hover,
-      button:focus {
+      /* --- Improved Upload & Button Styles for Endpoint/Template Step Cards --- */
+      .image-upload-section {
+        border: 2.5px dashed #667eea;
+        border-radius: 14px;
+        padding: 32px 18px 24px 18px;
+        text-align: center;
+        background: #f4f7fd;
         cursor: pointer;
+        margin-bottom: 18px;
+        transition: border-color 0.3s, background 0.3s, box-shadow 0.2s;
+        display: block;
+        width: 100%;
+        min-height: 130px;
+        vertical-align: top;
+        position: relative;
+        box-shadow: 0 2px 12px rgba(102, 126, 234, 0.07);
+      }
+      .image-upload-section.dragover {
+        border-color: #28a745;
+        background: #e6ffe6;
+      }
+      .upload-icon {
+        font-size: 3.2rem;
+        color: #667eea;
+        margin-bottom: 12px;
+        margin-top: 2px;
+      }
+      .upload-text {
+        font-size: 1.13rem;
+        color: #444;
+        font-weight: 500;
+        letter-spacing: 0.01em;
+      }
+      .upload-status {
+        margin-top: 10px;
+        font-size: 1rem;
+        color: #888;
+      }
+      .generate-video-btn {
+        background: linear-gradient(90deg, #667eea 60%, #5a6fd8 100%);
+        color: #fff;
+        border: none;
+        border-radius: 12px;
+        padding: 22px 38px;
+        font-size: 1.13rem;
+        font-weight: 600;
+        cursor: pointer;
+        margin: 18px auto 0 auto;
+        display: block;
+        width: 100%;
+        max-width: 320px;
+        transition: background 0.18s, box-shadow 0.18s, transform 0.12s;
+        box-shadow: 0 4px 18px rgba(102, 126, 234, 0.13);
+        letter-spacing: 0.01em;
+      }
+      .generate-video-btn:hover {
+        background: linear-gradient(90deg, #5466c2 60%, #667eea 100%);
+        transform: translateY(-2px) scale(1.03);
+        box-shadow: 0 8px 24px rgba(102, 126, 234, 0.18);
+      }
+      input[type="file"] {
+        display: none;
+      }
+      .step-image-upload-section {
+        margin-bottom: 12px;
+      }
+      @media (max-width: 600px) {
+        .image-upload-section,
+        .generate-video-btn {
+          width: 100%;
+          margin: 0 0 18px 0;
+        }
       }
     </style>
   </head>
@@ -682,19 +748,33 @@
           </div>
           <hr style="margin: 20px 0" />
           <div class="generation-section">
-            <div class="input-group">
-              <input
-                type="text"
-                id="featureModalImageUrl"
-                class="form-control"
-                placeholder="Enter image URL"
+            <div class="image-upload-section" id="endpointImageUploadSection">
+              <label for="endpointImageInput" class="upload-label">
+                <div class="upload-icon">
+                  <i class="fas fa-cloud-upload-alt"></i>
+                </div>
+                <div class="upload-text">
+                  Click or drag an image here to upload
+                </div>
+                <input
+                  type="file"
+                  id="endpointImageInput"
+                  accept="image/*"
+                  style="display: none"
+                  onchange="handleEndpointImageUpload(event)"
+                />
+              </label>
+              <img
+                id="endpointImagePreview"
+                style="display: none; max-width: 200px; margin: 10px auto 0"
               />
-              <button id="featureModalGenerate" class="btn btn-primary">
-                <i class="fas fa-magic"></i> Generate Video
-              </button>
+              <div id="endpointUploadStatus" class="upload-status"></div>
             </div>
-            <div id="featureModalStatus" class="status-message mt-2"></div>
+            <button id="featureModalGenerate" class="btn btn-primary">
+              <i class="fas fa-magic"></i> Generate Video
+            </button>
           </div>
+          <div id="featureModalStatus" class="status-message mt-2"></div>
         </div>
       </div>
 
@@ -1105,7 +1185,15 @@
               <button class="remove-step" onclick="removeStep(this)">Remove</button>
             </div>
             <div class="step-actions" style="display: flex; align-items: center; gap: 10px; margin-top: 10px;">
-              <input type="text" class="step-image-url form-control" placeholder="Image URL for this step" style="flex:2;" />
+              <div class="image-upload-section step-image-upload-section">
+                <label class="upload-label">
+                  <div class="upload-icon"><i class="fas fa-cloud-upload-alt"></i></div>
+                  <div class="upload-text">Click or drag an image here to upload</div>
+                  <input type="file" class="step-image-input" accept="image/*" style="display:none;">
+                </label>
+                <img class="step-image-preview" style="display:none;max-width:200px;margin:10px auto 0;">
+                <div class="step-upload-status upload-status"></div>
+              </div>
               <button class="btn btn-primary step-generate-btn" style="flex:1; min-width:120px;">
                 <i class="fas fa-magic"></i> Generate Video
               </button>
@@ -1123,17 +1211,19 @@
         const promptInput = newStep.querySelector(".step-prompt-input");
         const statusDiv = newStep.querySelector(".step-status-message");
         const videoPreviewDiv = newStep.querySelector(".step-video-preview");
+        // Setup image upload for this step
+        const getUploadedImageUrl = setupStepImageUpload(newStep);
         generateBtn.onclick = async function () {
           const endpoint = endpointSelect.value;
           const prompt = promptInput.value;
-          const imageUrl = imageUrlInput.value;
+          const imageUrl = getUploadedImageUrl();
           if (!endpoint) {
             statusDiv.textContent = "Please select an endpoint.";
             statusDiv.className = "step-status-message error";
             return;
           }
           if (!imageUrl) {
-            statusDiv.textContent = "Please enter an image URL.";
+            statusDiv.textContent = "Please upload an image.";
             statusDiv.className = "step-status-message error";
             return;
           }
@@ -1397,89 +1487,50 @@
 
       // Generate video for a feature
       async function generateVideo(endpoint, event) {
-        event.stopPropagation();
-        const imageUrl = document.getElementById("featureModalImageUrl").value;
-        const statusDiv = document.getElementById("featureModalStatus");
-        const generateButton = document.getElementById("featureModalGenerate");
-
+        // Unified for both endpoint modal and template steps
+        let imageUrl = null;
+        let statusDiv = null;
+        let generateButton = null;
+        // If called from endpoint modal, use uploaded image
+        if (document.getElementById("endpointImagePreview")) {
+          imageUrl = endpointUploadedImageUrl;
+          statusDiv = document.getElementById("featureModalStatus");
+          generateButton = document.getElementById("featureModalGenerate");
+        }
+        // fallback for legacy (should not be used)
         if (!imageUrl) {
-          alert("Please enter an image URL.");
+          const urlInput = document.getElementById("featureModalImageUrl");
+          if (urlInput) imageUrl = urlInput.value;
+        }
+        if (!imageUrl) {
+          alert("Please upload an image first.");
           return;
         }
-
         statusDiv.textContent = "Generating video...";
         statusDiv.style.color = "#666";
-
         try {
-          console.log("Sending request to:", `/api/${endpoint}`);
-          console.log("Request body:", { imageUrl });
-
-          // Call our backend endpoint which will then call the feature endpoint
+          // Use the correct backend endpoint for video generation
           const response = await fetch(`/api/${endpoint}`, {
             method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ image_url: imageUrl }),
-            credentials: "same-origin", // Ensure cookies are sent with the request
           });
-
-          console.log("Response status:", response.status);
-
-          // First, get the response text to see what's actually coming back
-          const responseText = await response.text();
-          console.log("Raw response:", responseText);
-
-          let data;
-          try {
-            data = JSON.parse(responseText);
-          } catch (parseError) {
-            console.error("Failed to parse JSON response:", parseError);
-            throw new Error(`Invalid JSON response: ${responseText}`);
-          }
-
-          if (!response.ok) {
-            throw new Error(
-              data.error ||
-                `Server responded with status ${response.status}: ${responseText}`
-            );
-          }
-
-          if (!data.video.url) {
-            throw new Error("No video URL in response");
-          }
-
-          statusDiv.textContent =
-            "Video generated successfully! Click to view.";
-          statusDiv.style.color = "green";
-
-          // Show the video in a dialog
-          showVideoDialog(data.video.url);
-
-          // Store the generated video URL for future reference
-          const card = document.querySelector(`[data-endpoint="${endpoint}"]`);
-          if (card) {
-            card.dataset.generatedVideo = data.video.url;
+          const result = await response.json();
+          if (result.video && result.video.url) {
+            statusDiv.textContent = "Video generated successfully!";
+            statusDiv.style.color = "green";
+            // Show the video in a dialog or preview
+            showVideoDialog(result.video.url);
+          } else {
+            throw new Error(result.error || "Unknown error");
           }
         } catch (error) {
-          console.error("Error details:", error);
-          let errorMessage = "An unknown error occurred";
-
-          if (error instanceof Error) {
-            errorMessage = error.message;
-          } else if (typeof error === "string") {
-            errorMessage = error;
-          }
-
-          statusDiv.textContent = `Error: ${errorMessage}`;
+          statusDiv.textContent = `Error: ${error.message || error}`;
           statusDiv.style.color = "red";
-
-          // Show error in console for debugging
-          console.error("Video generation failed:", error);
         } finally {
           generateButton.disabled = false;
           generateButton.innerHTML =
-            '<i class="fas fa-play"></i> Generate Video';
+            '<i class="fas fa-magic"></i> Generate Video';
         }
       }
 
@@ -1502,7 +1553,19 @@
         const videoPlayer = document.getElementById("featureModalVideo");
         videoPlayer.src = `https://res.cloudinary.com/do60wtwwc/video/upload/v1754319544/generated-videos/generated-videos/${feature.endpoint}.mp4`;
         document.getElementById("featureModalPrompt").value = feature.prompt;
-        document.getElementById("featureModalImageUrl").value = "";
+
+        // Reset image upload section
+        const imagePreview = document.getElementById("endpointImagePreview");
+        if (imagePreview) {
+          imagePreview.style.display = "none";
+          imagePreview.src = "";
+        }
+        const uploadStatus = document.getElementById("endpointUploadStatus");
+        if (uploadStatus) {
+          uploadStatus.textContent = "";
+        }
+        endpointUploadedImageUrl = null; // Reset the uploaded image URL
+
         document.getElementById("featureModalStatus").innerHTML = "";
 
         // Fetch and show all generated videos for this endpoint
@@ -1635,6 +1698,42 @@
         }
       };
 
+      // --- Endpoint Modal Image Upload & Video Generation Logic ---
+      let endpointUploadedImageUrl = null;
+
+      function handleEndpointImageUpload(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+        const formData = new FormData();
+        formData.append("image", file);
+        document.getElementById("endpointUploadStatus").textContent =
+          "Uploading...";
+        fetch("/upload", {
+          method: "POST",
+          body: formData,
+        })
+          .then((res) => res.json())
+          .then((result) => {
+            if (result.success) {
+              endpointUploadedImageUrl = result.url;
+              document.getElementById("endpointImagePreview").src = result.url;
+              document.getElementById("endpointImagePreview").style.display =
+                "block";
+              document.getElementById("endpointUploadStatus").textContent =
+                "Image uploaded!";
+            } else {
+              document.getElementById("endpointUploadStatus").textContent =
+                "Upload failed.";
+            }
+          })
+          .catch(() => {
+            document.getElementById("endpointUploadStatus").textContent =
+              "Upload failed.";
+          });
+      }
+
+      // --- End of Endpoint Modal Image Upload & Video Generation Logic ---
+
       // Initialize
       async function loadFeaturesAndGraphics() {
         await loadFeatureGraphics();
@@ -1642,6 +1741,107 @@
         loadTemplates();
       }
       loadFeaturesAndGraphics();
+
+      // --- Replace image URL input in endpoint modal with beautified upload ---
+      // Remove the <input type="text" id="featureModalImageUrl" ...> and its parent .input-group
+      // Replace with:
+      document.getElementById("featureModalImageUrl").parentElement.remove();
+      const imageUploadSection = document.createElement("div");
+      imageUploadSection.className = "image-upload-section";
+      imageUploadSection.id = "endpointImageUploadSection";
+      imageUploadSection.innerHTML = `
+        <label for="endpointImageInput" class="upload-label">
+          <div class="upload-icon"><i class="fas fa-cloud-upload-alt"></i></div>
+          <div class="upload-text">Click or drag an image here to upload</div>
+          <input type="file" id="endpointImageInput" accept="image/*" style="display:none;" onchange="handleEndpointImageUpload(event)">
+        </label>
+        <img id="endpointImagePreview" style="display:none;max-width:200px;margin:10px auto 0;">
+        <div id="endpointUploadStatus" class="upload-status"></div>
+      `;
+      document
+        .querySelector(".generation-section")
+        .insertBefore(
+          imageUploadSection,
+          document.getElementById("featureModalGenerate")
+        );
+
+      // --- Replace image URL input in template step card with beautified upload ---
+      // Remove the <input type="text" class="step-image-url form-control" ...> in .step-actions
+      // Replace with:
+      const stepImageUploadHtml = `
+        <div class="image-upload-section step-image-upload-section">
+          <label class="upload-label">
+            <div class="upload-icon"><i class="fas fa-cloud-upload-alt"></i></div>
+            <div class="upload-text">Click or drag an image here to upload</div>
+            <input type="file" class="step-image-input" accept="image/*" style="display:none;">
+          </label>
+          <img class="step-image-preview" style="display:none;max-width:200px;margin:10px auto 0;">
+          <div class="step-upload-status upload-status"></div>
+        </div>
+      `;
+      document.querySelectorAll(".step-actions").forEach((actionsDiv) => {
+        actionsDiv.insertAdjacentHTML("afterbegin", stepImageUploadHtml);
+      });
+
+      // --- JS for template step image upload ---
+      function setupStepImageUpload(stepDiv) {
+        const section = stepDiv.querySelector(".step-image-upload-section");
+        const input = stepDiv.querySelector(".step-image-input");
+        const preview = stepDiv.querySelector(".step-image-preview");
+        const status = stepDiv.querySelector(".step-upload-status");
+        let uploadedUrl = null;
+        if (!section || !input) return;
+        section.addEventListener("click", () => input.click());
+        section.addEventListener("dragover", (e) => {
+          e.preventDefault();
+          section.classList.add("dragover");
+        });
+        section.addEventListener("dragleave", () =>
+          section.classList.remove("dragover")
+        );
+        section.addEventListener("drop", (e) => {
+          e.preventDefault();
+          section.classList.remove("dragover");
+          const files = e.dataTransfer.files;
+          if (files.length > 0 && files[0].type.startsWith("image/")) {
+            input.files = files;
+            handleStepImageUpload({ target: input }, preview, status, (url) => {
+              uploadedUrl = url;
+            });
+          }
+        });
+        input.addEventListener("change", (e) =>
+          handleStepImageUpload(e, preview, status, (url) => {
+            uploadedUrl = url;
+          })
+        );
+        return () => uploadedUrl;
+      }
+      function handleStepImageUpload(event, preview, status, setUrl) {
+        const file = event.target.files[0];
+        if (!file) return;
+        const formData = new FormData();
+        formData.append("image", file);
+        status.textContent = "Uploading...";
+        fetch("/upload", {
+          method: "POST",
+          body: formData,
+        })
+          .then((res) => res.json())
+          .then((result) => {
+            if (result.success) {
+              preview.src = result.url;
+              preview.style.display = "block";
+              status.textContent = "Image uploaded!";
+              setUrl(result.url);
+            } else {
+              status.textContent = "Upload failed.";
+            }
+          })
+          .catch(() => {
+            status.textContent = "Upload failed.";
+          });
+      }
     </script>
   </body>
 </html>

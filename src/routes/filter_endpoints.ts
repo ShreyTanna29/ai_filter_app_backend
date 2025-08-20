@@ -207,6 +207,7 @@ router.get("/videos/:endpoint", async (req: Request, res: Response) => {
   try {
     const { PrismaClient } = require("../generated/prisma/client");
     const prisma = new PrismaClient();
+    // FIX: Use featureId instead of feature in Prisma query
     const videos = await prisma.generatedVideo.findMany({
       where: { feature: req.params.endpoint },
       orderBy: { createdAt: "desc" },
