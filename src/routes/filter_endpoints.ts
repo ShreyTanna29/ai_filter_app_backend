@@ -251,40 +251,45 @@ router.get("/feature-graphic", async (req: Request, res: Response) => {
   }
 });
 
-const validateFeatureGraphic: RequestHandler = async (
-  req,
-  res
-): Promise<void> => {
-  try {
-    const { url } = req.body as { url?: string };
-    const endpoint = req.params.endpoint;
-    if (!url) {
-      res.status(400).json({ error: "Missing video url" });
-      return;
-    }
-    const { PrismaClient } = require("../generated/prisma/client");
-    const prisma = new PrismaClient();
-    let exists: any = null;
+// Set the selected video as the feature's graphic (persist in FeatureGraphic table)
+router.post(
+  "/feature-graphic/:endpoint",
+  async (req: Request, res: Response) => {
     try {
-      exists = await prisma.generatedVideo.findFirst({
-        where: { feature: endpoint, url },
+      const { url } = req.body as { url?: string };
+      const endpoint = req.params.endpoint;
+      if (!url) {
+        res.status(400).json({ error: "Missing video url" });
+        return;
+      }
+      const { PrismaClient } = require("../generated/prisma/client");
+      const prisma = new PrismaClient();
+      let exists: any = null;
+      try {
+        exists = await prisma.generatedVideo.findFirst({
+          where: { feature: endpoint, url },
+        });
+      } catch (e) {
+        exists = await prisma.generatedVideo.findFirst({
+          where: { featureId: endpoint, url },
+        });
+      }
+      if (!exists) {
+        res.status(404).json({ error: "Video url not found for endpoint" });
+        return;
+      }
+      // Upsert the FeatureGraphic record for this endpoint
+      await prisma.featureGraphic.upsert({
+        where: { endpoint },
+        update: { graphicUrl: url },
+        create: { endpoint, graphicUrl: url },
       });
-    } catch (e) {
-      exists = await prisma.generatedVideo.findFirst({
-        where: { featureId: endpoint, url },
-      });
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error setting feature graphic:", error);
+      res.status(500).json({ error: "Failed to set feature graphic" });
     }
-    if (!exists) {
-      res.status(404).json({ error: "Video url not found for endpoint" });
-      return;
-    }
-    res.json({ success: true });
-  } catch (error) {
-    console.error("Error validating feature graphic:", error);
-    res.status(500).json({ error: "Failed to set feature graphic" });
   }
-};
-
-router.post("/feature-graphic/:endpoint", validateFeatureGraphic);
+);
 
 export default router;

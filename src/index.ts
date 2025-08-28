@@ -122,7 +122,7 @@ app.put(
 
 app.use("/api", facetrixfiltersRouter);
 app.use("/api", templatesRouter);
-app.use("/api", videoGenerationRouter);
+app.use("/api/generate-video", videoGenerationRouter);
 app.use("/api/cloudinary", cloudinaryRouter);
 
 // Serve admin panel HTML
