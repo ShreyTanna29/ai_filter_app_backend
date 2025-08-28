@@ -9,7 +9,6 @@ window.addEventListener("DOMContentLoaded", function () {
     "tab-dashboard",
     "tab-filters",
     "tab-templates",
-    "tab-profile",
   ];
   sidebarLinks.forEach((link, idx) => {
     link.addEventListener("click", function (e) {
@@ -188,25 +187,24 @@ function showFeatureDetailPage(endpoint) {
           '<div class="text-gray-500">No videos generated yet.</div>';
       }
 
- listDiv.querySelectorAll(".set-graphic-btn").forEach((btn) => {
-    btn.onclick = async function () {
-      const videoUrl = btn.getAttribute("data-url");
-      await fetch(`/api/feature-graphic/${encodeURIComponent(endpoint)}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: videoUrl }),
+      listDiv.querySelectorAll(".set-graphic-btn").forEach((btn) => {
+        btn.onclick = async function () {
+          const videoUrl = btn.getAttribute("data-url");
+          await fetch(`/api/feature-graphic/${encodeURIComponent(endpoint)}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ url: videoUrl }),
+          });
+          // Update the main video preview
+          document.getElementById("featureDetailVideo").src = videoUrl;
+          // Optionally update featureGraphics and reload features for card update
+          featureGraphics[endpoint] = videoUrl;
+          await loadFeatures();
+        };
       });
-      // Update the main video preview
-      document.getElementById("featureDetailVideo").src = videoUrl;
-      // Optionally update featureGraphics and reload features for card update
-      featureGraphics[endpoint] = videoUrl;
-      await loadFeatures();
-    };
-  });
-
     });
   // Add event listeners for set-graphic buttons
- 
+
   if (uploadSection && input) {
     uploadSection.addEventListener("dragover", (e) => {
       e.preventDefault();
@@ -537,69 +535,218 @@ function displayTemplates() {
   grid.innerHTML = filteredTemplates
     .map(
       (template) => `
-          <div class="template-card">
-            <div class="template-header">
-              <div>
-                <div class="template-name">${template.name}</div>
-                <div class="template-description">${
-                  template.description || ""
-                }</div>
-              </div>
-              <div class="template-actions">
-                <button class="btn btn-primary" onclick="editTemplate(${
-                  template.id
-                })">
-                  <i class="fas fa-edit"></i> Edit
-                </button>
-                <button class="btn btn-danger" onclick="deleteTemplate(${
-                  template.id
-                })">
-                  <i class="fas fa-trash"></i> Delete
-                </button>
-              </div>
+        <div class="bg-white rounded-xl shadow-md p-6 mb-6 hover:shadow-lg transition-shadow border border-gray-100">
+          <div class="flex items-start justify-between mb-4">
+            <div>
+              <div class="text-lg font-bold text-gray-800 mb-1">${
+                template.name
+              }</div>
+              <div class="text-gray-500 text-sm">${
+                template.description || ""
+              }</div>
             </div>
-            <div class="template-steps">
+            <div class="flex gap-2">
+              <button class="px-3 py-1 bg-blue-500 hover:bg-blue-600 text-white rounded shadow-sm flex items-center gap-1" onclick="editTemplate(${
+                template.id
+              })">
+                <i class="fas fa-edit"></i> <span class="hidden sm:inline">Edit</span>
+              </button>
+              <button class="px-3 py-1 bg-red-500 hover:bg-red-600 text-white rounded shadow-sm flex items-center gap-1" onclick="deleteTemplate(${
+                template.id
+              })">
+                <i class="fas fa-trash"></i> <span class="hidden sm:inline">Delete</span>
+              </button>
+            </div>
+          </div>
+          <div class="mb-4">
+            <div class="font-semibold text-gray-700 mb-2 flex items-center gap-2">
+              <i class="fas fa-list-ol"></i> ${template.steps.length} ${
+        template.steps.length === 1 ? "step" : "steps"
+      }
+            </div>
+            <div class="space-y-2">
               ${template.steps
                 .map(
                   (step, index) => `
-                <div class="step-item" onclick="openStepDetailModal(${
-                  template.id
-                }, ${index}); event.stopPropagation();" style="cursor:pointer;">
-                  <div class="step-order">${index + 1}</div>
-                  <div class="step-content">
-                    <div class="step-endpoint">${step.endpoint}</div>
-                    <div class="step-prompt" title="${step.prompt || ""}">${
-                    step.prompt || "(uses default prompt)"
-                  }</div>
-                  </div>
-                </div>
-              `
+                    <div class="flex items-start gap-3 bg-gray-50 rounded-lg p-3 border border-gray-200 hover:bg-blue-50 cursor-pointer transition" data-template-id="${
+                      template.id
+                    }" data-step-index="${index}">
+                      <div class="flex-shrink-0 w-7 h-7 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-bold">${
+                        index + 1
+                      }</div>
+                      <div class="flex-1">
+                        <div class="font-medium text-gray-800">${
+                          step.endpoint
+                        }</div>
+                        <div class="text-xs text-gray-500 truncate" title="${
+                          step.prompt || ""
+                        }">${step.prompt || "(uses default prompt)"}</div>
+                      </div>
+                    </div>
+                  `
                 )
                 .join("")}
             </div>
-            <div class="template-footer">
-              <div class="template-steps-count">
-                <i class="fas fa-list-ol"></i> ${template.steps.length} ${
-        template.steps.length === 1 ? "step" : "steps"
-      }
-              </div>
-              <div class="template-actions">
-                <button class="btn btn-sm btn-outline-secondary" onclick="editTemplate(${
-                  template.id
-                })">
-                  <i class="fas fa-edit"></i>
-                </button>
-                <button class="btn btn-sm btn-outline-danger" onclick="deleteTemplate(${
-                  template.id
-                })">
-                  <i class="fas fa-trash"></i>
-                </button>
-              </div>
-            </div>
           </div>
-        `
+        </div>
+      `
     )
     .join("");
+
+  // Add click listeners for step items
+  setTimeout(() => {
+    document
+      .querySelectorAll("[data-template-id][data-step-index]")
+      .forEach((el) => {
+        el.addEventListener("click", function (e) {
+          const templateId = parseInt(this.getAttribute("data-template-id"));
+          const stepIndex = parseInt(this.getAttribute("data-step-index"));
+          showStepDetailPage(templateId, stepIndex);
+          e.stopPropagation();
+        });
+      });
+  }, 0);
+  // Show step detail page for editing
+  function showStepDetailPage(templateId, stepIndex) {
+    const template = templates.find((t) => t.id === templateId);
+    if (!template) return;
+    const step = template.steps[stepIndex];
+    if (!step) return;
+    document.getElementById("stepDetailEndpointInput").value =
+      step.endpoint || "";
+    document.getElementById("stepDetailPromptInput").value = step.prompt || "";
+    document.getElementById("stepDetailStatus").textContent = "";
+    // Hide all tab content and show only step details
+    document
+      .querySelectorAll(".tab-content, #featureDetailPage")
+      .forEach((el) => el.classList.add("hidden"));
+    document.getElementById("stepDetailPage").classList.remove("hidden");
+    // Reset video gen UI
+    document.getElementById("stepImagePreview").style.display = "none";
+    document.getElementById("stepImagePreview").src = "";
+    document.getElementById("stepUploadStatus").textContent = "";
+    document.getElementById("stepGenStatus").textContent = "";
+    document.getElementById("stepVideoPreview").style.display = "none";
+    window._stepUploadedImageUrl = null;
+    // Store for save
+    window._currentStepTemplateId = templateId;
+    window._currentStepIndex = stepIndex;
+
+    // Attach image upload event listeners every time the page is shown
+    const stepImageInput = document.getElementById("stepImageInput");
+    const stepImagePreview = document.getElementById("stepImagePreview");
+    const stepUploadStatus = document.getElementById("stepUploadStatus");
+    const stepImageUploadSection = document.getElementById(
+      "stepImageUploadSection"
+    );
+    if (stepImageInput && stepImageUploadSection) {
+      // Remove previous listeners by cloning
+      const newSection = stepImageUploadSection.cloneNode(true);
+      stepImageUploadSection.parentNode.replaceChild(
+        newSection,
+        stepImageUploadSection
+      );
+      const newInput = newSection.querySelector("#stepImageInput");
+      const newPreview = newSection.querySelector("#stepImagePreview");
+      const newStatus = newSection.querySelector("#stepUploadStatus");
+      newSection.addEventListener("dragover", (e) => {
+        e.preventDefault();
+        newSection.classList.add("dragover");
+      });
+      newSection.addEventListener("dragleave", () =>
+        newSection.classList.remove("dragover")
+      );
+      newSection.addEventListener("drop", (e) => {
+        e.preventDefault();
+        newSection.classList.remove("dragover");
+        const files = e.dataTransfer.files;
+        if (files.length > 0 && files[0].type.startsWith("image/")) {
+          newInput.files = files;
+          handleStepImageUpload(newInput, newPreview, newStatus);
+        }
+      });
+      newSection.onclick = (e) => {
+        if (e.target.tagName !== "INPUT") newInput.click();
+      };
+      newInput.onchange = () =>
+        handleStepImageUpload(newInput, newPreview, newStatus);
+    }
+
+    function handleStepImageUpload(input, preview, uploadStatus) {
+      const file = input.files && input.files[0];
+      if (!file) return;
+      const formData = new FormData();
+      formData.append("image", file);
+      if (uploadStatus) uploadStatus.textContent = "Uploading...";
+      fetch("/api/cloudinary/upload", { method: "POST", body: formData })
+        .then((res) => res.json())
+        .then((result) => {
+          if (result && result.success && result.url) {
+            window._stepUploadedImageUrl = result.url;
+            if (preview) {
+              preview.src = result.url;
+              preview.style.display = "block";
+            }
+            if (uploadStatus) uploadStatus.textContent = "Image uploaded!";
+          } else {
+            if (uploadStatus) uploadStatus.textContent = "Upload failed.";
+          }
+          input.value = "";
+        })
+        .catch(() => {
+          if (uploadStatus) uploadStatus.textContent = "Upload failed.";
+          input.value = "";
+        });
+    }
+  }
+
+  // Step video generation logic
+}
+
+function closeStepDetailPage() {
+  document.getElementById("stepDetailPage").classList.add("hidden");
+  // Show templates tab again
+  document.getElementById("tab-templates").classList.remove("hidden");
+  window._currentStepTemplateId = null;
+  window._currentStepIndex = null;
+}
+
+async function saveStepDetail() {
+  const templateId = window._currentStepTemplateId;
+  const stepIndex = window._currentStepIndex;
+  if (templateId == null || stepIndex == null) return;
+  const endpoint = document
+    .getElementById("stepDetailEndpointInput")
+    .value.trim();
+  const prompt = document.getElementById("stepDetailPromptInput").value.trim();
+  if (!endpoint) {
+    document.getElementById("stepDetailStatus").textContent =
+      "Endpoint is required.";
+    return;
+  }
+  // Update in-memory and persist full template via PUT
+  const template = templates.find((t) => t.id === templateId);
+  if (!template) return;
+  const updatedSteps = template.steps.map((s, idx) =>
+    idx === stepIndex
+      ? { endpoint, prompt }
+      : { endpoint: s.endpoint, prompt: s.prompt || "" }
+  );
+  try {
+    const res = await fetch(`/api/templates/${templateId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...template, steps: updatedSteps }),
+    });
+    if (!res.ok) throw new Error("Failed to update step");
+    // Update local state
+    template.steps = updatedSteps;
+    displayTemplates();
+    closeStepDetailPage();
+  } catch (e) {
+    document.getElementById("stepDetailStatus").textContent =
+      "Failed to save: " + (e.message || e);
+  }
 }
 
 async function promptRenameStep(templateId, stepIndex) {
