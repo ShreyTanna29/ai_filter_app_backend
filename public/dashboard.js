@@ -5,11 +5,7 @@ window.addEventListener("DOMContentLoaded", function () {
 
   // Tab switching logic
   const sidebarLinks = document.querySelectorAll("aside nav ul li a");
-  const tabIds = [
-    "tab-dashboard",
-    "tab-filters",
-    "tab-templates",
-  ];
+  const tabIds = ["tab-dashboard", "tab-filters", "tab-templates"];
   sidebarLinks.forEach((link, idx) => {
     link.addEventListener("click", function (e) {
       e.preventDefault();
@@ -513,6 +509,7 @@ async function loadTemplates() {
     const response = await fetch("/api/templates");
     templates = await response.json();
     displayTemplates();
+    updateStats();
   } catch (error) {
     console.error("Error loading templates:", error);
   }
@@ -1250,6 +1247,16 @@ function updateStats() {
   document.getElementById("draftsUsed").textContent = 7;
   document.getElementById("docsUsed").textContent = 4;
   document.getElementById("toolsUsed").textContent = 4;
+
+  // Fix for faded/white card: toggle faded class
+  const totalTemplatesCard = document.getElementById("totalTemplatesCard");
+  if (totalTemplatesCard) {
+    if (templates.length > 0) {
+      totalTemplatesCard.classList.remove("faded");
+    } else {
+      totalTemplatesCard.classList.add("faded");
+    }
+  }
 }
 
 let currentOpenEndpoint = null;
