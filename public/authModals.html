@@ -1,0 +1,114 @@
+<!-- Sign In Modal -->
+<div
+  id="signInModal"
+  class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40 hidden"
+>
+  <div class="bg-white rounded-lg shadow-lg w-full max-w-md p-6 relative">
+    <button
+      onclick="document.getElementById('signInModal').style.display = 'none'"
+      class="absolute top-2 right-2 text-gray-400 hover:text-gray-700"
+    >
+      <i class="fa fa-times"></i>
+    </button>
+    <h2 class="text-xl font-bold mb-4">Sign In</h2>
+    <form id="signInForm" class="space-y-4">
+      <div>
+        <label class="block text-gray-700 font-semibold mb-1">Email</label>
+        <input
+          id="signInEmail"
+          type="email"
+          class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400"
+          required
+        />
+      </div>
+      <div>
+        <label class="block text-gray-700 font-semibold mb-1">Password</label>
+        <input
+          id="signInPassword"
+          type="password"
+          class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400"
+          required
+        />
+      </div>
+      <div class="flex justify-between items-center">
+        <button
+          type="button"
+          class="text-blue-600 hover:underline"
+          onclick="showSignUpModal()"
+        >
+          Don't have an account?
+        </button>
+        <button
+          type="submit"
+          class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+        >
+          Sign In
+        </button>
+      </div>
+      <div id="signInError" class="text-red-500 text-sm mt-2"></div>
+    </form>
+  </div>
+</div>
+
+<!-- Sign Up Modal -->
+<div
+  id="signUpModal"
+  class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40 hidden"
+>
+  <div class="bg-white rounded-lg shadow-lg w-full max-w-md p-6 relative">
+    <button
+      onclick="document.getElementById('signUpModal').style.display = 'none'"
+      class="absolute top-2 right-2 text-gray-400 hover:text-gray-700"
+    >
+      <i class="fa fa-times"></i>
+    </button>
+    <h2 class="text-xl font-bold mb-4">Sign Up</h2>
+    <form id="signUpForm" class="space-y-4">
+      <div>
+        <label class="block text-gray-700 font-semibold mb-1">Email</label>
+        <input
+          id="signUpEmail"
+          type="email"
+          class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400"
+          required
+        />
+      </div>
+      <div>
+        <label class="block text-gray-700 font-semibold mb-1">Password</label>
+        <input
+          id="signUpPassword"
+          type="password"
+          class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400"
+          required
+        />
+      </div>
+      <div>
+        <label class="block text-gray-700 font-semibold mb-1"
+          >Confirm Password</label
+        >
+        <input
+          id="signUpConfirmPassword"
+          type="password"
+          class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400"
+          required
+        />
+      </div>
+      <div class="flex justify-between items-center">
+        <button
+          type="button"
+          class="text-blue-600 hover:underline"
+          onclick="showSignInModal()"
+        >
+          Already have an account?
+        </button>
+        <button
+          type="submit"
+          class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+        >
+          Sign Up
+        </button>
+      </div>
+      <div id="signUpError" class="text-red-500 text-sm mt-2"></div>
+    </form>
+  </div>
+</div>

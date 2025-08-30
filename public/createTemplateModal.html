@@ -1,0 +1,65 @@
+<!-- Template Creation Modal -->
+<div
+  id="createTemplateModal"
+  class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40 hidden"
+>
+  <div class="bg-white rounded-lg shadow-lg w-full max-w-lg p-6 relative">
+    <button
+      onclick="document.getElementById('createTemplateModal').style.display = 'none'"
+      class="absolute top-2 right-2 text-gray-400 hover:text-gray-700"
+    >
+      <i class="fa fa-times"></i>
+    </button>
+    <h2 class="text-xl font-bold mb-4">Create New Template</h2>
+    <form id="createTemplateForm" class="space-y-4">
+      <div>
+        <label class="block text-gray-700 font-semibold mb-1"
+          >Template Name</label
+        >
+        <input
+          id="templateName"
+          type="text"
+          class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400"
+          required
+        />
+      </div>
+      <div>
+        <label class="block text-gray-700 font-semibold mb-1"
+          >Description</label
+        >
+        <textarea
+          id="templateDescription"
+          class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400"
+          required
+        ></textarea>
+      </div>
+      <div>
+        <label class="block text-gray-700 font-semibold mb-1">Steps</label>
+        <div id="templateSteps" class="space-y-2"></div>
+        <button
+          type="button"
+          id="addStepBtn"
+          class="mt-2 px-3 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200"
+        >
+          + Add Step
+        </button>
+      </div>
+      <div class="flex justify-end gap-2">
+        <button
+          type="button"
+          onclick="document.getElementById('createTemplateModal').style.display = 'none'"
+          class="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg"
+        >
+          Cancel
+        </button>
+        <button
+          id="saveTemplateBtn"
+          type="submit"
+          class="btn-primary px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+        >
+          Save Template
+        </button>
+      </div>
+    </form>
+  </div>
+</div>

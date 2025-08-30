@@ -9,6 +9,7 @@ import path from "path";
 import templatesRouter from "./routes/templates";
 import cloudinaryRouter from "./routes/cloudinary";
 import videoGenerationRouter from "./routes/generate-video";
+import simpleAuthRouter from "./routes/simple-auth";
 
 // Load environment variables
 dotenv.config();
@@ -124,6 +125,7 @@ app.use("/api", facetrixfiltersRouter);
 app.use("/api", templatesRouter);
 app.use("/api/generate-video", videoGenerationRouter);
 app.use("/api/cloudinary", cloudinaryRouter);
+app.use("/api/auth", simpleAuthRouter);
 
 // Serve admin panel HTML
 app.get("/", (req: Request, res: Response) => {

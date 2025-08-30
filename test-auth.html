@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Auth Test</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        margin: 40px;
+      }
+      .form-group {
+        margin: 10px 0;
+      }
+      input {
+        padding: 8px;
+        margin: 5px;
+        width: 200px;
+      }
+      button {
+        padding: 10px 15px;
+        margin: 5px;
+      }
+      .error {
+        color: red;
+      }
+      .success {
+        color: green;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Authentication Test</h1>
+
+    <form id="testLoginForm">
+      <div class="form-group">
+        <label>Email:</label><br />
+        <input type="email" id="testEmail" value="admin@example.com" required />
+      </div>
+      <div class="form-group">
+        <label>Password:</label><br />
+        <input type="password" id="testPassword" value="admin123" required />
+      </div>
+      <div class="form-group">
+        <button type="submit">Login</button>
+      </div>
+      <div id="testResult"></div>
+    </form>
+
+    <script>
+      document
+        .getElementById("testLoginForm")
+        .addEventListener("submit", async function (e) {
+          e.preventDefault();
+
+          const email = document.getElementById("testEmail").value;
+          const password = document.getElementById("testPassword").value;
+          const resultDiv = document.getElementById("testResult");
+
+          console.log("Test form submitted:", {
+            email,
+            password: password ? "***" : "empty",
+          });
+
+          try {
+            const response = await fetch("/api/auth/login", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({ email, password }),
+            });
+
+            const data = await response.json();
+            console.log("Response:", data);
+
+            if (response.ok && data.accessToken) {
+              resultDiv.innerHTML =
+                '<div class="success">Login successful! Token: ' +
+                data.accessToken.substring(0, 20) +
+                "...</div>";
+              localStorage.setItem("token", data.accessToken);
+              console.log("Token stored in localStorage");
+            } else {
+              resultDiv.innerHTML =
+                '<div class="error">Login failed: ' +
+                (data.message || "Unknown error") +
+                "</div>";
+            }
+          } catch (error) {
+            console.error("Login error:", error);
+            resultDiv.innerHTML =
+              '<div class="error">Network error: ' + error.message + "</div>";
+          }
+        });
+    </script>
+  </body>
+</html>

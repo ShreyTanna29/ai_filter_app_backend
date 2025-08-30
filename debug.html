@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Debug Dashboard</title>
+  </head>
+  <body>
+    <h1>Debug Dashboard Elements</h1>
+    <button onclick="debugElements()">Check Form Elements</button>
+    <button onclick="testLogin()">Test Login Function</button>
+    <div id="debugOutput"></div>
+
+    <script>
+      function debugElements() {
+        const output = document.getElementById("debugOutput");
+        const elements = [
+          "signInForm",
+          "signInEmail",
+          "signInPassword",
+          "signInError",
+          "signInModal",
+        ];
+
+        let html = "<h3>Element Check:</h3>";
+        elements.forEach((id) => {
+          const el = document.getElementById(id);
+          html += `<p>${id}: ${el ? "EXISTS" : "NOT FOUND"}</p>`;
+        });
+
+        output.innerHTML = html;
+      }
+
+      async function testLogin() {
+        console.log("Testing login...");
+        try {
+          const response = await fetch("/api/auth/login", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              email: "admin@example.com",
+              password: "admin123",
+            }),
+          });
+
+          const data = await response.json();
+          console.log("Login response:", data);
+
+          document.getElementById("debugOutput").innerHTML =
+            "<h3>Login Test Result:</h3><pre>" +
+            JSON.stringify(data, null, 2) +
+            "</pre>";
+        } catch (error) {
+          console.error("Login error:", error);
+          document.getElementById("debugOutput").innerHTML =
+            "<h3>Login Error:</h3><p>" + error.message + "</p>";
+        }
+      }
+    </script>
+  </body>
+</html>

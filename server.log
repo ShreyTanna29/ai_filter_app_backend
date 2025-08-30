@@ -1,0 +1,113 @@
+nohup: ignoring input
+
+> backend@1.0.0 start
+> ts-node src/index.ts
+
+[dotenv@17.0.0] injecting env (9) from .env – 🔐 encrypt with dotenvx: https://dotenvx.com
+[dotenv@17.0.0] injecting env (9) from .env – 🔐 encrypt with dotenvx: https://dotenvx.com
+[dotenv@17.0.0] injecting env (9) from .env – 🔐 encrypt with dotenvx: https://dotenvx.com
+Server is running on http://localhost:3000
+Login attempt: { email: 'admin@example.com', password: '***' }
+Comparing credentials: {
+  provided: 'admin@example.com',
+  expected: 'admin@example.com',
+  emailMatch: true,
+  passwordMatch: true
+}
+Login successful, sending token
+Login attempt: { email: 'admin@example.com', password: '***' }
+Comparing credentials: {
+  provided: 'admin@example.com',
+  expected: 'admin@example.com',
+  emailMatch: true,
+  passwordMatch: true
+}
+Login successful, sending token
+Login attempt: { email: 'admin@example.com', password: '***' }
+Comparing credentials: {
+  provided: 'admin@example.com',
+  expected: 'admin@example.com',
+  emailMatch: true,
+  passwordMatch: true
+}
+Login successful, sending token
+Login attempt: { email: 'test@test', password: '***' }
+Comparing credentials: {
+  provided: 'test@test',
+  expected: 'admin@example.com',
+  emailMatch: false,
+  passwordMatch: false
+}
+Invalid credentials
+Login attempt: { email: 'test@test', password: '***' }
+Comparing credentials: {
+  provided: 'test@test',
+  expected: 'admin@example.com',
+  emailMatch: false,
+  passwordMatch: false
+}
+Invalid credentials
+Login attempt: { email: 'admin@example.com', password: '***' }
+Comparing credentials: {
+  provided: 'admin@example.com',
+  expected: 'admin@example.com',
+  emailMatch: true,
+  passwordMatch: true
+}
+Login successful, sending token
+Login attempt: { email: 'test@test', password: '***' }
+Comparing credentials: {
+  provided: 'test@test',
+  expected: 'admin@example.com',
+  emailMatch: false,
+  passwordMatch: false
+}
+Invalid credentials
+Login attempt: { email: 'test@test', password: '***' }
+Comparing credentials: {
+  provided: 'test@test',
+  expected: 'admin@example.com',
+  emailMatch: false,
+  passwordMatch: false
+}
+Invalid credentials
+Login attempt: { email: 'test@test', password: '***' }
+Comparing credentials: {
+  provided: 'test@test',
+  expected: 'admin@example.com',
+  emailMatch: false,
+  passwordMatch: false
+}
+Invalid credentials
+Login attempt: { email: 'test@test', password: '***' }
+Comparing credentials: {
+  provided: 'test@test',
+  expected: 'admin@example.com',
+  emailMatch: false,
+  passwordMatch: false
+}
+Invalid credentials
+Login attempt: { email: 'test@test', password: '***' }
+Comparing credentials: {
+  provided: 'test@test',
+  expected: 'admin@example.com',
+  emailMatch: false,
+  passwordMatch: false
+}
+Invalid credentials
+Login attempt: { email: 'test@test', password: '***' }
+Comparing credentials: {
+  provided: 'test@test',
+  expected: 'admin@example.com',
+  emailMatch: false,
+  passwordMatch: false
+}
+Invalid credentials
+Login attempt: { email: 'test@test', password: '***' }
+Comparing credentials: {
+  provided: 'test@test',
+  expected: 'admin@example.com',
+  emailMatch: false,
+  passwordMatch: false
+}
+Invalid credentials

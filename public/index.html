@@ -81,9 +81,41 @@
               alt="US"
               class="h-5 w-5 rounded-full"
             />
-            <button class="bg-blue-50 text-blue-600 rounded-full p-2">
-              <i class="fa fa-user"></i>
-            </button>
+            <!-- User Dropdown -->
+            <div class="relative">
+              <button
+                id="userDropdownBtn"
+                onclick="toggleUserDropdown()"
+                class="bg-blue-50 text-blue-600 rounded-full p-2 hover:bg-blue-100 transition-colors"
+              >
+                <i class="fa fa-user"></i>
+              </button>
+
+              <!-- Dropdown Menu -->
+              <div
+                id="userDropdownMenu"
+                class="hidden absolute right-0 mt-2 w-64 bg-white border border-gray-200 rounded-lg shadow-lg z-50"
+              >
+                <div class="px-4 py-3 border-b border-gray-100">
+                  <p class="text-sm text-gray-500">Signed in as</p>
+                  <p
+                    id="userEmailDisplay"
+                    class="text-sm font-medium text-gray-900"
+                  >
+                    admin@example.com
+                  </p>
+                </div>
+                <div class="py-1">
+                  <button
+                    onclick="handleLogout()"
+                    class="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors flex items-center"
+                  >
+                    <i class="fa fa-sign-out-alt mr-2"></i>
+                    Sign Out
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
         </header>
         <div
@@ -390,6 +422,76 @@
         <div id="tab-profile" class="tab-content w-full px-10 py-6 hidden">
           <!-- Profile tab is empty for now -->
         </div>
+
+        <!-- Template Creation Modal -->
+        <div
+          id="createTemplateModal"
+          class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40 hidden"
+        >
+          <div
+            class="bg-white rounded-lg shadow-lg w-full max-w-lg p-6 relative"
+          >
+            <button
+              onclick="document.getElementById('createTemplateModal').style.display = 'none'"
+              class="absolute top-2 right-2 text-gray-400 hover:text-gray-700"
+            >
+              <i class="fa fa-times"></i>
+            </button>
+            <h2 class="text-xl font-bold mb-4">Create New Template</h2>
+            <form id="createTemplateForm" class="space-y-4">
+              <div>
+                <label class="block text-gray-700 font-semibold mb-1"
+                  >Template Name</label
+                >
+                <input
+                  id="templateName"
+                  type="text"
+                  class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400"
+                  required
+                />
+              </div>
+              <div>
+                <label class="block text-gray-700 font-semibold mb-1"
+                  >Description</label
+                >
+                <textarea
+                  id="templateDescription"
+                  class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400"
+                  required
+                ></textarea>
+              </div>
+              <div>
+                <label class="block text-gray-700 font-semibold mb-1"
+                  >Steps</label
+                >
+                <div id="templateSteps" class="space-y-2"></div>
+                <button
+                  type="button"
+                  id="addStepBtn"
+                  class="mt-2 px-3 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200"
+                >
+                  + Add Step
+                </button>
+              </div>
+              <div class="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onclick="document.getElementById('createTemplateModal').style.display = 'none'"
+                  class="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg"
+                >
+                  Cancel
+                </button>
+                <button
+                  id="saveTemplateBtn"
+                  type="submit"
+                  class="btn-primary px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                >
+                  Save Template
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
         <!-- Feature Detail Page (hidden by default) -->
         <div
           id="featureDetailPage"
@@ -488,6 +590,168 @@
         </div>
       </main>
     </div>
+    <!-- Auth Modals -->
+    <div
+      id="signInModal"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40 hidden"
+    >
+      <div class="bg-white rounded-lg shadow-lg w-full max-w-md p-6 relative">
+        <button
+          onclick="document.getElementById('signInModal').style.display = 'none'"
+          class="absolute top-2 right-2 text-gray-400 hover:text-gray-700"
+        >
+          <i class="fa fa-times"></i>
+        </button>
+        <h2 class="text-xl font-bold mb-4">Sign In</h2>
+        <form id="signInForm" class="space-y-4">
+          <div>
+            <label class="block text-gray-700 font-semibold mb-1">Email</label>
+            <input
+              id="signInEmail"
+              type="email"
+              class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400"
+              required
+            />
+          </div>
+          <div>
+            <label class="block text-gray-700 font-semibold mb-1"
+              >Password</label
+            >
+            <input
+              id="signInPassword"
+              type="password"
+              class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400"
+              required
+            />
+          </div>
+          <div class="flex justify-between items-center">
+            <button
+              type="button"
+              class="text-blue-600 hover:underline"
+              onclick="showSignUpModal()"
+            >
+              Don't have an account?
+            </button>
+            <button
+              type="submit"
+              id="signInBtn"
+              class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+            >
+              <span id="signInBtnText">Sign In</span>
+              <svg
+                id="signInLoader"
+                class="hidden animate-spin ml-2 h-4 w-4 text-white"
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+              >
+                <circle
+                  class="opacity-25"
+                  cx="12"
+                  cy="12"
+                  r="10"
+                  stroke="currentColor"
+                  stroke-width="4"
+                ></circle>
+                <path
+                  class="opacity-75"
+                  fill="currentColor"
+                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                ></path>
+              </svg>
+            </button>
+          </div>
+          <div id="signInError" class="text-red-500 text-sm mt-2"></div>
+        </form>
+      </div>
+    </div>
+
+    <div
+      id="signUpModal"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40 hidden"
+    >
+      <div class="bg-white rounded-lg shadow-lg w-full max-w-md p-6 relative">
+        <button
+          onclick="document.getElementById('signUpModal').style.display = 'none'"
+          class="absolute top-2 right-2 text-gray-400 hover:text-gray-700"
+        >
+          <i class="fa fa-times"></i>
+        </button>
+        <h2 class="text-xl font-bold mb-4">Sign Up</h2>
+        <form id="signUpForm" class="space-y-4">
+          <div>
+            <label class="block text-gray-700 font-semibold mb-1">Email</label>
+            <input
+              id="signUpEmail"
+              type="email"
+              class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400"
+              required
+            />
+          </div>
+          <div>
+            <label class="block text-gray-700 font-semibold mb-1"
+              >Password</label
+            >
+            <input
+              id="signUpPassword"
+              type="password"
+              class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400"
+              required
+            />
+          </div>
+          <div>
+            <label class="block text-gray-700 font-semibold mb-1"
+              >Confirm Password</label
+            >
+            <input
+              id="signUpConfirmPassword"
+              type="password"
+              class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400"
+              required
+            />
+          </div>
+          <div class="flex justify-between items-center">
+            <button
+              type="button"
+              class="text-blue-600 hover:underline"
+              onclick="showSignInModal()"
+            >
+              Already have an account?
+            </button>
+            <button
+              type="submit"
+              id="signUpBtn"
+              class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+            >
+              <span id="signUpBtnText">Sign Up</span>
+              <svg
+                id="signUpLoader"
+                class="hidden animate-spin ml-2 h-4 w-4 text-white"
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+              >
+                <circle
+                  class="opacity-25"
+                  cx="12"
+                  cy="12"
+                  r="10"
+                  stroke="currentColor"
+                  stroke-width="4"
+                ></circle>
+                <path
+                  class="opacity-75"
+                  fill="currentColor"
+                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                ></path>
+              </svg>
+            </button>
+          </div>
+          <div id="signUpError" class="text-red-500 text-sm mt-2"></div>
+        </form>
+      </div>
+    </div>
+
     <script src="/dashboard.js"></script>
   </body>
 </html>

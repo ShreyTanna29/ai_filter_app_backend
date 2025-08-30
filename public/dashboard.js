@@ -1,5 +1,256 @@
 // Ensure the add feature modal is hidden on page load
+
 window.addEventListener("DOMContentLoaded", function () {
+  // Auth modal logic (must be defined before any call)
+  window.showSignInModal = function () {
+    document.getElementById("signUpModal").style.display = "none";
+    document.getElementById("signInModal").style.display = "flex";
+  };
+  window.showSignUpModal = function () {
+    document.getElementById("signInModal").style.display = "none";
+    document.getElementById("signUpModal").style.display = "flex";
+  };
+
+  // User dropdown functions
+  window.toggleUserDropdown = function () {
+    const dropdown = document.getElementById("userDropdownMenu");
+    if (dropdown) {
+      dropdown.classList.toggle("hidden");
+    }
+  };
+
+  window.handleLogout = function () {
+    console.log("Logging out user");
+
+    // Clear token from localStorage
+    localStorage.removeItem("token");
+
+    // Hide dropdown
+    const dropdown = document.getElementById("userDropdownMenu");
+    if (dropdown) {
+      dropdown.classList.add("hidden");
+    }
+
+    // Hide dashboard and show login modal
+    document
+      .querySelectorAll(
+        "main, aside, header, .tab-content, #tab-dashboard, #tab-filters, #tab-templates"
+      )
+      .forEach((el) => {
+        if (el) el.style.display = "none";
+      });
+
+    showSignInModal();
+  };
+
+  // Close dropdown when clicking outside
+  document.addEventListener("click", function (e) {
+    const dropdown = document.getElementById("userDropdownMenu");
+    const button = document.getElementById("userDropdownBtn");
+
+    if (
+      dropdown &&
+      button &&
+      !dropdown.contains(e.target) &&
+      !button.contains(e.target)
+    ) {
+      dropdown.classList.add("hidden");
+    }
+  });
+
+  // Sign In form submit (MUST be defined before auth check)
+  const signInForm = document.getElementById("signInForm");
+  if (signInForm) {
+    signInForm.onsubmit = async function (e) {
+      e.preventDefault();
+      console.log("Sign in form submitted");
+
+      const email = document.getElementById("signInEmail").value;
+      const password = document.getElementById("signInPassword").value;
+      const errorDiv = document.getElementById("signInError");
+      const signInBtn = document.getElementById("signInBtn");
+      const signInBtnText = document.getElementById("signInBtnText");
+      const signInLoader = document.getElementById("signInLoader");
+
+      errorDiv.textContent = "";
+
+      console.log("Form values:", {
+        email,
+        password: password ? "***" : "empty",
+      });
+
+      if (!email || !password) {
+        errorDiv.textContent = "Please enter both email and password.";
+        return;
+      }
+
+      // Show loading state
+      if (signInBtn) signInBtn.disabled = true;
+      if (signInBtnText) signInBtnText.textContent = "Signing In...";
+      if (signInLoader) signInLoader.classList.remove("hidden");
+
+      try {
+        console.log("Making login request to /api/auth/login");
+        const res = await fetch("/api/auth/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: email.toLowerCase().trim(), password }),
+        });
+
+        console.log("Response status:", res.status);
+        const data = await res.json();
+        console.log("Login response:", { status: res.status, data });
+
+        if (res.ok && data.accessToken) {
+          console.log("Login successful, hiding modals and storing token");
+          // Hide both modals
+          document.getElementById("signInModal").style.display = "none";
+          document.getElementById("signUpModal").style.display = "none";
+          localStorage.setItem("token", data.accessToken);
+
+          // Store and display user email
+          if (data.user && data.user.email) {
+            localStorage.setItem("userEmail", data.user.email);
+            const userEmailDisplay =
+              document.getElementById("userEmailDisplay");
+            if (userEmailDisplay) {
+              userEmailDisplay.textContent = data.user.email;
+            }
+          }
+
+          console.log("Token stored:", localStorage.getItem("token"));
+          // Show dashboard UI and initialize
+          console.log("Calling initializeDashboard()");
+          initializeDashboard();
+        } else {
+          console.log("Login failed:", data.message);
+          errorDiv.textContent = data.message || "Sign in failed.";
+        }
+      } catch (err) {
+        console.error("Sign in error:", err);
+        errorDiv.textContent = "Network error. Please try again.";
+      } finally {
+        // Reset loading state
+        if (signInBtn) signInBtn.disabled = false;
+        if (signInBtnText) signInBtnText.textContent = "Sign In";
+        if (signInLoader) signInLoader.classList.add("hidden");
+      }
+    };
+  }
+
+  // Sign Up form submit
+  const signUpForm = document.getElementById("signUpForm");
+  if (signUpForm) {
+    signUpForm.onsubmit = async function (e) {
+      e.preventDefault();
+      console.log("Sign up form submitted");
+
+      const email = document.getElementById("signUpEmail").value;
+      const password = document.getElementById("signUpPassword").value;
+      const confirm = document.getElementById("signUpConfirmPassword").value;
+      const errorDiv = document.getElementById("signUpError");
+      const signUpBtn = document.getElementById("signUpBtn");
+      const signUpBtnText = document.getElementById("signUpBtnText");
+      const signUpLoader = document.getElementById("signUpLoader");
+
+      errorDiv.textContent = "";
+
+      // Validation
+      if (!email || !password || !confirm) {
+        errorDiv.textContent = "All fields are required.";
+        return;
+      }
+
+      if (password !== confirm) {
+        errorDiv.textContent = "Passwords do not match.";
+        return;
+      }
+
+      if (password.length < 6) {
+        errorDiv.textContent = "Password must be at least 6 characters long.";
+        return;
+      }
+
+      // Show loading state
+      if (signUpBtn) signUpBtn.disabled = true;
+      if (signUpBtnText) signUpBtnText.textContent = "Creating Account...";
+      if (signUpLoader) signUpLoader.classList.remove("hidden");
+
+      try {
+        console.log("Making signup request to /api/auth/signup");
+        const res = await fetch("/api/auth/signup", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            email: email.toLowerCase().trim(),
+            password,
+            role: "user",
+          }),
+        });
+
+        const data = await res.json();
+        console.log("Signup response:", { status: res.status, data });
+
+        if (res.ok) {
+          console.log("Signup successful");
+          document.getElementById("signUpModal").style.display = "none";
+
+          // Show success message and redirect to login
+          const signInModal = document.getElementById("signInModal");
+          if (signInModal) {
+            signInModal.style.display = "flex";
+            const signInError = document.getElementById("signInError");
+            if (signInError) {
+              signInError.className = "text-green-500 text-sm mt-2";
+              signInError.textContent =
+                "Account created successfully! Please sign in.";
+
+              // Reset error styling after 5 seconds
+              setTimeout(() => {
+                signInError.className = "text-red-500 text-sm mt-2";
+                signInError.textContent = "";
+              }, 5000);
+            }
+          }
+        } else {
+          console.log("Signup failed:", data.message);
+          errorDiv.textContent = data.message || "Sign up failed.";
+        }
+      } catch (err) {
+        console.error("Sign up error:", err);
+        errorDiv.textContent = "Network error. Please try again.";
+      } finally {
+        // Reset loading state
+        if (signUpBtn) signUpBtn.disabled = false;
+        if (signUpBtnText) signUpBtnText.textContent = "Sign Up";
+        if (signUpLoader) signUpLoader.classList.add("hidden");
+      }
+    };
+  }
+
+  // Require authentication for dashboard
+  const token = localStorage.getItem("token");
+  if (!token) {
+    // Hide dashboard content and force sign in
+    document
+      .querySelectorAll(
+        "main, aside, header, .tab-content, #tab-dashboard, #tab-filters, #tab-templates"
+      )
+      .forEach((el) => {
+        if (el) el.style.display = "none";
+      });
+    showSignInModal();
+    return;
+  }
+
+  // If authenticated, initialize dashboard
+  initializeDashboard();
+
+  // Wire up Add Template button to open the modal
+  const addTemplateBtn = document.getElementById("addTemplateBtn");
+  if (addTemplateBtn) {
+    addTemplateBtn.addEventListener("click", openCreateTemplateModal);
+  }
   var modal = document.getElementById("featureCrudModal");
   if (modal) modal.classList.add("hidden");
 
@@ -32,6 +283,42 @@ window.addEventListener("DOMContentLoaded", function () {
     if (el) el.classList.toggle("hidden", idx !== 0);
   });
 });
+
+// Dashboard initialization function
+function initializeDashboard() {
+  console.log("initializeDashboard called");
+
+  // Show dashboard UI
+  console.log("Showing dashboard UI elements");
+  document
+    .querySelectorAll(
+      "main, aside, header, .tab-content, #tab-dashboard, #tab-filters, #tab-templates"
+    )
+    .forEach((el) => {
+      if (el) {
+        console.log("Showing element:", el.tagName, el.id || el.className);
+        el.style.display = "";
+      }
+    });
+
+  // Display user email in dropdown
+  const storedEmail = localStorage.getItem("userEmail");
+  const userEmailDisplay = document.getElementById("userEmailDisplay");
+  if (storedEmail && userEmailDisplay) {
+    userEmailDisplay.textContent = storedEmail;
+    console.log("User email displayed:", storedEmail);
+  }
+
+  console.log("Loading initial data");
+  // Load initial data
+  loadFeatures();
+  loadTemplates();
+  loadFeatureGraphics();
+  loadAvailableEndpoints();
+
+  console.log("Dashboard initialization complete");
+}
+
 let features = [];
 let templates = [];
 let availableEndpoints = [];
