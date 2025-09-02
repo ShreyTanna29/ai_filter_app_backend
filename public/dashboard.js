@@ -47,96 +47,11 @@ window.addEventListener("DOMContentLoaded", function () {
   document.addEventListener("click", function (e) {
     const dropdown = document.getElementById("userDropdownMenu");
     const button = document.getElementById("userDropdownBtn");
-
-    if (
-      dropdown &&
-      button &&
-      !dropdown.contains(e.target) &&
-      !button.contains(e.target)
-    ) {
+    if (!dropdown || !button) return;
+    if (!button.contains(e.target) && !dropdown.contains(e.target)) {
       dropdown.classList.add("hidden");
     }
   });
-
-  // Sign In form submit (MUST be defined before auth check)
-  const signInForm = document.getElementById("signInForm");
-  if (signInForm) {
-    signInForm.onsubmit = async function (e) {
-      e.preventDefault();
-      console.log("Sign in form submitted");
-
-      const email = document.getElementById("signInEmail").value;
-      const password = document.getElementById("signInPassword").value;
-      const errorDiv = document.getElementById("signInError");
-      const signInBtn = document.getElementById("signInBtn");
-      const signInBtnText = document.getElementById("signInBtnText");
-      const signInLoader = document.getElementById("signInLoader");
-
-      errorDiv.textContent = "";
-
-      console.log("Form values:", {
-        email,
-        password: password ? "***" : "empty",
-      });
-
-      if (!email || !password) {
-        errorDiv.textContent = "Please enter both email and password.";
-        return;
-      }
-
-      // Show loading state
-      if (signInBtn) signInBtn.disabled = true;
-      if (signInBtnText) signInBtnText.textContent = "Signing In...";
-      if (signInLoader) signInLoader.classList.remove("hidden");
-
-      try {
-        console.log("Making login request to /api/auth/login");
-        const res = await fetch("/api/auth/login", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email: email.toLowerCase().trim(), password }),
-        });
-
-        console.log("Response status:", res.status);
-        const data = await res.json();
-        console.log("Login response:", { status: res.status, data });
-
-        if (res.ok && data.accessToken) {
-          console.log("Login successful, hiding modals and storing token");
-          // Hide both modals
-          document.getElementById("signInModal").style.display = "none";
-          document.getElementById("signUpModal").style.display = "none";
-          localStorage.setItem("token", data.accessToken);
-
-          // Store and display user email
-          if (data.user && data.user.email) {
-            localStorage.setItem("userEmail", data.user.email);
-            const userEmailDisplay =
-              document.getElementById("userEmailDisplay");
-            if (userEmailDisplay) {
-              userEmailDisplay.textContent = data.user.email;
-            }
-          }
-
-          console.log("Token stored:", localStorage.getItem("token"));
-          // Show dashboard UI and initialize
-          console.log("Calling initializeDashboard()");
-          initializeDashboard();
-        } else {
-          console.log("Login failed:", data.message);
-          errorDiv.textContent = data.message || "Sign in failed.";
-        }
-      } catch (err) {
-        console.error("Sign in error:", err);
-        errorDiv.textContent = "Network error. Please try again.";
-      } finally {
-        // Reset loading state
-        if (signInBtn) signInBtn.disabled = false;
-        if (signInBtnText) signInBtnText.textContent = "Sign In";
-        if (signInLoader) signInLoader.classList.add("hidden");
-      }
-    };
-  }
 
   // Sign Up form submit
   const signUpForm = document.getElementById("signUpForm");
@@ -228,6 +143,75 @@ window.addEventListener("DOMContentLoaded", function () {
     };
   }
 
+  // Sign In form submit
+  const signInForm = document.getElementById("signInForm");
+  if (signInForm) {
+    signInForm.onsubmit = async function (e) {
+      e.preventDefault();
+      const emailEl = document.getElementById("signInEmail");
+      const passEl = document.getElementById("signInPassword");
+      const errorDiv = document.getElementById("signInError");
+      const signInBtn = document.getElementById("signInBtn");
+      const signInBtnText = document.getElementById("signInBtnText");
+      const signInLoader = document.getElementById("signInLoader");
+
+      const email = emailEl ? emailEl.value.trim().toLowerCase() : "";
+      const password = passEl ? passEl.value : "";
+      if (errorDiv) errorDiv.textContent = "";
+
+      if (!email || !password) {
+        if (errorDiv) errorDiv.textContent = "Email and password are required.";
+        return;
+      }
+
+      if (signInBtn) signInBtn.disabled = true;
+      if (signInBtnText) signInBtnText.textContent = "Signing In...";
+      if (signInLoader) signInLoader.classList.remove("hidden");
+
+      try {
+        const res = await fetch("/api/auth/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, password }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          if (errorDiv)
+            errorDiv.textContent = data.message || "Invalid credentials.";
+          return;
+        }
+        // Persist token and user email
+        if (data && data.accessToken) {
+          localStorage.setItem("token", data.accessToken);
+        }
+        if (data && data.user && data.user.email) {
+          localStorage.setItem("userEmail", data.user.email);
+        } else {
+          localStorage.setItem("userEmail", email);
+        }
+        // Hide auth modal and show dashboard
+        const signInModal = document.getElementById("signInModal");
+        if (signInModal) signInModal.style.display = "none";
+
+        // Show main UI and initialize
+        document
+          .querySelectorAll(
+            "main, aside, header, .tab-content, #tab-dashboard, #tab-filters, #tab-templates"
+          )
+          .forEach((el) => {
+            if (el) el.style.display = "";
+          });
+        initializeDashboard();
+      } catch (err) {
+        if (errorDiv) errorDiv.textContent = "Network error. Please try again.";
+      } finally {
+        if (signInBtn) signInBtn.disabled = false;
+        if (signInBtnText) signInBtnText.textContent = "Sign In";
+        if (signInLoader) signInLoader.classList.add("hidden");
+      }
+    };
+  }
+
   // Require authentication for dashboard
   const token = localStorage.getItem("token");
   if (!token) {
@@ -251,6 +235,13 @@ window.addEventListener("DOMContentLoaded", function () {
   if (addTemplateBtn) {
     addTemplateBtn.addEventListener("click", openCreateTemplateModal);
   }
+
+  // Wire up Add Feature button to open the modal
+  const addFeatureBtn = document.getElementById("addFeatureBtn");
+  if (addFeatureBtn) {
+    addFeatureBtn.addEventListener("click", openFeatureCrudModal);
+  }
+
   var modal = document.getElementById("featureCrudModal");
   if (modal) modal.classList.add("hidden");
 
@@ -351,25 +342,53 @@ function displayFeatures() {
               Your browser does not support the video tag.
             </video>
           </div>
-          <div class="text-gray-600 text-sm mt-1">${feature.prompt}</div>
+          <div class="text-gray-600 text-sm mt-1"></div>
+          <div class="mt-2">
+            <button class="view-feature-details px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700">View details</button>
+          </div>
         </div>
           `;
     })
     .join("");
-  // Add click event to feature cards to show details page
-  grid.querySelectorAll(".feature-card").forEach((card) => {
-    card.onclick = () => {
-      const endpoint = card.getAttribute("data-endpoint");
-      showFeatureDetailPage(endpoint);
-    };
+  // Delegated click handling for reliable navigation
+  grid.addEventListener("click", (e) => {
+    console.log("Grid click event:", e.target);
+    const btn = e.target.closest(".view-feature-details");
+    const name = e.target.closest(".feature-name");
+    let card = null;
+    if (btn) {
+      console.log("Clicked view details button");
+      card = btn.closest(".feature-card");
+      e.preventDefault();
+      e.stopPropagation();
+    } else if (name) {
+      console.log("Clicked feature name");
+      card = name.closest(".feature-card");
+    } else {
+      const maybeCard = e.target.closest(".feature-card");
+      if (maybeCard && e.target.tagName !== "VIDEO") {
+        console.log("Clicked elsewhere in card");
+        card = maybeCard;
+      }
+    }
+    if (!card) {
+      console.log("No card found for click");
+      return;
+    }
+    const endpoint = card.getAttribute("data-endpoint");
+    console.log("Card endpoint:", endpoint);
+    if (endpoint) showFeatureDetailPage(endpoint);
   });
 }
 
 // Load features
 async function loadFeatures() {
+  console.log("Loading features...");
   try {
     const response = await fetch("/api/features");
+    console.log("Features response:", response);
     features = await response.json();
+    console.log("Loaded features:", features);
     displayFeatures();
     updateStats();
   } catch (error) {
@@ -379,338 +398,342 @@ async function loadFeatures() {
 
 // Show feature detail as a full page (hides all tab content, shows detail page)
 function showFeatureDetailPage(endpoint) {
-  const feature = features.find((f) => f.endpoint === endpoint);
-  if (!feature) return;
-  // Hide all tab content
-  document
-    .querySelectorAll(".tab-content")
-    .forEach((tab) => tab.classList.add("hidden"));
-  // Show detail page
-  const page = document.getElementById("featureDetailPage");
-  if (!page) return;
-  page.classList.remove("hidden");
-  // Fill content
-  const titleEl = document.getElementById("featureDetailTitle");
-  const promptEl = document.getElementById("featureDetailPrompt");
-  titleEl.textContent = feature.endpoint;
-  promptEl.textContent = feature.prompt;
-  const videoUrl =
-    featureGraphics[feature.endpoint] ||
-    `https://res.cloudinary.com/do60wtwwc/video/upload/v1754319544/generated-videos/generated-videos/${feature.endpoint}.mp4#t=0.5`;
-  document.getElementById("featureDetailVideo").src = videoUrl;
+  console.log("showFeatureDetailPage called with endpoint:", endpoint);
+  console.log("Current features array:", features);
+  try {
+    const feature = features.find((f) => f.endpoint === endpoint);
+    console.log("Found feature:", feature);
+    if (!feature) {
+      console.error("Feature not found for endpoint:", endpoint);
+      return;
+    }
+    // Hide all tab content and modals (but not the page we want to show)
+    console.log("Hiding other elements...");
+    const elementsToHide = document.querySelectorAll(
+      ".tab-content, #featureCrudModal, #createTemplateModal, #stepDetailPage"
+    );
+    console.log("Elements to hide:", elementsToHide);
+    elementsToHide.forEach((el) => {
+      if (el) {
+        console.log("Hiding element:", el.id, el.className);
+        el.classList.add("hidden");
+        el.style.display = "none";
+      }
+    });
+    // Show detail page robustly
+    const page = document.getElementById("featureDetailPage");
+    console.log("Feature detail page element:", page);
+    if (!page) {
+      console.error("featureDetailPage element not found");
+      // Fallback: show filters tab if detail page missing
+      const filtersTab = document.getElementById("tab-filters");
+      if (filtersTab) {
+        filtersTab.classList.remove("hidden");
+        filtersTab.style.display = "";
+      }
+      return;
+    }
 
-  // --- Feature video generation logic ---
-  let uploadedImageUrl = null;
-  const uploadSection = document.getElementById("featureImageUploadSection");
-  const input = document.getElementById("featureImageInput");
-  const preview = document.getElementById("featureImagePreview");
-  const uploadStatus = document.getElementById("featureUploadStatus");
-  const genBtn = document.getElementById("featureGenerateVideoBtn");
-  const genStatus = document.getElementById("featureGenStatus");
+    // Force show the page with multiple approaches
+    page.classList.remove("hidden");
+    page.style.display = "block";
+    page.style.visibility = "visible";
+    page.style.position = "absolute";
+    page.style.top = "0";
+    page.style.left = "0";
+    page.style.right = "0";
+    page.style.bottom = "0";
+    page.style.zIndex = "10";
+    page.style.backgroundColor = "#f9fafb"; // bg-gray-50
 
-  // Reset UI
-  if (preview) {
-    preview.style.display = "none";
-    preview.src = "";
-  }
-  if (uploadStatus) uploadStatus.textContent = "";
-  if (genStatus) genStatus.textContent = "";
-  uploadedImageUrl = null;
-
-  // Drag & drop
-  // Generated Videos Section
-  const generatedVideosSectionId = "featureDetailGeneratedVideos";
-  let generatedVideosSection = document.getElementById(
-    generatedVideosSectionId
-  );
-  if (!generatedVideosSection) {
-    generatedVideosSection = document.createElement("div");
-    generatedVideosSection.id = generatedVideosSectionId;
-    generatedVideosSection.className = "mb-6";
-    // Insert after the main video
-    const detailPage = document.getElementById("featureDetailPage");
-    const mainVideo = document.getElementById("featureDetailVideo");
-    if (detailPage && mainVideo && mainVideo.parentElement) {
-      mainVideo.parentElement.insertBefore(
-        generatedVideosSection,
-        mainVideo.nextSibling
+    // Also ensure parent containers are visible
+    let parent = page.parentElement;
+    while (parent && parent !== document.body) {
+      console.log(
+        "Checking parent:",
+        parent.tagName,
+        parent.id,
+        parent.className
       );
-    } else if (detailPage) {
-      detailPage.appendChild(generatedVideosSection);
+      parent.style.display = "";
+      parent.classList.remove("hidden");
+      parent = parent.parentElement;
+    }
+
+    console.log("Page should now be visible");
+    console.log("Page computed style:", window.getComputedStyle(page).display);
+    console.log("Page classes:", page.className);
+    console.log("Page visibility:", window.getComputedStyle(page).visibility);
+    console.log("Page position in viewport:", page.getBoundingClientRect());
+
+    // Fill content safely
+    const titleEl = document.getElementById("featureDetailTitle");
+    const promptEl = document.getElementById("featureDetailPrompt");
+    console.log("Title element:", titleEl);
+    console.log("Prompt element:", promptEl);
+    if (titleEl) titleEl.textContent = feature.endpoint;
+    if (promptEl) promptEl.textContent = feature.prompt || "";
+    const videoUrl =
+      featureGraphics[feature.endpoint] ||
+      `https://res.cloudinary.com/do60wtwwc/video/upload/v1754319544/generated-videos/generated-videos/${feature.endpoint}.mp4#t=0.5`;
+    const videoEl = document.getElementById("featureDetailVideo");
+    console.log("Video element:", videoEl, "Video URL:", videoUrl);
+    if (videoEl) videoEl.src = videoUrl;
+
+    // --- Feature video generation logic ---
+    let uploadedImageUrl = null;
+    const uploadSection = document.getElementById("featureImageUploadSection");
+    const input = document.getElementById("featureImageInput");
+    const preview = document.getElementById("featureImagePreview");
+    const uploadStatus = document.getElementById("featureUploadStatus");
+    const genBtn = document.getElementById("featureGenerateVideoBtn");
+    const genStatus = document.getElementById("featureGenStatus");
+
+    // Reset UI
+    if (preview) {
+      preview.style.display = "none";
+      preview.src = "";
+    }
+    if (uploadStatus) uploadStatus.textContent = "";
+    if (genStatus) genStatus.textContent = "";
+    uploadedImageUrl = null;
+
+    // Drag & drop wiring
+    if (uploadSection && input) {
+      uploadSection.addEventListener("dragover", (e) => {
+        e.preventDefault();
+        uploadSection.classList.add("dragover");
+      });
+      uploadSection.addEventListener("dragleave", () =>
+        uploadSection.classList.remove("dragover")
+      );
+      uploadSection.addEventListener("drop", (e) => {
+        e.preventDefault();
+        uploadSection.classList.remove("dragover");
+        const files = e.dataTransfer.files;
+        if (files.length > 0 && files[0].type.startsWith("image/")) {
+          input.files = files;
+          handleFeatureImageUpload();
+        }
+      });
+      uploadSection.onclick = (e) => {
+        if (e.target.tagName !== "INPUT") input.click();
+      };
+    }
+    if (input) {
+      input.onchange = handleFeatureImageUpload;
+    }
+    function handleFeatureImageUpload() {
+      const file = input.files && input.files[0];
+      if (!file) return;
+      const formData = new FormData();
+      formData.append("image", file);
+      if (uploadStatus) uploadStatus.textContent = "Uploading...";
+      fetch("/api/cloudinary/upload", { method: "POST", body: formData })
+        .then((res) => res.json())
+        .then((result) => {
+          if (result && result.success && result.url) {
+            uploadedImageUrl = result.url;
+            if (preview) {
+              preview.src = result.url;
+              preview.style.display = "block";
+            }
+            if (uploadStatus) uploadStatus.textContent = "Image uploaded!";
+          } else {
+            if (uploadStatus) uploadStatus.textContent = "Upload failed.";
+          }
+          input.value = "";
+        })
+        .catch(() => {
+          if (uploadStatus) uploadStatus.textContent = "Upload failed.";
+          input.value = "";
+        });
+    }
+
+    if (genBtn) {
+      genBtn.onclick = async function () {
+        if (!uploadedImageUrl) {
+          if (genStatus)
+            genStatus.textContent = "Please upload an image first.";
+          return;
+        }
+        genBtn.disabled = true;
+        if (genStatus) genStatus.textContent = "Generating video...";
+        try {
+          const response = await fetch(
+            `/api/generate-video/${encodeURIComponent(feature.endpoint)}`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ imageUrl: uploadedImageUrl }),
+            }
+          );
+          const data = await response.json();
+          if (response.ok && data && data.video && data.video.url) {
+            const vEl = document.getElementById("featureDetailVideo");
+            if (vEl) vEl.src = data.video.url;
+            if (genStatus) genStatus.textContent = "Video generated!";
+            await loadFeatures();
+          } else {
+            throw new Error((data && data.error) || "Failed to generate video");
+          }
+        } catch (e) {
+          if (genStatus) genStatus.textContent = `Error: ${e.message || e}`;
+        } finally {
+          genBtn.disabled = false;
+        }
+      };
+    }
+    // Inline edit for feature name (guarded)
+    const editNameBtn = document.getElementById("editFeatureNameBtn");
+    if (editNameBtn && titleEl) {
+      editNameBtn.onclick = function () {
+        const input = document.createElement("input");
+        input.type = "text";
+        input.value = feature.endpoint;
+        input.className =
+          "border border-gray-300 rounded px-2 py-1 text-xl font-bold mr-2";
+        input.style.minWidth = "150px";
+        const saveBtn = document.createElement("button");
+        saveBtn.textContent = "Save";
+        saveBtn.className =
+          "ml-2 px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700";
+        const cancelBtn = document.createElement("button");
+        cancelBtn.textContent = "Cancel";
+        cancelBtn.className =
+          "ml-2 px-2 py-1 bg-gray-300 text-gray-700 rounded hover:bg-gray-400";
+        const parent = titleEl.parentElement;
+        parent.replaceChild(input, titleEl);
+        parent.insertBefore(
+          saveBtn,
+          parent.querySelector("#editFeatureNameBtn")
+        );
+        parent.insertBefore(cancelBtn, saveBtn.nextSibling);
+        parent.querySelector("#editFeatureNameBtn").style.display = "none";
+        input.focus();
+        saveBtn.onclick = async function (e) {
+          e.preventDefault();
+          const newName = input.value.trim();
+          if (!newName || newName === feature.endpoint) {
+            cancelBtn.onclick();
+            return;
+          }
+          const res = await fetch(
+            `/api/features/${encodeURIComponent(feature.endpoint)}/rename`,
+            {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ newEndpoint: newName }),
+            }
+          );
+          if (res.ok) {
+            feature.endpoint = newName;
+            titleEl.textContent = newName;
+            parent.replaceChild(titleEl, input);
+            parent.querySelector("#editFeatureNameBtn").style.display =
+              "inline-block";
+            saveBtn.remove();
+            cancelBtn.remove();
+            loadFeatures();
+          } else {
+            alert("Failed to update feature name");
+          }
+        };
+        cancelBtn.onclick = function (e) {
+          if (e) e.preventDefault();
+          parent.replaceChild(titleEl, input);
+          parent.querySelector("#editFeatureNameBtn").style.display =
+            "inline-block";
+          saveBtn.remove();
+          cancelBtn.remove();
+        };
+      };
+    }
+
+    // Inline edit for prompt (guarded)
+    const editPromptBtn = document.getElementById("editFeaturePromptBtn");
+    if (editPromptBtn && promptEl) {
+      editPromptBtn.onclick = function () {
+        const textarea = document.createElement("textarea");
+        textarea.value = feature.prompt;
+        textarea.className =
+          "border border-gray-300 rounded px-2 py-1 w-full text-base";
+        textarea.rows = 3;
+        const saveBtn = document.createElement("button");
+        saveBtn.textContent = "Save";
+        saveBtn.className =
+          "ml-2 px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700";
+        const cancelBtn = document.createElement("button");
+        cancelBtn.textContent = "Cancel";
+        cancelBtn.className =
+          "ml-2 px-2 py-1 bg-gray-300 text-gray-700 rounded hover:bg-gray-400";
+        const parent = promptEl.parentElement;
+        parent.replaceChild(textarea, promptEl);
+        parent.appendChild(saveBtn);
+        parent.appendChild(cancelBtn);
+        editPromptBtn.style.display = "none";
+        textarea.focus();
+        saveBtn.onclick = async function (e) {
+          e.preventDefault();
+          const newPrompt = textarea.value.trim();
+          if (!newPrompt || newPrompt === feature.prompt) {
+            cancelBtn.onclick();
+            return;
+          }
+          const res = await fetch(
+            `/api/features/${encodeURIComponent(feature.endpoint)}`,
+            {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ prompt: newPrompt }),
+            }
+          );
+          if (res.ok) {
+            feature.prompt = newPrompt;
+            promptEl.textContent = newPrompt;
+            parent.replaceChild(promptEl, textarea);
+            editPromptBtn.style.display = "inline-block";
+            saveBtn.remove();
+            cancelBtn.remove();
+            loadFeatures();
+          } else {
+            alert("Failed to update prompt");
+          }
+        };
+        cancelBtn.onclick = function (e) {
+          if (e) e.preventDefault();
+          parent.replaceChild(promptEl, textarea);
+          editPromptBtn.style.display = "inline-block";
+          saveBtn.remove();
+          cancelBtn.remove();
+        };
+      };
+    }
+
+    // Delete button (guarded)
+    const deleteBtn = document.getElementById("featureDetailDeleteBtn");
+    if (deleteBtn && page) {
+      deleteBtn.onclick = async function () {
+        if (confirm("Delete this feature?")) {
+          await fetch(`/api/features/${encodeURIComponent(feature.endpoint)}`, {
+            method: "DELETE",
+          });
+          page.classList.add("hidden");
+          loadFeatures();
+          const filtersTab = document.getElementById("tab-filters");
+          if (filtersTab) filtersTab.classList.remove("hidden");
+        }
+      };
+    }
+  } catch (err) {
+    console.error("showFeatureDetailPage failed:", err);
+    // Always show filters tab if anything fails
+    const filtersTab = document.getElementById("tab-filters");
+    if (filtersTab) {
+      filtersTab.classList.remove("hidden");
+      filtersTab.style.display = "";
     }
   }
-  generatedVideosSection.innerHTML = `<div class="font-semibold mb-2">Generated Videos</div><div id="featureDetailGeneratedVideosList">Loading...</div>`;
-  // Fetch and render all generated videos for this feature
-  fetch(`/api/videos/${endpoint}`)
-    .then((res) => res.json())
-    .then((videos) => {
-      const listDiv = document.getElementById(
-        "featureDetailGeneratedVideosList"
-      );
-      if (Array.isArray(videos) && videos.length > 0) {
-        listDiv.innerHTML = videos
-          .map(
-            (v) => `
-                    <div class="mb-4">
-                      <video src="${
-                        v.url
-                      }" controls style="width:100%;max-width:400px;"></video>
-                      <div class="text-xs text-gray-500 mt-1">${new Date(
-                        v.createdAt
-                      ).toLocaleString()}</div>
-                      <button class="set-graphic-btn px-2 py-1 bg-blue-500 text-white rounded mt-2" data-url="${
-                        v.url
-                      }">Set as Graphic</button>
-                    </div>
-                  `
-          )
-          .join("");
-      } else {
-        listDiv.innerHTML =
-          '<div class="text-gray-500">No videos generated yet.</div>';
-      }
-
-      listDiv.querySelectorAll(".set-graphic-btn").forEach((btn) => {
-        btn.onclick = async function () {
-          const videoUrl = btn.getAttribute("data-url");
-          await fetch(`/api/feature-graphic/${encodeURIComponent(endpoint)}`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ url: videoUrl }),
-          });
-          // Update the main video preview
-          document.getElementById("featureDetailVideo").src = videoUrl;
-          // Optionally update featureGraphics and reload features for card update
-          featureGraphics[endpoint] = videoUrl;
-          await loadFeatures();
-        };
-      });
-    });
-  // Add event listeners for set-graphic buttons
-
-  if (uploadSection && input) {
-    uploadSection.addEventListener("dragover", (e) => {
-      e.preventDefault();
-      uploadSection.classList.add("dragover");
-    });
-    uploadSection.addEventListener("dragleave", () =>
-      uploadSection.classList.remove("dragover")
-    );
-    uploadSection.addEventListener("drop", (e) => {
-      e.preventDefault();
-      uploadSection.classList.remove("dragover");
-      const files = e.dataTransfer.files;
-      if (files.length > 0 && files[0].type.startsWith("image/")) {
-        input.files = files;
-        handleFeatureImageUpload();
-      }
-    });
-    uploadSection.onclick = (e) => {
-      if (e.target.tagName !== "INPUT") input.click();
-    };
-  }
-  if (input) {
-    input.onchange = handleFeatureImageUpload;
-  }
-  function handleFeatureImageUpload() {
-    const file = input.files && input.files[0];
-    if (!file) return;
-    const formData = new FormData();
-    formData.append("image", file);
-    if (uploadStatus) uploadStatus.textContent = "Uploading...";
-    fetch("/api/cloudinary/upload", { method: "POST", body: formData })
-      .then((res) => res.json())
-      .then((result) => {
-        if (result && result.success && result.url) {
-          uploadedImageUrl = result.url;
-          if (preview) {
-            preview.src = result.url;
-            preview.style.display = "block";
-          }
-          if (uploadStatus) uploadStatus.textContent = "Image uploaded!";
-        } else {
-          if (uploadStatus) uploadStatus.textContent = "Upload failed.";
-        }
-        input.value = "";
-      })
-      .catch(() => {
-        if (uploadStatus) uploadStatus.textContent = "Upload failed.";
-        input.value = "";
-      });
-  }
-
-  if (genBtn) {
-    genBtn.onclick = async function () {
-      if (!uploadedImageUrl) {
-        if (genStatus) genStatus.textContent = "Please upload an image first.";
-        return;
-      }
-      genBtn.disabled = true;
-      if (genStatus) genStatus.textContent = "Generating video...";
-      try {
-        // Call backend to generate video (Alibaba model)
-        const response = await fetch(
-          `/api/generate-video/${encodeURIComponent(feature.endpoint)}`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ imageUrl: uploadedImageUrl }),
-          }
-        );
-        const data = await response.json();
-        if (response.ok && data && data.video && data.video.url) {
-          // Update video preview
-          document.getElementById("featureDetailVideo").src = data.video.url;
-          if (genStatus) genStatus.textContent = "Video generated!";
-          // Optionally reload features to update video in grid
-          await loadFeatures();
-        } else {
-          throw new Error((data && data.error) || "Failed to generate video");
-        }
-      } catch (e) {
-        if (genStatus) genStatus.textContent = `Error: ${e.message || e}`;
-      } finally {
-        genBtn.disabled = false;
-      }
-    };
-  }
-
-  // Inline edit for feature name
-  document.getElementById("editFeatureNameBtn").onclick = function () {
-    // Replace title with input and save/cancel buttons
-    const input = document.createElement("input");
-    input.type = "text";
-    input.value = feature.endpoint;
-    input.className =
-      "border border-gray-300 rounded px-2 py-1 text-xl font-bold mr-2";
-    input.style.minWidth = "150px";
-    const saveBtn = document.createElement("button");
-    saveBtn.textContent = "Save";
-    saveBtn.className =
-      "ml-2 px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700";
-    const cancelBtn = document.createElement("button");
-    cancelBtn.textContent = "Cancel";
-    cancelBtn.className =
-      "ml-2 px-2 py-1 bg-gray-300 text-gray-700 rounded hover:bg-gray-400";
-    const parent = titleEl.parentElement;
-    parent.replaceChild(input, titleEl);
-    parent.insertBefore(saveBtn, parent.querySelector("#editFeatureNameBtn"));
-    parent.insertBefore(cancelBtn, saveBtn.nextSibling);
-    parent.querySelector("#editFeatureNameBtn").style.display = "none";
-    input.focus();
-    saveBtn.onclick = async function (e) {
-      e.preventDefault();
-      const newName = input.value.trim();
-      if (!newName || newName === feature.endpoint) {
-        cancelBtn.onclick();
-        return;
-      }
-      // Call backend to update name
-      const res = await fetch(
-        `/api/features/${encodeURIComponent(feature.endpoint)}/rename`,
-        {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ newEndpoint: newName }),
-        }
-      );
-      if (res.ok) {
-        feature.endpoint = newName;
-        titleEl.textContent = newName;
-        parent.replaceChild(titleEl, input);
-        parent.querySelector("#editFeatureNameBtn").style.display =
-          "inline-block";
-        saveBtn.remove();
-        cancelBtn.remove();
-        loadFeatures();
-      } else {
-        alert("Failed to update feature name");
-      }
-    };
-    cancelBtn.onclick = function (e) {
-      if (e) e.preventDefault();
-      parent.replaceChild(titleEl, input);
-      parent.querySelector("#editFeatureNameBtn").style.display =
-        "inline-block";
-      saveBtn.remove();
-      cancelBtn.remove();
-    };
-  };
-
-  // Inline edit for prompt
-  document.getElementById("editFeaturePromptBtn").onclick = function () {
-    // Replace prompt with textarea and save/cancel buttons
-    const textarea = document.createElement("textarea");
-    textarea.value = feature.prompt;
-    textarea.className =
-      "border border-gray-300 rounded px-2 py-1 w-full text-base";
-    textarea.rows = 3;
-    const saveBtn = document.createElement("button");
-    saveBtn.textContent = "Save";
-    saveBtn.className =
-      "ml-2 px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700";
-    const cancelBtn = document.createElement("button");
-    cancelBtn.textContent = "Cancel";
-    cancelBtn.className =
-      "ml-2 px-2 py-1 bg-gray-300 text-gray-700 rounded hover:bg-gray-400";
-    const parent = promptEl.parentElement;
-    parent.replaceChild(textarea, promptEl);
-    parent.appendChild(saveBtn);
-    parent.appendChild(cancelBtn);
-    document.getElementById("editFeaturePromptBtn").style.display = "none";
-    textarea.focus();
-    saveBtn.onclick = async function (e) {
-      e.preventDefault();
-      const newPrompt = textarea.value.trim();
-      if (!newPrompt || newPrompt === feature.prompt) {
-        cancelBtn.onclick();
-        return;
-      }
-      // Call backend to update prompt
-      const res = await fetch(
-        `/api/features/${encodeURIComponent(feature.endpoint)}`,
-        {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ prompt: newPrompt }),
-        }
-      );
-      if (res.ok) {
-        feature.prompt = newPrompt;
-        promptEl.textContent = newPrompt;
-        parent.replaceChild(promptEl, textarea);
-        document.getElementById("editFeaturePromptBtn").style.display =
-          "inline-block";
-        saveBtn.remove();
-        cancelBtn.remove();
-        loadFeatures();
-      } else {
-        alert("Failed to update prompt");
-      }
-    };
-    cancelBtn.onclick = function (e) {
-      if (e) e.preventDefault();
-      parent.replaceChild(promptEl, textarea);
-      document.getElementById("editFeaturePromptBtn").style.display =
-        "inline-block";
-      saveBtn.remove();
-      cancelBtn.remove();
-    };
-  };
-
-  // Delete button
-  document.getElementById("featureDetailDeleteBtn").onclick =
-    async function () {
-      if (confirm("Delete this feature?")) {
-        await fetch(`/api/features/${encodeURIComponent(feature.endpoint)}`, {
-          method: "DELETE",
-        });
-        page.classList.add("hidden");
-        loadFeatures();
-        // Show filters tab again
-        document.getElementById("tab-filters").classList.remove("hidden");
-      }
-    };
 }
 
 // Load persisted feature graphics from backend
@@ -725,31 +748,55 @@ async function loadFeatureGraphics() {
       });
     }
   } catch (e) {
+    // Non-fatal: just proceed without persisted graphics
     featureGraphics = {};
-    // Hide all tab contents
-    document.querySelectorAll(".tab-content").forEach((tab) => {
-      tab.classList.remove("active");
-    });
-
-    // Remove active class from all tab buttons
-    document.querySelectorAll(".tab-button").forEach((button) => {
-      button.classList.remove("active");
-    });
-
-    // Show selected tab content
-    document.getElementById(tabName + "-tab").classList.add("active");
-
-    // Add active class to clicked button
-    event.target.classList.add("active");
   }
 }
 
 // Close feature detail page and show filters tab
 function closeFeatureDetailPage() {
+  console.log("Closing feature detail page");
+
+  // Hide the feature detail page
   const page = document.getElementById("featureDetailPage");
-  if (page) page.classList.add("hidden");
+  if (page) {
+    // Reset all the styles we set when showing the page
+    page.classList.add("hidden");
+    page.style.display = "none";
+    page.style.visibility = "hidden";
+    page.style.position = "";
+    page.style.top = "";
+    page.style.left = "";
+    page.style.right = "";
+    page.style.bottom = "";
+    page.style.zIndex = "";
+    page.style.backgroundColor = "";
+    console.log("Feature detail page hidden");
+  }
+
+  // Ensure all modals are hidden
+  const modalsToHide = [
+    "createTemplateModal",
+    "featureCrudModal",
+    "stepDetailPage",
+  ];
+
+  modalsToHide.forEach((modalId) => {
+    const modal = document.getElementById(modalId);
+    if (modal) {
+      modal.classList.add("hidden");
+      modal.style.display = "none";
+      console.log(`${modalId} hidden`);
+    }
+  });
+
   // Show filters tab again
-  document.getElementById("tab-filters").classList.remove("hidden");
+  const filtersTab = document.getElementById("tab-filters");
+  if (filtersTab) {
+    filtersTab.classList.remove("hidden");
+    filtersTab.style.display = "";
+    console.log("Filters tab shown");
+  }
 }
 
 async function promptRenameEndpoint(oldEndpoint) {
@@ -817,8 +864,12 @@ function displayTemplates() {
   );
 
   grid.innerHTML = filteredTemplates
-    .map(
-      (template) => `
+    .map((template) => {
+      // Flatten all steps from all subcategories for step count
+      const allSteps = (template.subcategories || []).flatMap(
+        (subcat) => subcat.steps || []
+      );
+      return `
         <div class="bg-white rounded-xl shadow-md p-6 mb-6 hover:shadow-lg transition-shadow border border-gray-100">
           <div class="flex items-start justify-between mb-4">
             <div>
@@ -844,37 +895,43 @@ function displayTemplates() {
           </div>
           <div class="mb-4">
             <div class="font-semibold text-gray-700 mb-2 flex items-center gap-2">
-              <i class="fas fa-list-ol"></i> ${template.steps.length} ${
-        template.steps.length === 1 ? "step" : "steps"
+              <i class="fas fa-list-ol"></i> ${allSteps.length} ${
+        allSteps.length === 1 ? "step" : "steps"
       }
             </div>
             <div class="space-y-2">
-              ${template.steps
+              ${(template.subcategories || [])
                 .map(
-                  (step, index) => `
-                    <div class="flex items-start gap-3 bg-gray-50 rounded-lg p-3 border border-gray-200 hover:bg-blue-50 cursor-pointer transition" data-template-id="${
-                      template.id
-                    }" data-step-index="${index}">
-                      <div class="flex-shrink-0 w-7 h-7 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-bold">${
-                        index + 1
+                  (subcat) =>
+                    `<div class="mb-2">
+                      <div class="font-semibold text-blue-700 mb-1">${
+                        subcat.name
                       }</div>
-                      <div class="flex-1">
-                        <div class="font-medium text-gray-800">${
-                          step.endpoint
-                        }</div>
-                        <div class="text-xs text-gray-500 truncate" title="${
-                          step.prompt || ""
-                        }">${step.prompt || "(uses default prompt)"}</div>
-                      </div>
-                    </div>
-                  `
+                      ${(subcat.steps || [])
+                        .map(
+                          (step, index) => `
+                            <div class="flex items-start gap-3 bg-gray-50 rounded-lg p-3 border border-gray-200 hover:bg-blue-50 cursor-pointer transition">
+                              <div class="flex-shrink-0 w-7 h-7 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-bold">${
+                                index + 1
+                              }</div>
+                              <div class="flex-1">
+                                <div class="font-medium text-gray-800">${
+                                  step.endpoint
+                                }</div>
+                                
+                              </div>
+                            </div>
+                          `
+                        )
+                        .join("")}
+                    </div>`
                 )
                 .join("")}
             </div>
           </div>
         </div>
-      `
-    )
+      `;
+    })
     .join("");
 
   // Add click listeners for step items
@@ -1003,9 +1060,13 @@ async function saveStepDetail() {
     .getElementById("stepDetailEndpointInput")
     .value.trim();
   const prompt = document.getElementById("stepDetailPromptInput").value.trim();
+  const status = document.getElementById("stepDetailStatus");
+
   if (!endpoint) {
-    document.getElementById("stepDetailStatus").textContent =
-      "Endpoint is required.";
+    if (status) {
+      status.textContent = "Endpoint is required.";
+      status.className = "status-message status-error";
+    }
     return;
   }
   // Update in-memory and persist full template via PUT
@@ -1075,55 +1136,194 @@ function openCreateTemplateModal() {
   document.getElementById("createTemplateModal").style.display = "block";
   document.getElementById("templateName").value = "";
   document.getElementById("templateDescription").value = "";
-  document.getElementById("templateSteps").innerHTML = "";
+  // Clear any legacy steps container if present
+  const stepsEl = document.getElementById("templateSteps");
+  if (stepsEl) stepsEl.innerHTML = "";
+  // Clear dynamic subcategories UI from any previous edit session
+  const subcatsContainer = document.getElementById("subcategoriesContainer");
+  if (subcatsContainer) subcatsContainer.innerHTML = "";
+  // Reset add-subcategory helpers if present
+  const subcatInput = document.getElementById("newSubcategoryInput");
+  if (subcatInput) subcatInput.value = "";
+  const subcatError = document.getElementById("subcategoryError");
+  if (subcatError) subcatError.textContent = "";
   loadAvailableEndpoints();
   // Change modal title
   document.querySelector("#createTemplateModal h2").textContent =
     "Create New Template";
   // Change save button text
-  document.querySelector("#createTemplateModal .btn-primary").textContent =
-    "Save Template";
+  const createSaveBtn = document.getElementById("saveTemplateBtn");
+  if (createSaveBtn) {
+    createSaveBtn.textContent = "Save Template";
+  } else {
+    const fallbackBtn = document.querySelector(
+      "#createTemplateModal .btn-primary"
+    );
+    if (fallbackBtn) fallbackBtn.textContent = "Save Template";
+  }
 }
 
 // Open modal for editing an existing template
 async function editTemplate(templateId) {
   const template = templates.find((t) => t.id === templateId);
   if (!template) return;
+  // Ensure endpoints are loaded
+  if (!window.featureEndpointsFull || !window.featureEndpointsFull.length) {
+    try {
+      const res = await fetch("/api/features");
+      window.featureEndpointsFull = await res.json();
+    } catch {
+      window.featureEndpointsFull = [];
+    }
+  }
   editingTemplateId = templateId;
   document.getElementById("createTemplateModal").style.display = "block";
   document.getElementById("templateName").value = template.name;
   document.getElementById("templateDescription").value =
     template.description || "";
-  document.getElementById("templateSteps").innerHTML = "";
-  await loadAvailableEndpoints();
-  // Fetch persisted step videos
-  let stepVideos = [];
-  try {
-    const res = await fetch(`/api/templates/${templateId}/step-videos`);
-    if (res.ok) stepVideos = await res.json();
-  } catch {}
-  template.steps.forEach((step, idx) => {
-    addTemplateStep(step.endpoint, step.prompt);
-    // After adding, show video if exists
-    const videoObj = stepVideos.find((v) => v.stepIndex === idx);
-    if (videoObj && videoObj.videoUrl) {
-      const stepsContainer = document.getElementById("templateSteps");
-      const stepItem = stepsContainer.children[idx];
-      if (stepItem) {
-        const videoPreviewDiv = stepItem.querySelector(".step-video-preview");
-        if (videoPreviewDiv) {
-          videoPreviewDiv.style.display = "block";
-          videoPreviewDiv.innerHTML = `<video src="${videoObj.videoUrl}" controls style="width:100%;max-width:400px;"></video>`;
+  // Clear subcategories UI
+  const subcatsContainer = document.getElementById("subcategoriesContainer");
+  if (subcatsContainer) subcatsContainer.innerHTML = "";
+  // Render subcategories and steps
+  (template.subcategories || []).forEach((subcat) => {
+    // Create subcategory element
+    const subcatDiv = document.createElement("div");
+    subcatDiv.className = "border rounded-lg p-4 mb-2 bg-gray-50";
+    // Subcategory name (readonly)
+    const nameLabel = document.createElement("div");
+    nameLabel.className = "font-semibold mb-2 text-blue-700";
+    nameLabel.textContent = subcat.name;
+    subcatDiv.appendChild(nameLabel);
+    // Steps container
+    const stepsDiv = document.createElement("div");
+    stepsDiv.className = "space-y-2 mb-2";
+    subcatDiv.appendChild(stepsDiv);
+    // Add existing steps
+    (subcat.steps || []).forEach((step) => {
+      const stepDiv = document.createElement("div");
+      stepDiv.className = "flex gap-2 items-center";
+      // Endpoint select
+      const select = document.createElement("select");
+      select.className = "flex-1 border border-gray-300 rounded px-2 py-1";
+      select.required = true;
+      select.innerHTML =
+        `<option value="">Select endpoint...</option>` +
+        window.featureEndpointsFull
+          .map(
+            (f) =>
+              `<option value="${f.endpoint}" ${
+                step.endpoint === f.endpoint ? "selected" : ""
+              }>${f.name ? f.name : f.endpoint}</option>`
+          )
+          .join("");
+      select.value = step.endpoint;
+      stepDiv.appendChild(select);
+      // Remove button
+      const removeStepBtn = document.createElement("button");
+      removeStepBtn.type = "button";
+      removeStepBtn.className =
+        "text-red-500 hover:text-red-700 text-xs removeStepBtn";
+      removeStepBtn.textContent = "Remove";
+      removeStepBtn.onclick = () => stepDiv.remove();
+      stepDiv.appendChild(removeStepBtn);
+      // Generated videos list for this step
+      const generatedWrap = document.createElement("div");
+      generatedWrap.className = "step-generated-videos w-full mt-2";
+      stepDiv.appendChild(generatedWrap);
+      stepsDiv.appendChild(stepDiv);
+      // Wire generated videos list
+      const onPick = (url) => {
+        // show a small inline preview on pick
+        let preview = stepDiv.querySelector(".step-picked-video");
+        if (!preview) {
+          preview = document.createElement("div");
+          preview.className = "step-picked-video w-full mt-2";
+          stepDiv.appendChild(preview);
         }
-      }
-    }
+        preview.innerHTML = `<video src="${url}" controls style="width:100%;max-width:400px;"></video>`;
+      };
+      const refresh = () =>
+        renderStepGeneratedVideos(generatedWrap, select.value, onPick);
+      select.addEventListener("change", refresh);
+      refresh();
+    });
+    // Add Step button
+    const addStepBtn = document.createElement("button");
+    addStepBtn.type = "button";
+    addStepBtn.className =
+      "px-3 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 text-xs";
+    addStepBtn.textContent = "+ Add Step";
+    addStepBtn.onclick = function () {
+      const stepDiv = document.createElement("div");
+      stepDiv.className = "flex gap-2 items-center";
+      const select = document.createElement("select");
+      select.className = "flex-1 border border-gray-300 rounded px-2 py-1";
+      select.required = true;
+      select.innerHTML =
+        `<option value="">Select endpoint...</option>` +
+        window.featureEndpointsFull
+          .map(
+            (f) =>
+              `<option value="${f.endpoint}">${
+                f.name ? f.name : f.endpoint
+              }</option>`
+          )
+          .join("");
+      stepDiv.appendChild(select);
+      const removeStepBtn = document.createElement("button");
+      removeStepBtn.type = "button";
+      removeStepBtn.className =
+        "text-red-500 hover:text-red-700 text-xs removeStepBtn";
+      removeStepBtn.textContent = "Remove";
+      removeStepBtn.onclick = () => stepDiv.remove();
+      stepDiv.appendChild(removeStepBtn);
+      // Generated videos list
+      const generatedWrap = document.createElement("div");
+      generatedWrap.className = "step-generated-videos w-full mt-2";
+      stepDiv.appendChild(generatedWrap);
+      stepsDiv.appendChild(stepDiv);
+      const onPick = (url) => {
+        let preview = stepDiv.querySelector(".step-picked-video");
+        if (!preview) {
+          preview = document.createElement("div");
+          preview.className = "step-picked-video w-full mt-2";
+          stepDiv.appendChild(preview);
+        }
+        preview.innerHTML = `<video src="${url}" controls style="width:100%;max-width:400px;"></video>`;
+      };
+      const refresh = () =>
+        renderStepGeneratedVideos(generatedWrap, select.value, onPick);
+      select.addEventListener("change", refresh);
+      refresh();
+    };
+    subcatDiv.appendChild(addStepBtn);
+    // Remove subcategory button
+    const removeSubcatBtn = document.createElement("button");
+    removeSubcatBtn.type = "button";
+    removeSubcatBtn.className = "ml-4 text-red-500 hover:text-red-700 text-xs";
+    removeSubcatBtn.textContent = "Remove Subcategory";
+    removeSubcatBtn.onclick = () => subcatDiv.remove();
+    subcatDiv.appendChild(removeSubcatBtn);
+    subcatsContainer.appendChild(subcatDiv);
   });
   // Change modal title
-  document.querySelector("#createTemplateModal h2").textContent =
-    "Edit Template";
+  const modalTitle = document.querySelector("#createTemplateModal h2");
+  if (modalTitle) {
+    modalTitle.textContent = "Edit Template";
+  } else {
+    console.warn("Modal title h2 not found in #createTemplateModal");
+  }
   // Change save button text
-  document.querySelector("#createTemplateModal .btn-primary").textContent =
-    "Update Template";
+  const editSaveBtn = document.getElementById("saveTemplateBtn");
+  if (editSaveBtn) {
+    editSaveBtn.textContent = "Update Template";
+  } else {
+    const fallbackBtn = document.querySelector(
+      "#createTemplateModal .btn-primary"
+    );
+    if (fallbackBtn) fallbackBtn.textContent = "Update Template";
+    else console.warn("Save button not found in #createTemplateModal");
+  }
 }
 
 function closeCreateTemplateModal() {
@@ -1168,12 +1368,7 @@ function addTemplateStep(selectedEndpoint = "", promptValue = "") {
                       .join("")}
                   </select>
                 </div>
-                <div class="form-group">
-                  <label>Custom Prompt (optional):</label>
-                  <textarea class="step-prompt-input" placeholder="Leave empty to use default prompt">${
-                    promptValue || ""
-                  }</textarea>
-                </div>
+                <!-- Prompt field removed: backend uses feature prompt from features.ts -->
               </div>
               <button class="remove-step" onclick="removeStep(this)">Remove</button>
             </div>
@@ -1193,22 +1388,38 @@ function addTemplateStep(selectedEndpoint = "", promptValue = "") {
             </div>
             <div class="step-status-message" style="font-size:13px; min-height:18px; margin-top:5px;"></div>
             <div class="step-video-preview" style="margin-top:10px; display:none;"></div>
+            <div class="step-generated-videos" style="margin-top:8px;"></div>
           </div>
         `;
   stepsContainer.insertAdjacentHTML("beforeend", stepHtml);
-  // Add event listener for generate button
+  // Add event listener to new step
   const newStep = stepsContainer.lastElementChild;
-  const generateBtn = newStep.querySelector(".step-generate-btn");
-  const imageUrlInput = newStep.querySelector(".step-image-url");
   const endpointSelect = newStep.querySelector(".step-endpoint-select");
-  const promptInput = newStep.querySelector(".step-prompt-input");
+  const generateBtn = newStep.querySelector(".step-generate-btn");
   const statusDiv = newStep.querySelector(".step-status-message");
   const videoPreviewDiv = newStep.querySelector(".step-video-preview");
+  const generatedListDiv = newStep.querySelector(".step-generated-videos");
   // Setup image upload for this step
   const getUploadedImageUrl = setupStepImageUpload(newStep);
+  // Load and render existing generated videos for current endpoint
+  const onSelectGenerated = (url) => {
+    if (!url) return;
+    videoPreviewDiv.style.display = "block";
+    videoPreviewDiv.innerHTML = `<video src="${url}" controls style="width:100%;max-width:400px;"></video>`;
+  };
+  const refreshGeneratedForSelect = () => {
+    const ep = endpointSelect.value;
+    renderStepGeneratedVideos(generatedListDiv, ep, onSelectGenerated);
+  };
+  endpointSelect.addEventListener("change", refreshGeneratedForSelect);
+  // Initial render if preselected
+  refreshGeneratedForSelect();
   generateBtn.onclick = async function () {
     const endpoint = endpointSelect.value;
-    const prompt = promptInput.value;
+    const feat = (
+      Array.isArray(availableEndpoints) ? availableEndpoints : []
+    ).find((e) => e.endpoint === endpoint);
+    const prompt = feat && feat.prompt ? feat.prompt : "";
     const imageUrl = getUploadedImageUrl();
     if (!endpoint) {
       statusDiv.textContent = "Please select an endpoint.";
@@ -1280,10 +1491,57 @@ function updateStepNumbers() {
   });
 }
 
+// Render generated videos for a given endpoint into a step container
+function renderStepGeneratedVideos(containerEl, endpoint, onSelect) {
+  if (!containerEl) return;
+  if (!endpoint) {
+    containerEl.innerHTML = "";
+    return;
+  }
+  containerEl.innerHTML =
+    '<div style="font-weight:600;margin:6px 0;">Generated videos</div><div class="text-sm text-gray-500">Loading...</div>';
+  fetch(`/api/videos/${encodeURIComponent(endpoint)}`)
+    .then((r) => r.json())
+    .then((videos) => {
+      if (!Array.isArray(videos) || videos.length === 0) {
+        containerEl.innerHTML =
+          '<div class="text-sm text-gray-500">No videos yet for this endpoint.</div>';
+        return;
+      }
+      containerEl.innerHTML =
+        '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px;">' +
+        videos
+          .map(
+            (v) =>
+              `<div class="rounded border border-gray-200 p-1 bg-white cursor-pointer step-gen-video-item" data-url="${v.url}">
+                 <video src="${v.url}" style="width:100%;border-radius:6px;" preload="metadata"></video>
+               </div>`
+          )
+          .join("") +
+        "</div>";
+      containerEl.querySelectorAll(".step-gen-video-item").forEach((el) => {
+        el.addEventListener(
+          "click",
+          () => onSelect && onSelect(el.dataset.url)
+        );
+      });
+    })
+    .catch(() => {
+      containerEl.innerHTML =
+        '<div class="text-sm text-red-500">Failed to load videos.</div>';
+    });
+}
+
 // Save or update template
 async function saveTemplate() {
-  const name = document.getElementById("templateName").value;
-  const description = document.getElementById("templateDescription").value;
+  const nameInput = document.getElementById("templateName");
+  const descInput = document.getElementById("templateDescription");
+  if (!nameInput) {
+    alert("Template name input not found");
+    return;
+  }
+  const name = nameInput.value;
+  const description = descInput ? descInput.value : "";
   if (!name) {
     alert("Template name is required");
     return;
@@ -1292,91 +1550,25 @@ async function saveTemplate() {
   const stepItems = document.querySelectorAll(".step-item");
   stepItems.forEach((item, index) => {
     const endpointSelect = item.querySelector(".step-endpoint-select");
-    const promptInput = item.querySelector(".step-prompt-input");
-    if (!endpointSelect || !promptInput) {
+    if (!endpointSelect) {
       // Skip this step if fields are missing
       return;
     }
     const endpoint = endpointSelect.value;
-    const prompt = promptInput.value;
+    const prompt = "";
     if (endpoint) {
       steps.push({ endpoint, prompt });
     }
   });
-  if (steps.length === 0) {
-    alert("At least one step is required");
-    return;
-  }
-  const saveBtn = document.querySelector("#createTemplateModal .btn-primary");
-  saveBtn.disabled = true;
-  const originalText = saveBtn.textContent;
-  saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
-  try {
-    let response;
-    if (editingTemplateId) {
-      // Update existing template
-      response = await fetch(`/api/templates/${editingTemplateId}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, description, steps }),
-      });
-    } else {
-      // Create new template
-      response = await fetch("/api/templates", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, description, steps }),
-      });
-    }
-    if (response.ok) {
-      closeCreateTemplateModal();
-      loadTemplates();
-    } else {
-      const error = await response.json();
-      alert(
-        (editingTemplateId
-          ? "Error updating template: "
-          : "Error creating template: ") + error.error
-      );
-    }
-  } catch (error) {
-    console.error("Error saving template:", error);
-    alert("Error saving template");
-  } finally {
-    saveBtn.disabled = false;
-    saveBtn.innerHTML = originalText;
-  }
-}
 
-// Template actions
-async function executeTemplate(templateId) {
-  const imageUrl = prompt("Enter image URL:");
-  if (!imageUrl) return;
-
-  try {
-    const response = await fetch(`/api/templates/${templateId}/execute`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        image_url: imageUrl,
-      }),
-    });
-
-    if (response.ok) {
-      const result = await response.json();
-      alert(
-        "Template executed successfully! Final video: " + result.final_video.url
-      );
-    } else {
-      const error = await response.json();
-      alert("Error executing template: " + error.error);
-    }
-  } catch (error) {
-    console.error("Error executing template:", error);
-    alert("Error executing template");
+  // Remove any old event listeners for the Save Template button
+  const saveBtn = document.getElementById("saveTemplateBtn");
+  if (saveBtn) {
+    const newBtn = saveBtn.cloneNode(true);
+    saveBtn.parentNode.replaceChild(newBtn, saveBtn);
   }
+
+  // Ensure only one submit handler. The canonical handler is defined later; avoid redefining here.
 }
 
 async function deleteTemplate(templateId) {
@@ -1653,459 +1845,406 @@ if (savePromptBtn)
 const generateBtn = document.getElementById("featureModalGenerate");
 if (generateBtn)
   generateBtn.onclick = (event) => generateVideo(endpoint, event);
-const renameBtn = document.getElementById("featureModalRename");
-if (renameBtn) {
-  renameBtn.onclick = async function () {
-    const input = document.getElementById("featureModalEndpointName");
-    const newEndpoint = input ? input.value.trim() : "";
-    if (!newEndpoint || newEndpoint === endpoint) return;
-    // Call backend to rename
-    const btn = renameBtn;
-    btn.disabled = true;
-    const original = btn.innerHTML;
-    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
-    try {
-      const res = await fetch(
-        `/api/features/${encodeURIComponent(endpoint)}/rename`,
-        {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ newEndpoint }),
-        }
-      );
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        alert(err.message || "Failed to rename endpoint");
-        return;
+
+// --- CATEGORY/SUBCATEGORY LOGIC FOR TEMPLATE MODAL ---
+
+async function fetchCategories() {
+  const res = await fetch("/api/categories");
+  if (!res.ok) return [];
+  return await res.json();
+}
+
+// Only show subcategories (children) in the dropdown
+function renderSubcategoryOptions(categories) {
+  let options = [];
+  for (const cat of categories) {
+    if (cat.children && cat.children.length > 0) {
+      for (const sub of cat.children) {
+        options.push(`<option value="${sub.id}">${sub.name}</option>`);
       }
-      // Update in-memory features and templates
-      const idx = features.findIndex((f) => f.endpoint === endpoint);
-      if (idx >= 0) features[idx].endpoint = newEndpoint;
-      templates = templates.map((t) => ({
-        ...t,
-        steps: t.steps.map((s) => ({
-          endpoint: s.endpoint === endpoint ? newEndpoint : s.endpoint,
-          prompt: s.prompt || "",
-        })),
-      }));
-      // Update modal title and video src
-      document.getElementById("featureModalTitle").textContent = newEndpoint;
-      const vid = document.getElementById("featureModalVideo");
-      vid.src = `https://res.cloudinary.com/do60wtwwc/video/upload/v1754319544/generated-videos/generated-videos/${newEndpoint}.mp4`;
-      currentOpenEndpoint = newEndpoint;
-      displayFeatures();
-      displayTemplates();
-      alert("Endpoint renamed");
-    } catch (e) {
-      alert("Error renaming endpoint");
-    } finally {
-      btn.disabled = false;
-      btn.innerHTML = original;
     }
+  }
+  return options;
+}
+
+async function populateCategoryDropdown() {
+  const select = document.getElementById("categorySelect");
+  if (!select) return;
+  select.innerHTML = '<option value="">Select subcategory...</option>';
+  const cats = await fetchCategories();
+  select.innerHTML += renderSubcategoryOptions(cats).join("");
+}
+
+function showAddCategoryForm() {
+  document.getElementById("addCategoryForm").classList.remove("hidden");
+  document.getElementById("addCategoryBtn").classList.add("hidden");
+  document.getElementById("categoryError").textContent = "";
+}
+
+function hideAddCategoryForm() {
+  document.getElementById("addCategoryForm").classList.add("hidden");
+  document.getElementById("addCategoryBtn").classList.remove("hidden");
+  document.getElementById("newCategoryName").value = "";
+  document.getElementById("categoryError").textContent = "";
+}
+
+async function createCategory() {
+  const name = document.getElementById("newCategoryName").value.trim();
+  // Only allow creating subcategories under the main category (template name)
+  const mainCategoryName = document.getElementById("templateName").value.trim();
+  if (!name) {
+    document.getElementById("categoryError").textContent = "Name required";
+    return;
+  }
+  if (!mainCategoryName) {
+    document.getElementById("categoryError").textContent =
+      "Enter main category name first.";
+    return;
+  }
+  // Find or create the main category first
+  let mainCategoryId = null;
+  const cats = await fetchCategories();
+  for (const c of cats) {
+    if (c.name === mainCategoryName) {
+      mainCategoryId = c.id;
+      break;
+    }
+  }
+  if (!mainCategoryId) {
+    // Create main category if not exists
+    const resMain = await fetch("/api/categories", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: mainCategoryName, parentId: null }),
+    });
+    if (resMain.ok) {
+      const data = await resMain.json();
+      mainCategoryId = data.id;
+    } else {
+      document.getElementById("categoryError").textContent =
+        "Failed to create main category.";
+      return;
+    }
+  }
+  // Now create subcategory under main category
+  const res = await fetch("/api/categories", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, parentId: mainCategoryId }),
+  });
+  if (res.ok) {
+    hideAddCategoryForm();
+    await populateCategoryDropdown();
+    // Select the newly created subcategory
+    const cats2 = await fetchCategories();
+    let newId = null;
+    for (const c of cats2) {
+      if (c.id === mainCategoryId && c.children) {
+        for (const sub of c.children) {
+          if (sub.name === name) {
+            newId = sub.id;
+            break;
+          }
+        }
+      }
+    }
+    if (newId) document.getElementById("categorySelect").value = newId;
+  } else {
+    document.getElementById("categoryError").textContent =
+      "Failed to create subcategory.";
+  }
+}
+
+// --- HOOK UP EVENTS ON MODAL OPEN ---
+
+function setupTemplateModalCategoryUI() {
+  populateCategoryDropdown();
+  // Disable add step button if no subcategory is selected
+  const addStepBtn = document.getElementById("addStepBtn");
+  const categorySelect = document.getElementById("categorySelect");
+  if (addStepBtn && categorySelect) {
+    addStepBtn.disabled = true;
+    categorySelect.onchange = function () {
+      addStepBtn.disabled = !categorySelect.value;
+    };
+  }
+  const addCategoryBtn = document.getElementById("addCategoryBtn");
+  if (addCategoryBtn) addCategoryBtn.onclick = showAddCategoryForm;
+  const cancelNewCategoryBtn = document.getElementById("cancelNewCategoryBtn");
+  if (cancelNewCategoryBtn) cancelNewCategoryBtn.onclick = hideAddCategoryForm;
+  const saveNewCategoryBtn = document.getElementById("saveNewCategoryBtn");
+  if (saveNewCategoryBtn) saveNewCategoryBtn.onclick = createCategory;
+}
+
+// Call this when opening the modal
+const origOpenCreateTemplateModal = window.openCreateTemplateModal;
+window.openCreateTemplateModal = function () {
+  if (typeof origOpenCreateTemplateModal === "function")
+    origOpenCreateTemplateModal();
+  // Safe setup (no-op if elements aren't present)
+  setupTemplateModalCategoryUI();
+  // Ensure subcategory UI actions are wired
+  if (typeof setupSubcategoryUI === "function") setupSubcategoryUI();
+};
+
+// --- INCLUDE CATEGORY IN TEMPLATE CREATION ---
+// Removed duplicate onsubmit chaining; single handler defined earlier handles categoryId safely.
+// --- END CATEGORY LOGIC ---
+
+// --- DYNAMIC SUBCATEGORY AND STEP LOGIC ---
+
+function createSubcategoryElement(subcatName = "") {
+  const subcatDiv = document.createElement("div");
+  subcatDiv.className = "border rounded-lg p-4 mb-2 bg-gray-50";
+
+  // Subcategory name (readonly)
+  const nameLabel = document.createElement("div");
+  nameLabel.className = "font-semibold mb-2 text-blue-700";
+  nameLabel.textContent = subcatName;
+  subcatDiv.appendChild(nameLabel);
+
+  // Steps container
+  const stepsDiv = document.createElement("div");
+  stepsDiv.className = "space-y-2 mb-2";
+  subcatDiv.appendChild(stepsDiv);
+
+  // Add Step button
+  const addStepBtn = document.createElement("button");
+  addStepBtn.type = "button";
+  addStepBtn.className =
+    "px-3 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 text-xs";
+  addStepBtn.textContent = "+ Add Step";
+  addStepBtn.onclick = function () {
+    const stepDiv = document.createElement("div");
+    stepDiv.className = "flex gap-2 items-center";
+    // Build endpoint select (features) only; prompt removed
+    const select = document.createElement("select");
+    select.className = "flex-1 border border-gray-300 rounded px-2 py-1";
+    select.required = true;
+    const endpoints = Array.isArray(window.featureEndpointsFull)
+      ? window.featureEndpointsFull
+      : [];
+    select.innerHTML =
+      `<option value="">Select endpoint...</option>` +
+      endpoints
+        .map(
+          (f) =>
+            `<option value="${f.endpoint}">${
+              f.name ? f.name : f.endpoint
+            }</option>`
+        )
+        .join("");
+    const removeBtn = document.createElement("button");
+    removeBtn.type = "button";
+    removeBtn.className =
+      "text-red-500 hover:text-red-700 text-xs removeStepBtn";
+    removeBtn.textContent = "Remove";
+    removeBtn.onclick = () => stepDiv.remove();
+    stepDiv.appendChild(select);
+    stepDiv.appendChild(removeBtn);
+    stepsDiv.appendChild(stepDiv);
+  };
+  subcatDiv.appendChild(addStepBtn);
+
+  // Remove subcategory button
+  const removeBtn = document.createElement("button");
+  removeBtn.type = "button";
+  removeBtn.className = "ml-4 text-red-500 hover:text-red-700 text-xs";
+  removeBtn.textContent = "Remove Subcategory";
+  removeBtn.onclick = () => subcatDiv.remove();
+  subcatDiv.appendChild(removeBtn);
+
+  return subcatDiv;
+}
+
+function setupSubcategoryUI() {
+  const subcatsContainer = document.getElementById("subcategoriesContainer");
+  const addSubcatBtn = document.getElementById("addSubcategoryBtn");
+  const newSubcatInput = document.getElementById("newSubcategoryInput");
+  const subcatError = document.getElementById("subcategoryError");
+
+  addSubcatBtn.onclick = function () {
+    const name = newSubcatInput.value.trim();
+    if (!name) {
+      subcatError.textContent = "Subcategory name required";
+      return;
+    }
+    subcatError.textContent = "";
+    subcatsContainer.appendChild(createSubcategoryElement(name));
+    newSubcatInput.value = "";
   };
 }
-document.getElementById("featureCrudModalTitle").textContent = document
-  .getElementById("featureCrudForm")
-  .reset();
-document.getElementById("featureCrudModal").classList.remove("hidden");
 
-function openFeatureCrudModal(mode, endpoint = null) {
-  featureCrudMode = mode;
-  editingFeatureEndpoint = endpoint;
-  document.getElementById("featureCrudModalTitle").textContent =
-    mode === "edit" ? "Edit Feature" : "Create Feature";
-  document.getElementById("featureCrudForm").reset();
-  if (mode === "edit" && endpoint) {
-    const feature = features.find((f) => f.endpoint === endpoint);
-    if (feature) {
-      document.getElementById("featureCrudEndpoint").value = feature.endpoint;
-      document.getElementById("featureCrudPrompt").value = feature.prompt;
-      document.getElementById("featureCrudEndpoint").disabled = true;
+// --- END DYNAMIC SUBCATEGORY AND STEP LOGIC ---
+
+// Canonical Create/Edit Template submit handler
+(function attachCreateTemplateSubmitHandler() {
+  const form = document.getElementById("createTemplateForm");
+  if (!form) return;
+  form.onsubmit = async function (e) {
+    e.preventDefault();
+    const nameEl = document.getElementById("templateName");
+    const descEl = document.getElementById("templateDescription");
+    const name = nameEl ? nameEl.value.trim() : "";
+    const description = descEl ? descEl.value.trim() : "";
+    const categorySelectEl = document.getElementById("categorySelect");
+    const categoryId =
+      categorySelectEl && categorySelectEl.value
+        ? categorySelectEl.value
+        : null;
+    if (!name) {
+      alert("Template name is required");
+      return;
     }
-  } else {
-    document.getElementById("featureCrudEndpoint").disabled = false;
+    const subcats = [];
+    document
+      .querySelectorAll("#subcategoriesContainer > div")
+      .forEach((subcatDiv) => {
+        const subcatName =
+          subcatDiv.querySelector("div.font-semibold")?.textContent?.trim() ||
+          "";
+        const steps = [];
+        subcatDiv.querySelectorAll("div.space-y-2 > div").forEach((stepDiv) => {
+          const select = stepDiv.querySelector("select");
+          const endpoint = select?.value || "";
+          const prompt = ""; // backend will fill from features.ts
+          if (endpoint) steps.push({ endpoint, prompt });
+        });
+        if (subcatName && steps.length)
+          subcats.push({ name: subcatName, steps });
+      });
+    if (!subcats.length) {
+      alert("At least one subcategory with a step is required");
+      return;
+    }
+    const payload = { name, description, subcategories: subcats };
+    if (categoryId) payload.categoryId = categoryId;
+    const saveBtn = document.getElementById("saveTemplateBtn");
+    let originalText = saveBtn ? saveBtn.textContent : "";
+    if (saveBtn) {
+      saveBtn.disabled = true;
+      saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
+    }
+    try {
+      let res;
+      if (editingTemplateId) {
+        res = await fetch(`/api/templates/${editingTemplateId}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+      } else {
+        res = await fetch("/api/templates", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+      }
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Failed to save template");
+      }
+      document.getElementById("createTemplateModal").style.display = "none";
+      editingTemplateId = null;
+      await loadTemplates();
+    } catch (err) {
+      alert(err.message || String(err));
+    } finally {
+      if (saveBtn) {
+        saveBtn.disabled = false;
+        saveBtn.innerHTML = originalText;
+      }
+    }
+  };
+})();
+
+// Feature CRUD Modal Functions
+function openFeatureCrudModal() {
+  console.log("Opening feature CRUD modal");
+  const modal = document.getElementById("featureCrudModal");
+  if (modal) {
+    modal.classList.remove("hidden");
+    modal.style.display = "flex";
+
+    // Reset form
+    const form = document.getElementById("featureCrudForm");
+    if (form) form.reset();
+
+    // Set title to "Create Feature"
+    const title = document.getElementById("featureCrudModalTitle");
+    if (title) title.textContent = "Create Feature";
+
+    // Add form submission handler
+    const formHandler = async function (e) {
+      e.preventDefault();
+
+      const endpoint = document
+        .getElementById("featureCrudEndpoint")
+        .value.trim();
+      const prompt = document.getElementById("featureCrudPrompt").value.trim();
+
+      if (!endpoint || !prompt) {
+        alert("Please fill in all fields");
+        return;
+      }
+
+      try {
+        const response = await fetch("/api/features", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ endpoint, prompt }),
+        });
+
+        if (response.ok) {
+          closeFeatureCrudModal();
+          await loadFeatures(); // Reload the features list
+          alert("Feature created successfully!");
+        } else {
+          // Check if response is JSON or HTML
+          const contentType = response.headers.get("content-type");
+          if (contentType && contentType.includes("application/json")) {
+            const error = await response.json();
+            alert(error.message || "Failed to create feature");
+          } else {
+            // Response is likely HTML (404 page)
+            alert(
+              "Feature creation is not currently supported. The API endpoint does not exist."
+            );
+          }
+        }
+      } catch (error) {
+        console.error("Error creating feature:", error);
+        if (error.message.includes("Unexpected token '<'")) {
+          alert(
+            "Feature creation is not currently supported. The API endpoint does not exist."
+          );
+        } else {
+          alert("Failed to create feature: " + error.message);
+        }
+      }
+    };
+
+    // Remove any existing listeners and add new one
+    if (form) {
+      form.removeEventListener("submit", formHandler);
+      form.addEventListener("submit", formHandler);
+    }
   }
-  document.getElementById("featureCrudModal").classList.remove("hidden");
 }
 
 function closeFeatureCrudModal() {
-  document.getElementById("featureCrudModal").classList.add("hidden");
-  editingFeatureEndpoint = null;
-}
-document.getElementById("addFeatureBtn").onclick = () =>
-  openFeatureCrudModal("create");
-document.getElementById("featureCrudForm").onsubmit = async function (e) {
-  e.preventDefault();
-  const endpoint = document.getElementById("featureCrudEndpoint").value.trim();
-  const prompt = document.getElementById("featureCrudPrompt").value.trim();
-  if (!endpoint || !prompt) return;
-  if (featureCrudMode === "edit" && editingFeatureEndpoint) {
-    // Update feature
-    await fetch(`/api/features/${encodeURIComponent(editingFeatureEndpoint)}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt }),
-    });
-  } else {
-    // Create feature
-    await fetch("/api/features", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ endpoint, prompt }),
-    });
-  }
-  closeFeatureCrudModal();
-  loadFeatures();
-};
+  console.log("Closing feature CRUD modal");
+  const modal = document.getElementById("featureCrudModal");
+  if (modal) {
+    modal.classList.add("hidden");
+    modal.style.display = "none";
 
-function handleEndpointImageUpload(event) {
-  const file = event.target.files[0];
-  if (!file) return;
-  const formData = new FormData();
-  formData.append("image", file);
-  document.getElementById("endpointUploadStatus").textContent = "Uploading...";
-  fetch("/api/cloudinary/upload", {
-    method: "POST",
-    body: formData,
-  })
-    .then((res) => res.json())
-    .then((result) => {
-      if (result.success) {
-        endpointUploadedImageUrl = result.url;
-        document.getElementById("endpointImagePreview").src = result.url;
-        document.getElementById("endpointImagePreview").style.display = "block";
-        document.getElementById("endpointUploadStatus").textContent =
-          "Image uploaded!";
-      } else {
-        document.getElementById("endpointUploadStatus").textContent =
-          "Upload failed.";
-      }
-    })
-    .catch(() => {
-      document.getElementById("endpointUploadStatus").textContent =
-        "Upload failed.";
-    });
-}
-
-// --- End of Endpoint Modal Image Upload & Video Generation Logic ---
-
-// Step detail modal state
-let currentStepTemplateId = null;
-let currentStepIndex = null;
-
-async function openStepDetailModal(templateId, stepIndex) {
-  currentStepTemplateId = templateId;
-  currentStepIndex = stepIndex;
-
-  // Ensure available endpoints are loaded
-  if (!Array.isArray(availableEndpoints) || availableEndpoints.length === 0) {
-    try {
-      await loadAvailableEndpoints();
-    } catch {}
-  }
-
-  const template = templates.find((t) => t.id === templateId);
-  if (!template) return;
-  const step = template.steps[stepIndex];
-  if (!step) return;
-
-  // Populate endpoint select
-  const select = document.getElementById("stepEndpointSelect");
-  if (select) {
-    select.innerHTML =
-      `<option value="">Select endpoint...</option>` +
-      availableEndpoints
-        .map((e) => `<option value="${e.endpoint}">${e.endpoint}</option>`)
-        .join("");
-    select.value = step.endpoint || "";
-  }
-
-  // Populate prompt textarea
-  const ta = document.getElementById("stepPromptTextarea");
-  if (ta) ta.value = step.prompt || "";
-
-  // Clear status
-  const status = document.getElementById("stepDetailStatus");
-  if (status) status.textContent = "";
-
-  // Show modal
-  const modal = document.getElementById("stepDetailModal");
-  if (modal) modal.style.display = "block";
-}
-
-function closeStepDetailModal() {
-  const modal = document.getElementById("stepDetailModal");
-  if (modal) modal.style.display = "none";
-  currentStepTemplateId = null;
-  currentStepIndex = null;
-}
-
-// Step detail modal image upload/generate
-let stepDetailUploadedImageUrl = null;
-
-function handleStepDetailImageUpload(event) {
-  const file = event.target.files && event.target.files[0];
-  const status = document.getElementById("stepDetailUploadStatus");
-  const preview = document.getElementById("stepDetailImagePreview");
-  if (!file) return;
-  const formData = new FormData();
-  formData.append("image", file);
-  if (status) status.textContent = "Uploading...";
-  fetch("/api/cloudinary/upload", { method: "POST", body: formData })
-    .then((res) => res.json())
-    .then((result) => {
-      if (result && result.success && result.url) {
-        stepDetailUploadedImageUrl = result.url;
-        if (preview) {
-          preview.src = result.url;
-          preview.style.display = "block";
-        }
-        if (status) status.textContent = "Image uploaded!";
-      } else {
-        if (status) status.textContent = "Upload failed.";
-      }
-    })
-    .catch(() => {
-      if (status) status.textContent = "Upload failed.";
-    });
-}
-
-async function generateStepDetailVideo() {
-  const endpointSelect = document.getElementById("stepEndpointSelect");
-  const promptTextarea = document.getElementById("stepPromptTextarea");
-  const status = document.getElementById("stepDetailStatus");
-  const videoPreviewDiv = document.getElementById("stepDetailVideoPreview");
-  const generateBtn = document.getElementById("stepDetailGenerateBtn");
-  const endpoint = endpointSelect ? endpointSelect.value : "";
-  const prompt = promptTextarea ? promptTextarea.value : "";
-  if (!endpoint) {
-    if (status) {
-      status.textContent = "Please select an endpoint.";
-      status.className = "status-message status-error";
-    }
-    return;
-  }
-  if (!stepDetailUploadedImageUrl) {
-    if (status) {
-      status.textContent = "Please upload an image first.";
-      status.className = "status-message status-error";
-    }
-    return;
-  }
-  if (status) {
-    status.textContent = "Generating video...";
-    status.className = "status-message status-info";
-  }
-  if (generateBtn) generateBtn.disabled = true;
-  try {
-    const response = await fetch(`/api/${endpoint}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        image_url: stepDetailUploadedImageUrl,
-        prompt,
-      }),
-    });
-    const data = await response.json();
-    if (response.ok && data && data.video && data.video.url) {
-      if (videoPreviewDiv) {
-        videoPreviewDiv.style.display = "block";
-        videoPreviewDiv.innerHTML = `<video src="${data.video.url}" controls style="width:100%;max-width:400px;"></video>`;
-      }
-      if (status) {
-        status.textContent = "Video generated!";
-        status.className = "status-message status-success";
-      }
-    } else {
-      throw new Error((data && data.error) || "Failed to generate video");
-    }
-  } catch (e) {
-    if (status) {
-      status.textContent = `Error: ${e.message || e}`;
-      status.className = "status-message status-error";
-    }
-    if (videoPreviewDiv) {
-      videoPreviewDiv.style.display = "none";
-      videoPreviewDiv.innerHTML = "";
-    }
-  } finally {
-    if (generateBtn) generateBtn.disabled = false;
+    // Reset form
+    const form = document.getElementById("featureCrudForm");
+    if (form) form.reset();
   }
 }
 
-async function saveStepDetail() {
-  if (currentStepTemplateId == null || currentStepIndex == null) return;
-  const template = templates.find((t) => t.id === currentStepTemplateId);
-  if (!template) return;
-
-  const endpoint = document.getElementById("stepEndpointSelect")?.value || "";
-  const prompt = document.getElementById("stepPromptTextarea")?.value || "";
-  const status = document.getElementById("stepDetailStatus");
-
-  if (!endpoint) {
-    if (status) {
-      status.textContent = "Please select an endpoint.";
-      status.className = "status-message status-error";
-    }
-    return;
-  }
-
-  const updatedSteps = template.steps.map((s, idx) =>
-    idx === currentStepIndex
-      ? { endpoint, prompt }
-      : { endpoint: s.endpoint, prompt: s.prompt || "" }
-  );
-
-  // Disable save button during request
-  const btns = document.querySelectorAll("#stepDetailModal .btn.btn-primary");
-  btns.forEach(function (b) {
-    if (b instanceof HTMLButtonElement) b.disabled = true;
-  });
-  if (status) {
-    status.textContent = "Saving...";
-    status.className = "status-message status-info";
-  }
-
-  try {
-    const res = await fetch(`/api/templates/${currentStepTemplateId}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name: template.name,
-        description: template.description || "",
-        steps: updatedSteps,
-      }),
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.error || "Failed to save step");
-    }
-    // Refresh templates list
-    await loadTemplates();
-    if (status) {
-      status.textContent = "Saved!";
-      status.className = "status-message status-success";
-    }
-    setTimeout(() => closeStepDetailModal(), 600);
-  } catch (e) {
-    if (status) {
-      status.textContent = `Error: ${e.message || e}`;
-      status.className = "status-message status-error";
-    }
-  } finally {
-    btns.forEach(function (b) {
-      if (b instanceof HTMLButtonElement) b.disabled = false;
-    });
-  }
-}
-
-// Initialize
-async function loadFeaturesAndGraphics() {
-  await loadFeatureGraphics();
-  await loadFeatures();
-  loadTemplates();
-}
-loadFeaturesAndGraphics();
-
-// --- Replace image URL input in endpoint modal with beautified upload ---
-// Remove the <input type="text" id="featureModalImageUrl" ...> and its parent .input-group
-// Replace with:
-var featureModalImageInput = document.getElementById("featureModalImageUrl");
-if (featureModalImageInput && featureModalImageInput.parentElement) {
-  featureModalImageInput.parentElement.remove();
-}
-const imageUploadSection = document.createElement("div");
-imageUploadSection.className = "image-upload-section";
-imageUploadSection.id = "endpointImageUploadSection";
-imageUploadSection.innerHTML = `
-        <label for="endpointImageInput" class="upload-label">
-          <div class="upload-icon"><i class="fas fa-cloud-upload-alt"></i></div>
-          <div class="upload-text">Click or drag an image here to upload</div>
-          <input type="file" id="endpointImageInput" accept="image/*" style="display:none;" onchange="handleEndpointImageUpload(event)">
-        </label>
-        <img id="endpointImagePreview" style="display:none;max-width:200px;margin:10px auto 0;">
-        <div id="endpointUploadStatus" class="upload-status"></div>
-      `;
-var generationSection = document.querySelector(".generation-section");
-var featureModalGenerate = document.getElementById("featureModalGenerate");
-if (generationSection && featureModalGenerate) {
-  generationSection.insertBefore(imageUploadSection, featureModalGenerate);
-}
-
-// --- Replace image URL input in template step card with beautified upload ---
-// Remove the <input type="text" class="step-image-url form-control" ...> in .step-actions
-// Replace with:
-const stepImageUploadHtml = `
-        <div class="image-upload-section step-image-upload-section">
-          <label class="upload-label">
-            <div class="upload-icon"><i class="fas fa-cloud-upload-alt"></i></div>
-            <div class="upload-text">Click or drag an image here to upload</div>
-            <input type="file" class="step-image-input" accept="image/*" style="display:none;">
-          </label>
-          <img class="step-image-preview" style="display:none;max-width:200px;margin:10px auto 0;">
-          <div class="step-upload-status upload-status"></div>
-        </div>
-      `;
-document.querySelectorAll(".step-actions").forEach((actionsDiv) => {
-  actionsDiv.insertAdjacentHTML("afterbegin", stepImageUploadHtml);
-});
-
-// --- JS for template step image upload ---
-function setupStepImageUpload(stepDiv) {
-  const section = stepDiv.querySelector(".step-image-upload-section");
-  const input = stepDiv.querySelector(".step-image-input");
-  const preview = stepDiv.querySelector(".step-image-preview");
-  const status = stepDiv.querySelector(".step-upload-status");
-  let uploadedUrl = null;
-  if (!section || !input) return;
-  section.addEventListener("click", () => input.click());
-  section.addEventListener("dragover", (e) => {
-    e.preventDefault();
-    section.classList.add("dragover");
-  });
-  section.addEventListener("dragleave", () =>
-    section.classList.remove("dragover")
-  );
-  section.addEventListener("drop", (e) => {
-    e.preventDefault();
-    section.classList.remove("dragover");
-    const files = e.dataTransfer.files;
-    if (files.length > 0 && files[0].type.startsWith("image/")) {
-      input.files = files;
-      handleStepImageUpload({ target: input }, preview, status, (url) => {
-        uploadedUrl = url;
-      });
-    }
-  });
-  input.addEventListener("change", (e) =>
-    handleStepImageUpload(e, preview, status, (url) => {
-      uploadedUrl = url;
-    })
-  );
-  return () => uploadedUrl;
-}
-function handleStepImageUpload(event, preview, status, setUrl) {
-  const file = event.target.files[0];
-  if (!file) return;
-  const formData = new FormData();
-  formData.append("image", file);
-  status.textContent = "Uploading...";
-  fetch("/api/cloudinary/upload", {
-    method: "POST",
-    body: formData,
-  })
-    .then((res) => res.json())
-    .then((result) => {
-      if (result.success) {
-        preview.src = result.url;
-        preview.style.display = "block";
-        status.textContent = "Image uploaded!";
-        setUrl(result.url);
-      } else {
-        status.textContent = "Upload failed.";
-      }
-    })
-    .catch(() => {
-      status.textContent = "Upload failed.";
-    });
-}
+// Make functions globally available
+window.openFeatureCrudModal = openFeatureCrudModal;
+window.closeFeatureCrudModal = closeFeatureCrudModal;

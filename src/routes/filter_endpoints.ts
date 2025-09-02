@@ -206,20 +206,10 @@ router.get("/videos/:endpoint", async (req: Request, res: Response) => {
   try {
     const { PrismaClient } = require("../generated/prisma/client");
     const prisma = new PrismaClient();
-    // Attempt using 'feature', fallback to 'featureId'
-    let videos: any[] = [];
-    try {
-      videos = await prisma.generatedVideo.findMany({
-        where: { feature: req.params.endpoint },
-        orderBy: { createdAt: "desc" },
-      });
-    } catch (e) {
-      // fallback if schema uses featureId
-      videos = await prisma.generatedVideo.findMany({
-        where: { featureId: req.params.endpoint },
-        orderBy: { createdAt: "desc" },
-      });
-    }
+    const videos: any[] = await prisma.generatedVideo.findMany({
+      where: { feature: req.params.endpoint },
+      orderBy: { createdAt: "desc" },
+    });
     res.json(videos);
   } catch (error) {
     console.error("Error fetching videos:", error);
@@ -264,16 +254,9 @@ router.post(
       }
       const { PrismaClient } = require("../generated/prisma/client");
       const prisma = new PrismaClient();
-      let exists: any = null;
-      try {
-        exists = await prisma.generatedVideo.findFirst({
-          where: { feature: endpoint, url },
-        });
-      } catch (e) {
-        exists = await prisma.generatedVideo.findFirst({
-          where: { featureId: endpoint, url },
-        });
-      }
+      const exists = await prisma.generatedVideo.findFirst({
+        where: { feature: endpoint, url },
+      });
       if (!exists) {
         res.status(404).json({ error: "Video url not found for endpoint" });
         return;

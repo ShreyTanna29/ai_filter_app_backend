@@ -1458,5 +1458,9 @@ export const features = [
   {
     "endpoint": "ai-dreamy-locks",
     "prompt": "A person with long dreamy flowing hair walking in soft breeze with perfect movement, fairy lights in background with perfect enchantment, cinematic glow with perfect beauty, ultra-high detail 8K quality, professional hair cinematography with perfect dreamy aesthetic"
+  },
+  {
+    "endpoint": "ai-new-badass",
+    "prompt": "badass"
   }
 ];

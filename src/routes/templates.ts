@@ -34,7 +34,11 @@ async function registerTemplateEndpoint(template: any) {
       const dbTemplate = await prisma.template.findUnique({
         where: { id: template.id },
         include: {
-          steps: { orderBy: { order: "asc" } },
+          subcategories: {
+            include: {
+              steps: { orderBy: { order: "asc" } },
+            },
+          },
         },
       });
       if (!dbTemplate)
@@ -47,7 +51,7 @@ async function registerTemplateEndpoint(template: any) {
         id: dbTemplate.id,
         name: dbTemplate.name,
         description: dbTemplate.description,
-        steps: dbTemplate.steps,
+        subcategories: dbTemplate.subcategories,
         stepVideos,
       });
     } catch (e) {
@@ -70,16 +74,80 @@ function unregisterTemplateEndpoint(template: any) {
 }
 const prisma = new PrismaClient();
 
-// Get all templates
+// Helper to get or create a main category for a template
+async function getOrCreateMainCategory(prisma: any, name: string) {
+  let category = await prisma.category.findFirst({ where: { name } });
+  if (!category) {
+    category = await prisma.category.create({ data: { name } });
+  }
+  return category;
+}
+
+// Create a new template
+router.post(
+  "/templates",
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { name, description, subcategories } = req.body;
+      if (!name || !subcategories || !Array.isArray(subcategories)) {
+        res
+          .status(400)
+          .json({ error: "Name and subcategories array are required" });
+        return;
+      }
+      // Get or create main category
+      const mainCategory = await getOrCreateMainCategory(prisma, name);
+      // Create the template
+      const template = await prisma.template.create({
+        data: {
+          name,
+          description,
+          category: { connect: { id: mainCategory.id } },
+          subcategories: {
+            create: subcategories.map((subcat: any) => ({
+              name: subcat.name,
+              category: { connect: { id: mainCategory.id } },
+              steps: {
+                create: (subcat.steps || []).map((step: any, idx: number) => {
+                  const feat = features.find(
+                    (f) => f.endpoint === step.endpoint
+                  );
+                  return {
+                    endpoint: step.endpoint,
+                    prompt: feat?.prompt || "",
+                    order: idx,
+                  };
+                }),
+              },
+            })),
+          },
+        },
+        include: {
+          subcategories: {
+            include: { steps: { orderBy: { order: "asc" } } },
+          },
+          category: true,
+        },
+      });
+      // Register dynamic endpoint for this template
+      await registerTemplateEndpoint(template);
+      res.status(201).json(template);
+    } catch (error) {
+      console.error("Error creating template:", error);
+      res.status(500).json({ error: "Failed to create template" });
+    }
+  }
+);
+
+// Get all templates (with subcategories and steps)
 router.get("/templates", async (req: Request, res: Response): Promise<void> => {
   try {
     const templates = await prisma.template.findMany({
       include: {
-        steps: {
-          orderBy: {
-            order: "asc",
-          },
+        subcategories: {
+          include: { steps: { orderBy: { order: "asc" } } },
         },
+        category: true,
       },
     });
     res.json(templates);
@@ -102,103 +170,84 @@ router.get(
   }
 );
 
-// Create a new template
-router.post(
-  "/templates",
-  async (req: Request, res: Response): Promise<void> => {
-    try {
-      const { name, description, steps } = req.body;
-
-      if (!name || !steps || !Array.isArray(steps)) {
-        res.status(400).json({ error: "Name and steps array are required" });
-        return;
-      }
-
-      const template = await prisma.template.create({
-        data: {
-          name,
-          description,
-          steps: {
-            create: steps.map((step: any, index: number) => ({
-              endpoint: step.endpoint,
-              prompt: step.prompt,
-              order: index,
-            })),
-          },
-        },
-        include: {
-          steps: {
-            orderBy: {
-              order: "asc",
-            },
-          },
-        },
-      });
-
-      // Register dynamic endpoint for this template
-      await registerTemplateEndpoint(template);
-
-      res.status(201).json(template);
-    } catch (error) {
-      console.error("Error creating template:", error);
-      res.status(500).json({ error: "Failed to create template" });
-    }
-  }
-);
-
 // Update a template
 router.put(
   "/templates/:id",
   async (req: Request, res: Response): Promise<void> => {
     try {
       const { id } = req.params;
-      const { name, description, steps } = req.body;
-
-      if (!name || !steps || !Array.isArray(steps)) {
-        res.status(400).json({ error: "Name and steps array are required" });
+      const { name, description, subcategories } = req.body;
+      if (!name || !subcategories || !Array.isArray(subcategories)) {
+        res
+          .status(400)
+          .json({ error: "Name and subcategories array are required" });
         return;
       }
-
       // Get old template for route removal
       const oldTemplate = await prisma.template.findUnique({
         where: { id: parseInt(id) },
       });
-
-      // Delete existing steps
-      await prisma.templateStep.deleteMany({
+      // Get or create main category (in case name changed)
+      let mainCategoryId = oldTemplate?.categoryId;
+      if (!mainCategoryId) {
+        // If not present, create or find by new name
+        let mainCategory = await prisma.category.findFirst({ where: { name } });
+        if (!mainCategory) {
+          mainCategory = await prisma.category.create({ data: { name } });
+        }
+        mainCategoryId = mainCategory.id;
+      }
+      // Delete all subcategories and steps for this template
+      const oldSubcats = await prisma.subcategory.findMany({
         where: { templateId: parseInt(id) },
       });
-
-      // Update template and create new steps
+      for (const subcat of oldSubcats) {
+        await prisma.templateStep.deleteMany({
+          where: { subcategoryId: subcat.id },
+        });
+      }
+      await prisma.subcategory.deleteMany({
+        where: { templateId: parseInt(id) },
+      });
+      // Update template and create new subcategories/steps
       const template = await prisma.template.update({
         where: { id: parseInt(id) },
         data: {
           name,
           description,
-          steps: {
-            create: steps.map((step: any, index: number) => ({
-              endpoint: step.endpoint,
-              prompt: step.prompt,
-              order: index,
+          category: { connect: { id: mainCategoryId } },
+          subcategories: {
+            create: subcategories.map((subcat: any) => ({
+              name: subcat.name,
+              category: { connect: { id: mainCategoryId } },
+              steps: {
+                create: (subcat.steps || []).map((step: any, idx: number) => {
+                  const feat = features.find(
+                    (f) => f.endpoint === step.endpoint
+                  );
+                  return {
+                    endpoint: step.endpoint,
+                    prompt: feat?.prompt || "",
+                    order: idx,
+                  };
+                }),
+              },
             })),
           },
         },
         include: {
-          steps: {
-            orderBy: {
-              order: "asc",
-            },
+          subcategories: {
+            include: { steps: { orderBy: { order: "asc" } } },
           },
+          category: true,
         },
       });
-
       // Remove old endpoint if name changed
       if (oldTemplate && oldTemplate.name !== name) {
         unregisterTemplateEndpoint(oldTemplate);
       }
       // Register/replace endpoint for updated template
       await registerTemplateEndpoint(template);
-
       res.json(template);
     } catch (error) {
       console.error("Error updating template:", error);
@@ -213,12 +262,10 @@ router.delete(
   async (req: Request, res: Response): Promise<void> => {
     try {
       const { id } = req.params;
-
       // Get template for route removal
       const template = await prisma.template.findUnique({
         where: { id: parseInt(id) },
       });
-
       // Delete all step videos for this template (and from Cloudinary)
       const stepVideos = await prisma.templateStepVideo.findMany({
         where: { templateId: parseInt(id) },
@@ -238,14 +285,21 @@ router.delete(
       await prisma.templateStepVideo.deleteMany({
         where: { templateId: parseInt(id) },
       });
-
-      await prisma.template.delete({
-        where: { id: parseInt(id) },
+      // Delete all subcategories and steps for this template
+      const oldSubcats = await prisma.subcategory.findMany({
+        where: { templateId: parseInt(id) },
       });
-
+      for (const subcat of oldSubcats) {
+        await prisma.templateStep.deleteMany({
+          where: { subcategoryId: subcat.id },
+        });
+      }
+      await prisma.subcategory.deleteMany({
+        where: { templateId: parseInt(id) },
+      });
+      await prisma.template.delete({ where: { id: parseInt(id) } });
       // Unregister dynamic endpoint for this template
       if (template) unregisterTemplateEndpoint(template);
-
       res.json({ message: "Template deleted successfully" });
     } catch (error) {
       console.error("Error deleting template:", error);
@@ -279,7 +333,11 @@ router.post(
       const template = await prisma.template.findUnique({
         where: { id: parseInt(id) },
         include: {
-          steps: { orderBy: { order: "asc" } },
+          subcategories: {
+            include: {
+              steps: { orderBy: { order: "asc" } },
+            },
+          },
         },
       });
 
@@ -292,33 +350,35 @@ router.post(
       const results = [];
       let currentImageUrl = image_url;
 
-      for (const step of template.steps) {
-        // Find the feature to get the default prompt
-        const feature = features.find((f) => f.endpoint === step.endpoint);
-        const prompt = step.prompt || feature?.prompt || "";
+      for (const subcategory of template.subcategories) {
+        for (const step of subcategory.steps) {
+          // Find the feature to get the default prompt
+          const feature = features.find((f) => f.endpoint === step.endpoint);
+          const prompt = step.prompt || feature?.prompt || "";
 
-        // Call the video generation API for this step using axios
-        const response = await axios.post(
-          `${req.protocol}://${req.get("host")}/api/${step.endpoint}`,
-          {
-            image_url: currentImageUrl,
-            prompt: prompt,
-          },
-          {
-            headers: {
-              "Content-Type": "application/json",
+          // Call the video generation API for this step using axios
+          const response = await axios.post(
+            `${req.protocol}://${req.get("host")}/api/${step.endpoint}`,
+            {
+              image_url: currentImageUrl,
+              prompt: prompt,
             },
-          }
-        );
+            {
+              headers: {
+                "Content-Type": "application/json",
+              },
+            }
+          );
 
-        const result = response.data;
-        results.push({
-          step: step.endpoint,
-          result: result,
-        });
+          const result = response.data;
+          results.push({
+            step: step.endpoint,
+            result: result,
+          });
 
-        // Use the generated video URL as input for the next step
-        currentImageUrl = result.video.url;
+          // Use the generated video URL as input for the next step
+          currentImageUrl = result.video.url;
+        }
       }
 
       res.json({

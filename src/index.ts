@@ -10,6 +10,7 @@ import templatesRouter from "./routes/templates";
 import cloudinaryRouter from "./routes/cloudinary";
 import videoGenerationRouter from "./routes/generate-video";
 import simpleAuthRouter from "./routes/simple-auth";
+import categoriesRouter from "./routes/categories";
 
 // Load environment variables
 dotenv.config();
@@ -66,6 +67,48 @@ app.put("/api/features/:endpoint", (req: Request, res: Response): void => {
   } catch (error) {
     console.error("Error writing features file:", error);
     res.status(500).json({ message: "Failed to update feature" });
+  }
+});
+
+// Create a new feature
+app.post("/api/features", (req: Request, res: Response): void => {
+  const { endpoint, prompt } = req.body;
+
+  if (!endpoint || !prompt) {
+    res.status(400).json({ message: "Endpoint and prompt are required" });
+    return;
+  }
+
+  // Check if feature already exists
+  const existingFeature = features.find((f) => f.endpoint === endpoint);
+  if (existingFeature) {
+    res
+      .status(409)
+      .json({ message: "Feature with this endpoint already exists" });
+    return;
+  }
+
+  // Add new feature
+  const newFeature = { endpoint: endpoint.trim(), prompt: prompt.trim() };
+  features.push(newFeature);
+
+  // Write the updated features back to the file
+  const featuresPath = path.join(__dirname, "filters", "features.ts");
+  const featuresContent = `export const features = ${JSON.stringify(
+    features,
+    null,
+    2
+  )};`;
+
+  try {
+    fs.writeFileSync(featuresPath, featuresContent);
+    res.status(201).json({
+      message: "Feature created successfully",
+      feature: newFeature,
+    });
+  } catch (error) {
+    console.error("Error writing features file:", error);
+    res.status(500).json({ message: "Failed to create feature" });
   }
 });
 
@@ -126,6 +169,7 @@ app.use("/api", templatesRouter);
 app.use("/api/generate-video", videoGenerationRouter);
 app.use("/api/cloudinary", cloudinaryRouter);
 app.use("/api/auth", simpleAuthRouter);
+app.use("/api/categories", categoriesRouter);
 
 // Serve admin panel HTML
 app.get("/", (req: Request, res: Response) => {

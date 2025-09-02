@@ -426,23 +426,24 @@
         <!-- Template Creation Modal -->
         <div
           id="createTemplateModal"
-          class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40 hidden"
+          class="fixed inset-0 z-50 flex flex-col bg-white transition-all duration-300 ease-in-out overflow-auto hidden"
+          style="display: none; min-height: 100vh; min-width: 100vw;"
         >
-          <div
-            class="bg-white rounded-lg shadow-lg w-full max-w-lg p-6 relative"
-          >
+          <div class="w-full flex justify-end p-6">
             <button
               onclick="document.getElementById('createTemplateModal').style.display = 'none'"
-              class="absolute top-2 right-2 text-gray-400 hover:text-gray-700"
+              class="text-gray-400 hover:text-gray-700 text-2xl focus:outline-none"
+              aria-label="Close"
             >
               <i class="fa fa-times"></i>
             </button>
-            <h2 class="text-xl font-bold mb-4">Create New Template</h2>
-            <form id="createTemplateForm" class="space-y-4">
+          </div>
+          <div class="flex flex-col items-center justify-center flex-1 w-full px-4 pb-10">
+            <div class="w-full max-w-2xl bg-white rounded-2xl shadow-xl p-10 border border-gray-100">
+              <h2 class="text-3xl font-bold mb-8 text-center text-blue-700">Create New Template</h2>
+              <form id="createTemplateForm" class="space-y-6">
               <div>
-                <label class="block text-gray-700 font-semibold mb-1"
-                  >Template Name</label
-                >
+                <label class="block text-gray-700 font-semibold mb-1">Template Name (Main Category)</label>
                 <input
                   id="templateName"
                   type="text"
@@ -451,9 +452,7 @@
                 />
               </div>
               <div>
-                <label class="block text-gray-700 font-semibold mb-1"
-                  >Description</label
-                >
+                <label class="block text-gray-700 font-semibold mb-1">Description</label>
                 <textarea
                   id="templateDescription"
                   class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400"
@@ -461,30 +460,95 @@
                 ></textarea>
               </div>
               <div>
-                <label class="block text-gray-700 font-semibold mb-1"
-                  >Steps</label
-                >
-                <div id="templateSteps" class="space-y-2"></div>
-                <button
-                  type="button"
-                  id="addStepBtn"
-                  class="mt-2 px-3 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200"
-                >
-                  + Add Step
-                </button>
+                <label class="block text-gray-700 font-semibold mb-1">Subcategories</label>
+                <div id="subcategoriesContainer" class="space-y-4"></div>
+                <div class="flex gap-2 mt-2">
+                  <input id="newSubcategoryInput" type="text" placeholder="Add subcategory..." class="flex-1 border border-gray-300 rounded-lg px-2 py-1" />
+                  <button type="button" id="addSubcategoryBtn" class="px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700 text-xs" onclick="addSubcategoryFromModal()">+ Add Subcategory</button>
+                </div>
+                <div id="subcategoryError" class="text-red-500 text-xs mt-1"></div>
+                <script>
+                // Fetch features for endpoint select
+                let featureEndpoints = [];
+                async function fetchFeatureEndpoints() {
+                  try {
+                    const res = await fetch('/api/features');
+                    const data = await res.json();
+                    featureEndpoints = Array.isArray(data) ? data.map(f => f.endpoint) : [];
+                  } catch { featureEndpoints = []; }
+                }
+                fetchFeatureEndpoints();
+
+                function addSubcategoryFromModal() {
+                  const name = document.getElementById('newSubcategoryInput').value.trim();
+                  const subcatError = document.getElementById('subcategoryError');
+                  if (!name) {
+                    subcatError.textContent = 'Subcategory name required';
+                    return;
+                  }
+                  subcatError.textContent = '';
+                  const subcatsContainer = document.getElementById('subcategoriesContainer');
+                  // Create subcategory section
+                  const subcatDiv = document.createElement('div');
+                  subcatDiv.className = 'border rounded-lg p-4 mb-2 bg-gray-50';
+                  // Subcategory name (readonly)
+                  const nameLabel = document.createElement('div');
+                  nameLabel.className = 'font-semibold mb-2 text-blue-700';
+                  nameLabel.textContent = name;
+                  subcatDiv.appendChild(nameLabel);
+                  // Steps container
+                  const stepsDiv = document.createElement('div');
+                  stepsDiv.className = 'space-y-2 mb-2';
+                  subcatDiv.appendChild(stepsDiv);
+                  // Add Step button
+                  const addStepBtn = document.createElement('button');
+                  addStepBtn.type = 'button';
+                  addStepBtn.className = 'px-3 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 text-xs';
+                  addStepBtn.textContent = '+ Add Step';
+                  addStepBtn.onclick = function () {
+                    const stepDiv = document.createElement('div');
+                    stepDiv.className = 'flex gap-2 items-center';
+                    // Build endpoint select
+                    const select = document.createElement('select');
+                    select.className = 'flex-1 border border-gray-300 rounded px-2 py-1';
+                    select.required = true;
+                    select.innerHTML = `<option value="">Select endpoint...</option>` + featureEndpoints.map(e => `<option value="${e}">${e}</option>`).join('');
+                    // Remove button
+                    const removeBtn = document.createElement('button');
+                    removeBtn.type = 'button';
+                    removeBtn.className = 'text-red-500 hover:text-red-700 text-xs removeStepBtn';
+                    removeBtn.textContent = 'Remove';
+                    removeBtn.onclick = () => stepDiv.remove();
+                    stepDiv.appendChild(select);
+                    stepDiv.appendChild(removeBtn);
+                    stepsDiv.appendChild(stepDiv);
+                  };
+                  subcatDiv.appendChild(addStepBtn);
+                  // Remove subcategory button
+                  const removeBtn = document.createElement('button');
+                  removeBtn.type = 'button';
+                  removeBtn.className = 'ml-4 text-red-500 hover:text-red-700 text-xs';
+                  removeBtn.textContent = 'Remove Subcategory';
+                  removeBtn.onclick = () => subcatDiv.remove();
+                  subcatDiv.appendChild(removeBtn);
+                  subcatsContainer.appendChild(subcatDiv);
+                  document.getElementById('newSubcategoryInput').value = '';
+                }
+                </script>
               </div>
-              <div class="flex justify-end gap-2">
+              <div id="stepsSection"></div>
+              <div class="flex justify-end gap-4 mt-8">
                 <button
                   type="button"
                   onclick="document.getElementById('createTemplateModal').style.display = 'none'"
-                  class="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg"
+                  class="px-6 py-2 bg-gray-200 text-gray-700 rounded-lg font-semibold text-lg hover:bg-gray-300 transition"
                 >
                   Cancel
                 </button>
                 <button
                   id="saveTemplateBtn"
                   type="submit"
-                  class="btn-primary px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                  class="px-6 py-2 bg-blue-600 text-white rounded-lg font-semibold text-lg hover:bg-blue-700 transition"
                 >
                   Save Template
                 </button>
