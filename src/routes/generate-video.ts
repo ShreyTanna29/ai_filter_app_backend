@@ -111,7 +111,7 @@ router.post<
         createTaskRes = await axios.post(
           "https://dashscope-intl.aliyuncs.com/api/v1/services/aigc/video-generation/video-synthesis",
           {
-            model: "wan2.1-i2v-turbo",
+            model: "wan2.2-i2v-flash",
             input: {
               img_url: imageCloudUrl,
               prompt: prompt,
