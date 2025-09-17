@@ -213,12 +213,19 @@
                       class="upload-status text-sm mt-1"
                     ></div>
                   </div>
-                  <button
-                    id="stepGenerateVideoBtn"
-                    class="mt-2 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center gap-2"
-                  >
-                    <i class="fas fa-magic"></i> Generate Video
-                  </button>
+                  <div class="flex items-center gap-2 mt-2">
+                    <select id="stepModelSelect" class="border rounded px-2 py-2">
+                      <option value="ray 2" selected>Ray 2</option>
+                      <option value="ray 2 flash">Ray 2 Flash</option>
+                      <option value="ray 1.6">Ray 1.6</option>
+                    </select>
+                    <button
+                      id="stepGenerateVideoBtn"
+                      class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center gap-2"
+                    >
+                      <i class="fas fa-magic"></i> Generate Video
+                    </button>
+                  </div>
                   <div id="stepGenStatus" class="text-sm mt-2"></div>
                   <div
                     id="stepVideoPreview"
@@ -621,12 +628,19 @@
                   class="upload-status text-sm mt-1"
                 ></div>
               </div>
-              <button
-                id="featureGenerateVideoBtn"
-                class="mt-3 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center gap-2"
-              >
-                <i class="fas fa-magic"></i> Generate Video
-              </button>
+              <div class="flex items-center gap-2 mt-3">
+                <select id="featureModelSelect" class="border rounded px-2 py-2">
+                  <option value="ray 2" selected>Ray 2</option>
+                  <option value="ray 2 flash">Ray 2 Flash</option>
+                  <option value="ray 1.6">Ray 1.6</option>
+                </select>
+                <button
+                  id="featureGenerateVideoBtn"
+                  class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center gap-2"
+                >
+                  <i class="fas fa-magic"></i> Generate Video
+                </button>
+              </div>
               <div id="featureGenStatus" class="text-sm mt-2"></div>
             </div>
             <div class="mb-6">

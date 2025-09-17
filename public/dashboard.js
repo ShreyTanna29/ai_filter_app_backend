@@ -560,12 +560,24 @@ function showFeatureDetailPage(endpoint) {
         genBtn.disabled = true;
         if (genStatus) genStatus.textContent = "Generating video...";
         try {
+          const modelSelect = document.getElementById("featureModelSelect");
+          const selectedModel = modelSelect ? modelSelect.value : undefined;
+          const featurePromptEl = document.getElementById(
+            "featureDetailPrompt"
+          );
+          const promptOverride = featurePromptEl
+            ? featurePromptEl.textContent
+            : undefined;
           const response = await fetch(
             `/api/generate-video/${encodeURIComponent(feature.endpoint)}`,
             {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ imageUrl: uploadedImageUrl }),
+              body: JSON.stringify({
+                imageUrl: uploadedImageUrl,
+                model: selectedModel,
+                prompt: promptOverride,
+              }),
             }
           );
           const data = await response.json();
@@ -1686,10 +1698,18 @@ async function generateVideo(endpoint, event) {
   statusDiv.style.color = "#666";
   try {
     // Use the correct backend endpoint for video generation
+    const modelSelect = document.getElementById("stepModelSelect");
+    const selectedModel = modelSelect ? modelSelect.value : undefined;
+    const promptInput = document.getElementById("stepDetailPromptInput");
+    const promptOverride = promptInput ? promptInput.value : undefined;
     const response = await fetch(`/api/generate-video/${endpoint}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ image_url: imageUrl }),
+      body: JSON.stringify({
+        image_url: imageUrl,
+        model: selectedModel,
+        prompt: promptOverride,
+      }),
     });
     const result = await response.json();
     if (result.video && result.video.url) {

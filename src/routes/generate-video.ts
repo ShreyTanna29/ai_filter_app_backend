@@ -4,6 +4,8 @@ import { PrismaClient } from "../generated/prisma";
 import { v2 as cloudinary, UploadApiResponse } from "cloudinary";
 import dotenv from "dotenv";
 import axios, { AxiosResponse } from "axios";
+import https from "https";
+import http from "http";
 
 dotenv.config();
 
@@ -28,7 +30,10 @@ const prisma = new PrismaClient();
 
 // Define interfaces for better type safety
 interface VideoGenerationRequest {
-  imageUrl: string;
+  imageUrl?: string; // primary key
+  image_url?: string; // alias supported by frontend
+  model?: string; // "ray 2" | "ray 2 flash" | "ray 1.6"
+  prompt?: string; // optional override
 }
 
 interface VideoGenerationResponse {
@@ -60,7 +65,9 @@ router.post<
   ): Promise<void> => {
     try {
       const { feature } = req.params;
-      const { imageUrl } = req.body;
+      const { model: userModel, prompt: promptOverride } = req.body as any;
+      const imageUrl =
+        (req.body as any).imageUrl || (req.body as any).image_url;
 
       if (!imageUrl) {
         res.status(400).json({
@@ -72,32 +79,65 @@ router.post<
 
       // Step 1: Upload image to Cloudinary if not already a Cloudinary URL
       let imageCloudUrl = imageUrl;
+      const isLikelyPublic =
+        /^https?:\/\//i.test(imageUrl) &&
+        !/localhost|127\.0\.0\.1|^file:/i.test(imageUrl);
       if (!imageUrl.includes("cloudinary.com")) {
         try {
-          const uploadRes = await axios.post(
-            process.env.CLOUDINARY_UPLOAD_URL!,
-            {
-              file: imageUrl,
-              upload_preset: process.env.CLOUDINARY_UPLOAD_PRESET,
-            },
-            { headers: { "Content-Type": "application/json" } }
-          );
-          imageCloudUrl = uploadRes.data.secure_url;
+          if (
+            !process.env.CLOUDINARY_UPLOAD_URL ||
+            !process.env.CLOUDINARY_UPLOAD_PRESET
+          ) {
+            // No unsigned upload config; fallback to using the given URL if public
+            if (isLikelyPublic) {
+              imageCloudUrl = imageUrl;
+            } else {
+              throw new Error(
+                "Missing CLOUDINARY_UPLOAD_URL/UPLOAD_PRESET and image is not public"
+              );
+            }
+          } else {
+            const uploadRes = await axios.post(
+              process.env.CLOUDINARY_UPLOAD_URL!,
+              {
+                file: imageUrl,
+                upload_preset: process.env.CLOUDINARY_UPLOAD_PRESET,
+              },
+              {
+                headers: { "Content-Type": "application/json" },
+                timeout: 20000,
+              }
+            );
+            imageCloudUrl = uploadRes.data.secure_url;
+          }
         } catch (err) {
           const e = err as any;
-          console.error("Cloudinary upload error:", e?.response?.data || e);
-          res.status(500).json({
-            success: false,
-            error: "Failed to upload image to Cloudinary",
-            details: e?.response?.data || String(e),
-          });
-          return;
+          console.error(
+            "Cloudinary upload error:",
+            e?.response?.data || e?.message || e
+          );
+          // Fallback: if original URL is public, continue with it
+          if (isLikelyPublic) {
+            imageCloudUrl = imageUrl;
+          } else {
+            res.status(503).json({
+              success: false,
+              error: "Failed to upload image to Cloudinary (network)",
+              details: e?.response?.data || e?.message || String(e),
+            });
+            return;
+          }
         }
       }
 
-      // Step 2: Get the prompt for the selected feature
+      // Step 2: Get the prompt for the selected feature (allow client override)
       const featureObj = features.find((f) => f.endpoint === feature);
-      const prompt = featureObj ? featureObj.prompt : "";
+      const prompt =
+        typeof promptOverride === "string" && promptOverride.trim().length > 0
+          ? promptOverride
+          : featureObj
+          ? featureObj.prompt
+          : "";
 
       // Step 3: Generate video using LumaLabs Dream Machine (Ray 2 - Image to Video)
       const lumaApiKey = process.env.LUMA_API_KEY;
@@ -105,10 +145,21 @@ router.post<
         throw new Error("LUMA_API_KEY not set in environment");
       }
 
+      // Map friendly model names to Luma identifiers
+      const resolveLumaModel = (val?: string): string => {
+        const v = (val || process.env.LUMA_MODE || "ray 2")
+          .toString()
+          .toLowerCase();
+        if (v.includes("1.6")) return "ray-1.6";
+        if (v.includes("flash")) return "ray-2-flash"; // fast Ray 2
+        return "ray-2"; // default
+      };
+      const selectedModel = resolveLumaModel(userModel);
+
       // Build payload per docs: POST https://api.lumalabs.ai/dream-machine/v1/generations
       const lumaPayload: any = {
         prompt,
-        model: process.env.LUMA_MODE || "ray-flash-2", // Ray 2 (flash)
+        model: selectedModel,
         keyframes: {
           frame0: {
             type: "image",
@@ -121,32 +172,73 @@ router.post<
       if (process.env.LUMA_DURATION)
         lumaPayload.duration = process.env.LUMA_DURATION;
 
-      let createGenRes;
-      try {
-        createGenRes = await axios.post(
-          "https://api.lumalabs.ai/dream-machine/v1/generations",
-          lumaPayload,
-          {
-            headers: {
-              accept: "application/json",
-              "content-type": "application/json",
-              authorization: `Bearer ${lumaApiKey}`,
-            },
-            timeout: 30000,
+      // Networking hardening: prefer IPv4 and retry transient errors
+      const httpsAgent = new https.Agent({ keepAlive: true, family: 4 });
+      const httpAgent = new http.Agent({ keepAlive: true, family: 4 });
+
+      const isTransient = (err: any) => {
+        const code = err?.code || err?.cause?.code;
+        return [
+          "ETIMEDOUT",
+          "ENETUNREACH",
+          "ECONNRESET",
+          "EAI_AGAIN",
+          "ESOCKETTIMEDOUT",
+        ].includes(code);
+      };
+
+      let createGenRes: any | undefined;
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          createGenRes = await axios.post(
+            "https://api.lumalabs.ai/dream-machine/v1/generations",
+            lumaPayload,
+            {
+              headers: {
+                accept: "application/json",
+                "content-type": "application/json",
+                authorization: `Bearer ${lumaApiKey}`,
+              },
+              timeout: 45000,
+              httpsAgent,
+              httpAgent,
+            }
+          );
+          break; // success
+        } catch (err) {
+          const e = err as any;
+          if (attempt < 3 && isTransient(e)) {
+            const backoff = attempt * 2000;
+            console.warn(
+              `Luma create generation transient error (attempt ${attempt}/3):`,
+              e?.code || e?.message || e
+            );
+            await new Promise((r) => setTimeout(r, backoff));
+            continue;
           }
-        );
-      } catch (err) {
-        const e = err as any;
-        console.error("Luma create generation error:", e?.response?.data || e);
-        res.status(500).json({
-          success: false,
-          error: "Failed to create Luma generation",
-          details: e?.response?.data || String(e),
-        });
-        return;
+          console.error(
+            "Luma create generation error:",
+            e?.response?.data || e
+          );
+          res.status(503).json({
+            success: false,
+            error: "Luma API unreachable or timed out",
+            details: e?.response?.data || e?.message || String(e),
+          });
+          return;
+        }
       }
 
       // Extract generation id
+      if (!createGenRes) {
+        res
+          .status(503)
+          .json({
+            success: false,
+            error: "Failed to contact Luma after retries",
+          });
+        return;
+      }
       const generationId = createGenRes.data?.id || createGenRes.data?.data?.id;
       if (!generationId) {
         res.status(500).json({
@@ -172,11 +264,20 @@ router.post<
                 accept: "application/json",
                 authorization: `Bearer ${lumaApiKey}`,
               },
-              timeout: 20000,
+              timeout: 25000,
+              httpsAgent,
+              httpAgent,
             }
           );
         } catch (err) {
           const e = err as any;
+          if (isTransient(e)) {
+            console.warn(
+              "Luma poll transient error, continuing:",
+              e?.code || e?.message || e
+            );
+            continue; // let loop retry after delay
+          }
           console.error("Luma poll error:", e?.response?.data || e);
           res.status(500).json({
             success: false,
