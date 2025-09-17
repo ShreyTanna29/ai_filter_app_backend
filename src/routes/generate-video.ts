@@ -150,8 +150,8 @@ router.post<
         const v = (val || process.env.LUMA_MODE || "ray 2")
           .toString()
           .toLowerCase();
-        if (v.includes("1.6")) return "ray-1.6";
-        if (v.includes("flash")) return "ray-2-flash"; // fast Ray 2
+        if (v.includes("1.6")) return "ray-1-6";
+        if (v.includes("flash")) return "ray-flash-2"; // fast Ray 2
         return "ray-2"; // default
       };
       const selectedModel = resolveLumaModel(userModel);
@@ -231,12 +231,10 @@ router.post<
 
       // Extract generation id
       if (!createGenRes) {
-        res
-          .status(503)
-          .json({
-            success: false,
-            error: "Failed to contact Luma after retries",
-          });
+        res.status(503).json({
+          success: false,
+          error: "Failed to contact Luma after retries",
+        });
         return;
       }
       const generationId = createGenRes.data?.id || createGenRes.data?.data?.id;
