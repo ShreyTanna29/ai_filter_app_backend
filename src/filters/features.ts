@@ -1,7 +1,7 @@
 export const features = [
   {
     "endpoint": "ai-bikini",
-    "prompt": "transform this image into A stunning woman confidently walking along a pristine tropical beach in a designer bikini, golden hour lighting casting warm glows, crystal clear turquoise ocean waves gently crashing, soft ocean breeze flowing through her hair, cinematic lens flares creating magical atmosphere, ultra-realistic 8K quality, professional photography style, dreamy summer aesthetic with perfect composition"
+    "prompt": "A cinematic video of a model in casual summer beachwear, walking along the shoreline. Professional fashion photoshoot style, ultra-realistic lighting, glossy hair, clear sky, ocean waves in the background, 4K cinematic quality."
   },
   {
     "endpoint": "ai-twerk",
