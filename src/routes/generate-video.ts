@@ -28,6 +28,62 @@ cloudinary.config({
 const router = Router();
 const prisma = new PrismaClient();
 
+// --- Helper serialization utilities to avoid circular JSON issues in error responses ---
+const safeJson = (value: any, depth = 3): any => {
+  if (value === null || value === undefined) return value;
+  if (depth <= 0) return typeof value;
+  if (Array.isArray(value))
+    return value.slice(0, 10).map((v) => safeJson(v, depth - 1));
+  if (typeof value === "object") {
+    // Axios error formatting
+    if ((value as any).isAxiosError) {
+      const ax: any = value;
+      return {
+        isAxiosError: true,
+        message: ax.message,
+        code: ax.code,
+        status: ax.response?.status,
+        statusText: ax.response?.statusText,
+        data: safeJson(ax.response?.data, depth - 1),
+        url: ax.config?.url,
+        method: ax.config?.method,
+      };
+    }
+    const out: Record<string, any> = {};
+    let count = 0;
+    for (const k of Object.keys(value)) {
+      if (count++ > 20) {
+        out.__truncated = true;
+        break;
+      }
+      try {
+        const v: any = (value as any)[k];
+        if (v === value) continue; // circular self
+        if (typeof v === "function") continue;
+        if (k.startsWith("_")) continue; // skip internal/private heavy props
+        out[k] = safeJson(v, depth - 1);
+      } catch {
+        out[k] = "[unserializable]";
+      }
+    }
+    return out;
+  }
+  return value;
+};
+
+const serializeError = (err: any) => {
+  if (!err) return undefined;
+  if (typeof err === "string") return err;
+  if (err instanceof Error) {
+    return {
+      message: err.message,
+      name: err.name,
+      code: (err as any).code,
+    };
+  }
+  return safeJson(err);
+};
+
 // Define interfaces for better type safety
 interface VideoGenerationRequest {
   imageUrl?: string; // primary key
@@ -123,7 +179,7 @@ router.post<
             res.status(503).json({
               success: false,
               error: "Failed to upload image to Cloudinary (network)",
-              details: e?.response?.data || e?.message || String(e),
+              details: serializeError(e),
             });
             return;
           }
@@ -139,7 +195,203 @@ router.post<
           ? featureObj.prompt
           : "";
 
-      // Step 3: Generate video using LumaLabs Dream Machine (Ray 2 - Image to Video)
+      // Step 3: Provider branching (MiniMax models, else Luma)
+      const rawModel = (userModel || "").toString();
+      const isMiniMax =
+        /MiniMax-Hailuo-02|I2V-01-Director|I2V-01-live|I2V-01/i.test(rawModel);
+
+      if (isMiniMax) {
+        const miniMaxKey = process.env.MINIMAX_API_KEY;
+        if (!miniMaxKey) {
+          res
+            .status(500)
+            .json({ success: false, error: "MINIMAX_API_KEY not set" });
+          return;
+        }
+        // Build payload per docs
+        const duration = Number(process.env.MINIMAX_DURATION || 6); // MiniMax supports 6 or 10 for some models
+        const resolution =
+          process.env.MINIMAX_RESOLUTION ||
+          (rawModel === "MiniMax-Hailuo-02" ? "768P" : "720P");
+        const mmPayload: any = {
+          model: rawModel,
+          prompt: prompt, // MiniMax requires prompt
+          duration,
+          resolution,
+        };
+        // first_frame_image required for I2V models (and Hailuo at some resolutions)
+        mmPayload.first_frame_image = imageCloudUrl;
+
+        let taskId: string | undefined;
+        try {
+          const createResp = await axios.post(
+            "https://api.minimax.io/v1/video_generation",
+            mmPayload,
+            {
+              headers: {
+                Authorization: `Bearer ${miniMaxKey}`,
+                "Content-Type": "application/json",
+              },
+              timeout: 45000,
+            }
+          );
+          taskId = createResp.data?.task_id;
+          if (!taskId) throw new Error("No task_id returned from MiniMax");
+        } catch (e: any) {
+          console.error("MiniMax create error:", serializeError(e));
+          res.status(502).json({
+            success: false,
+            error: "Failed to create MiniMax generation",
+            details: serializeError(e),
+          });
+          return;
+        }
+
+        // Poll task status
+        let mmVideoUrl: string | null = null;
+        let mmFileId: string | null = null;
+        for (let i = 0; i < 90; i++) {
+          // up to ~6 min (90 * 4s)
+          await new Promise((r) => setTimeout(r, 4000));
+          try {
+            const pollResp = await axios.get(
+              "https://api.minimax.io/v1/query/video_generation",
+              {
+                headers: { Authorization: `Bearer ${miniMaxKey}` },
+                params: { task_id: taskId },
+                timeout: 20000,
+              }
+            );
+            const status = pollResp.data?.status;
+            if (status === "Success" || status === "success") {
+              // Assume file_id -> downloadable endpoint
+              const fileId = pollResp.data?.file_id;
+              console.log(
+                "MiniMax generation success payload:",
+                safeJson(pollResp.data)
+              );
+              mmFileId = fileId || null;
+              // If API already provides a direct downloadable URL use it, else will fetch below
+              mmVideoUrl =
+                pollResp.data?.video_url || pollResp.data?.file_url || null;
+              break; // exit loop, will handle retrieval next
+            }
+            if (
+              status === "Fail" ||
+              status === "failed" ||
+              status === "error"
+            ) {
+              res.status(500).json({
+                success: false,
+                error: "MiniMax generation failed",
+                details: safeJson(pollResp.data),
+              });
+              return;
+            }
+          } catch (e: any) {
+            console.warn("MiniMax poll error (continuing):", e?.message || e);
+            continue;
+          }
+        }
+        if (!mmVideoUrl && !mmFileId) {
+          res
+            .status(504)
+            .json({ success: false, error: "MiniMax generation timeout" });
+          return;
+        }
+
+        // If we only have file id, call official retrieve endpoint per docs
+        if (!mmVideoUrl && mmFileId) {
+          try {
+            const retrieveResp = await axios.get(
+              "https://api.minimax.io/v1/files/retrieve",
+              {
+                headers: {
+                  Authorization: `Bearer ${miniMaxKey}`,
+                  "Content-Type": "application/json",
+                },
+                params: { file_id: mmFileId },
+                timeout: 30000,
+              }
+            );
+            mmVideoUrl =
+              retrieveResp.data?.file?.download_url ||
+              retrieveResp.data?.download_url ||
+              null;
+            if (!mmVideoUrl) {
+              console.error(
+                "MiniMax retrieve missing download_url",
+                safeJson(retrieveResp.data)
+              );
+              res.status(502).json({
+                success: false,
+                error: "MiniMax retrieve missing download_url",
+                details: safeJson(retrieveResp.data),
+              });
+              return;
+            }
+          } catch (e: any) {
+            console.error("MiniMax retrieve error:", serializeError(e));
+            res.status(502).json({
+              success: false,
+              error: "Failed to retrieve MiniMax video file",
+              details: serializeError(e),
+            });
+            return;
+          }
+        }
+
+        if (!mmVideoUrl) {
+          res
+            .status(500)
+            .json({ success: false, error: "MiniMax video URL unresolved" });
+          return;
+        }
+        // Download video
+        let mmStream;
+        try {
+          mmStream = await axios.get(mmVideoUrl, {
+            responseType: "stream",
+            timeout: 600000,
+          });
+        } catch (e: any) {
+          res.status(500).json({
+            success: false,
+            error: "Failed to download MiniMax video",
+            details: serializeError(e),
+          });
+          return;
+        }
+        // Upload to Cloudinary
+        const mmUpload: UploadApiResponse = await new Promise(
+          (resolve, reject) => {
+            const uploadStream = cloudinary.uploader.upload_stream(
+              {
+                resource_type: "video",
+                folder: "generated-videos",
+                public_id: `${feature}-minimax-${Date.now()}`,
+                chunk_size: 6000000,
+              },
+              (error, result) => {
+                if (error) return reject(error);
+                resolve(result as UploadApiResponse);
+              }
+            );
+            mmStream.data.pipe(uploadStream);
+          }
+        );
+        await prisma.generatedVideo.create({
+          data: { feature, url: mmUpload.secure_url },
+        });
+        res.status(200).json({
+          success: true,
+          video: { url: mmUpload.secure_url },
+          cloudinaryId: mmUpload.public_id,
+        });
+        return;
+      }
+
+      // Step 3 (fallback): Generate video using LumaLabs Dream Machine (Ray 2 - Image to Video)
       const lumaApiKey = process.env.LUMA_API_KEY;
       if (!lumaApiKey) {
         throw new Error("LUMA_API_KEY not set in environment");
@@ -216,14 +468,11 @@ router.post<
             await new Promise((r) => setTimeout(r, backoff));
             continue;
           }
-          console.error(
-            "Luma create generation error:",
-            e?.response?.data || e
-          );
+          console.error("Luma create generation error:", serializeError(e));
           res.status(503).json({
             success: false,
             error: "Luma API unreachable or timed out",
-            details: e?.response?.data || e?.message || String(e),
+            details: serializeError(e),
           });
           return;
         }
@@ -242,7 +491,7 @@ router.post<
         res.status(500).json({
           success: false,
           error: "No generation id returned from Luma",
-          details: createGenRes.data,
+          details: safeJson(createGenRes.data),
         });
         return;
       }
@@ -276,11 +525,11 @@ router.post<
             );
             continue; // let loop retry after delay
           }
-          console.error("Luma poll error:", e?.response?.data || e);
+          console.error("Luma poll error:", serializeError(e));
           res.status(500).json({
             success: false,
             error: "Failed to poll Luma generation",
-            details: e?.response?.data || String(e),
+            details: serializeError(e),
           });
           return;
         }
@@ -306,7 +555,7 @@ router.post<
           res.status(500).json({
             success: false,
             error: "Luma generation failed",
-            details: pollRes.data,
+            details: safeJson(pollRes.data),
           });
           return;
         }
@@ -334,7 +583,7 @@ router.post<
         res.status(500).json({
           success: false,
           error: "Failed to download Luma video",
-          details: e?.response?.data || String(e),
+          details: serializeError(e),
         });
         return;
       }
@@ -374,7 +623,7 @@ router.post<
         cloudinaryId: uploadResult.public_id,
       });
     } catch (error) {
-      console.error("Error generating video:", error);
+      console.error("Error generating video:", serializeError(error));
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error";
       res.status(500).json({
