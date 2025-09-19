@@ -164,6 +164,14 @@ window.addEventListener("DOMContentLoaded", function () {
         return;
       }
 
+      // Enforce template selection for pixverse
+      if (!featureTemplateId || featureTemplateId === "") {
+        if (genStatus)
+          genStatus.textContent =
+            "Please choose a PixVerse style template (required for PixVerse v4 | effects).";
+        genBtn.disabled = false;
+        return;
+      }
       if (signInBtn) signInBtn.disabled = true;
       if (signInBtnText) signInBtnText.textContent = "Signing In...";
       if (signInLoader) signInLoader.classList.remove("hidden");
@@ -211,6 +219,35 @@ window.addEventListener("DOMContentLoaded", function () {
       }
     };
   }
+
+  // --- PixVerse template select toggling ---
+  function togglePixTemplateVisibility(modelSelectId, pixSelectId) {
+    const modelSel = document.getElementById(modelSelectId);
+    const pixSel = document.getElementById(pixSelectId);
+    if (!modelSel || !pixSel) return;
+    const val = (modelSel.value || "").toLowerCase();
+    if (val.includes("pixverse")) {
+      pixSel.classList.remove("hidden");
+    } else {
+      pixSel.classList.add("hidden");
+      // Clear selection when hidden to avoid stale template id usage
+      if (pixSel.tagName === "SELECT") pixSel.selectedIndex = 0;
+    }
+  }
+
+  [
+    ["featureModelSelect", "featurePixTemplateSelect"],
+    ["stepModelSelect", "stepPixTemplateSelect"],
+  ].forEach(([modelId, pixId]) => {
+    const modelEl = document.getElementById(modelId);
+    if (modelEl) {
+      modelEl.addEventListener("change", () =>
+        togglePixTemplateVisibility(modelId, pixId)
+      );
+      // Initial state
+      togglePixTemplateVisibility(modelId, pixId);
+    }
+  });
 
   // Require authentication for dashboard
   const token = localStorage.getItem("token");
@@ -562,6 +599,19 @@ function showFeatureDetailPage(endpoint) {
         try {
           const modelSelect = document.getElementById("featureModelSelect");
           const selectedModel = modelSelect ? modelSelect.value : undefined;
+          // PixVerse template selection (feature modal)
+          let featureTemplateId;
+          if (
+            selectedModel &&
+            selectedModel.toLowerCase().includes("pixverse")
+          ) {
+            const pixSelect = document.getElementById(
+              "featurePixTemplateSelect"
+            );
+            if (pixSelect && !pixSelect.classList.contains("hidden")) {
+              featureTemplateId = pixSelect.value || undefined;
+            }
+          }
           const featurePromptEl = document.getElementById(
             "featureDetailPrompt"
           );
@@ -576,7 +626,12 @@ function showFeatureDetailPage(endpoint) {
               body: JSON.stringify({
                 imageUrl: uploadedImageUrl,
                 model: selectedModel,
-                prompt: promptOverride,
+                // Do not send prompt for pixverse v4 | effects (it is ignored)
+                ...(selectedModel &&
+                selectedModel.toLowerCase().includes("pixverse")
+                  ? {}
+                  : { prompt: promptOverride }),
+                templateId: featureTemplateId,
               }),
             }
           );
@@ -1702,13 +1757,36 @@ async function generateVideo(endpoint, event) {
     const selectedModel = modelSelect ? modelSelect.value : undefined;
     const promptInput = document.getElementById("stepDetailPromptInput");
     const promptOverride = promptInput ? promptInput.value : undefined;
+    if (selectedModel && selectedModel.toLowerCase().includes("pixverse")) {
+      if (!stepTemplateId) {
+        statusDiv.textContent =
+          "Select a PixVerse style template (required for PixVerse v4 | effects).";
+        statusDiv.style.color = "red";
+        generateButton.disabled = false;
+        generateButton.innerHTML =
+          '<i class="fas fa-magic"></i> Generate Video';
+        return;
+      }
+    }
+    // PixVerse template selection (step detail)
+    let stepTemplateId;
+    if (selectedModel && selectedModel.toLowerCase().includes("pixverse")) {
+      const stepPixSelect = document.getElementById("stepPixTemplateSelect");
+      if (stepPixSelect && !stepPixSelect.classList.contains("hidden")) {
+        stepTemplateId = stepPixSelect.value || undefined;
+      }
+    }
     const response = await fetch(`/api/generate-video/${endpoint}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         image_url: imageUrl,
         model: selectedModel,
-        prompt: promptOverride,
+        // Omit prompt for pixverse v4 | effects
+        ...(selectedModel && selectedModel.toLowerCase().includes("pixverse")
+          ? {}
+          : { prompt: promptOverride }),
+        templateId: stepTemplateId,
       }),
     });
     const result = await response.json();

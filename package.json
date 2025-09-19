@@ -25,6 +25,7 @@
     "@types/multer": "^2.0.0",
     "@types/node": "^24.0.8",
     "axios": "^1.10.0",
+    "@eachlabs/aiflow": "^0.0.1",
     "bcryptjs": "^3.0.2",
     "cloudinary": "^2.7.0",
     "cors": "^2.8.5",
