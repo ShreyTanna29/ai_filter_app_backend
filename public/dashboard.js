@@ -488,6 +488,16 @@ function showFeatureDetailPage(endpoint) {
     const uploadStatus = document.getElementById("featureUploadStatus");
     const genBtn = document.getElementById("featureGenerateVideoBtn");
     const genStatus = document.getElementById("featureGenStatus");
+    const featureLastFrameWrapper = document.getElementById(
+      "featureLastFrameWrapper"
+    );
+    const featureLastFrameInput = document.getElementById(
+      "featureLastFrameInput"
+    );
+    const featureLastFramePreview = document.getElementById(
+      "featureLastFramePreview"
+    );
+    let featureLastFrameUrl = null;
 
     // Reset UI
     if (preview) {
@@ -522,6 +532,55 @@ function showFeatureDetailPage(endpoint) {
     }
     if (input) {
       input.onchange = handleFeatureImageUpload;
+    }
+    // Pixverse last frame upload
+    if (featureLastFrameInput) {
+      featureLastFrameInput.onchange = () => {
+        const file =
+          featureLastFrameInput.files && featureLastFrameInput.files[0];
+        if (!file) return;
+        const formData = new FormData();
+        formData.append("image", file);
+        if (uploadStatus) uploadStatus.textContent = "Uploading last frame...";
+        fetch("/api/cloudinary/upload", { method: "POST", body: formData })
+          .then((r) => r.json())
+          .then((r) => {
+            if (r && r.success && r.url) {
+              featureLastFrameUrl = r.url;
+              if (featureLastFramePreview) {
+                featureLastFramePreview.src = r.url;
+                featureLastFramePreview.style.display = "block";
+              }
+              if (uploadStatus)
+                uploadStatus.textContent = "Last frame uploaded!";
+            } else {
+              if (uploadStatus)
+                uploadStatus.textContent = "Last frame upload failed.";
+            }
+            featureLastFrameInput.value = "";
+          })
+          .catch(() => {
+            if (uploadStatus)
+              uploadStatus.textContent = "Last frame upload failed.";
+            featureLastFrameInput.value = "";
+          });
+      };
+    }
+    // Toggle display of last frame uploader based on model selection
+    const featureModelSelect = document.getElementById("featureModelSelect");
+    if (featureModelSelect && featureLastFrameWrapper) {
+      const toggleFeatureLastFrame = () => {
+        if (/pixverse-v4-transition/i.test(featureModelSelect.value)) {
+          featureLastFrameWrapper.style.display = "flex";
+        } else {
+          featureLastFrameWrapper.style.display = "none";
+          featureLastFrameUrl = null;
+          if (featureLastFramePreview)
+            featureLastFramePreview.style.display = "none";
+        }
+      };
+      featureModelSelect.addEventListener("change", toggleFeatureLastFrame);
+      toggleFeatureLastFrame();
     }
     function handleFeatureImageUpload() {
       const file = input.files && input.files[0];
@@ -573,11 +632,22 @@ function showFeatureDetailPage(endpoint) {
             {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                imageUrl: uploadedImageUrl,
-                model: selectedModel,
-                prompt: promptOverride,
-              }),
+              body: JSON.stringify(
+                (() => {
+                  const payload = {
+                    imageUrl: uploadedImageUrl,
+                    model: selectedModel,
+                    prompt: promptOverride,
+                  };
+                  if (
+                    /pixverse-v4-transition/i.test(selectedModel || "") &&
+                    featureLastFrameUrl
+                  ) {
+                    payload.lastFrameUrl = featureLastFrameUrl;
+                  }
+                  return payload;
+                })()
+              ),
             }
           );
           const data = await response.json();
@@ -992,6 +1062,15 @@ function displayTemplates() {
     const stepImageUploadSection = document.getElementById(
       "stepImageUploadSection"
     );
+    const stepModelSelect = document.getElementById("stepModelSelect");
+    const stepLastFrameWrapper = document.getElementById(
+      "stepLastFrameWrapper"
+    );
+    const stepLastFrameInput = document.getElementById("stepLastFrameInput");
+    const stepLastFramePreview = document.getElementById(
+      "stepLastFramePreview"
+    );
+    window._stepLastFrameUrl = null;
     if (stepImageInput && stepImageUploadSection) {
       // Remove previous listeners by cloning
       const newSection = stepImageUploadSection.cloneNode(true);
@@ -1050,6 +1129,52 @@ function displayTemplates() {
           if (uploadStatus) uploadStatus.textContent = "Upload failed.";
           input.value = "";
         });
+    }
+    // Pixverse last frame upload logic
+    if (stepLastFrameInput) {
+      stepLastFrameInput.onchange = () => {
+        const file = stepLastFrameInput.files && stepLastFrameInput.files[0];
+        if (!file) return;
+        const formData = new FormData();
+        formData.append("image", file);
+        if (stepUploadStatus)
+          stepUploadStatus.textContent = "Uploading last frame...";
+        fetch("/api/cloudinary/upload", { method: "POST", body: formData })
+          .then((r) => r.json())
+          .then((r) => {
+            if (r && r.success && r.url) {
+              window._stepLastFrameUrl = r.url;
+              if (stepLastFramePreview) {
+                stepLastFramePreview.src = r.url;
+                stepLastFramePreview.style.display = "block";
+              }
+              if (stepUploadStatus)
+                stepUploadStatus.textContent = "Last frame uploaded!";
+            } else {
+              if (stepUploadStatus)
+                stepUploadStatus.textContent = "Last frame upload failed.";
+            }
+            stepLastFrameInput.value = "";
+          })
+          .catch(() => {
+            if (stepUploadStatus)
+              stepUploadStatus.textContent = "Last frame upload failed.";
+            stepLastFrameInput.value = "";
+          });
+      };
+    }
+    if (stepModelSelect && stepLastFrameWrapper) {
+      const toggleStepLastFrame = () => {
+        if (/pixverse-v4-transition/i.test(stepModelSelect.value)) {
+          stepLastFrameWrapper.style.display = "flex";
+        } else {
+          stepLastFrameWrapper.style.display = "none";
+          window._stepLastFrameUrl = null;
+          if (stepLastFramePreview) stepLastFramePreview.style.display = "none";
+        }
+      };
+      stepModelSelect.addEventListener("change", toggleStepLastFrame);
+      toggleStepLastFrame();
     }
   }
 
@@ -1677,6 +1802,7 @@ function closeVideoDialog() {
 async function generateVideo(endpoint, event) {
   // Unified for both endpoint modal and template steps
   let imageUrl = null;
+  let lastFrameUrl = null;
   let statusDiv = null;
   let generateButton = null;
   // If called from endpoint modal, use uploaded image
@@ -1694,22 +1820,41 @@ async function generateVideo(endpoint, event) {
     alert("Please upload an image first.");
     return;
   }
+  // If model requires last frame (Pixverse) ensure it's present
+  const modelSelect = document.getElementById("stepModelSelect");
+  const selectedModel = modelSelect ? modelSelect.value : undefined;
+  if (/pixverse-v4-transition/i.test(selectedModel || "")) {
+    lastFrameUrl = window._stepLastFrameUrl || null;
+    if (!lastFrameUrl) {
+      alert("Please upload a last frame image for Pixverse transition.");
+      return;
+    }
+  }
   statusDiv.textContent = "Generating video...";
   statusDiv.style.color = "#666";
   try {
     // Use the correct backend endpoint for video generation
-    const modelSelect = document.getElementById("stepModelSelect");
-    const selectedModel = modelSelect ? modelSelect.value : undefined;
+    // selectedModel already resolved above
     const promptInput = document.getElementById("stepDetailPromptInput");
     const promptOverride = promptInput ? promptInput.value : undefined;
     const response = await fetch(`/api/generate-video/${endpoint}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        image_url: imageUrl,
-        model: selectedModel,
-        prompt: promptOverride,
-      }),
+      body: JSON.stringify(
+        (() => {
+          const payload = {
+            image_url: imageUrl,
+            model: selectedModel,
+            prompt: promptOverride,
+          };
+          if (
+            /pixverse-v4-transition/i.test(selectedModel || "") &&
+            lastFrameUrl
+          )
+            payload.last_frame_url = lastFrameUrl;
+          return payload;
+        })()
+      ),
     });
     const result = await response.json();
     if (result.video && result.video.url) {

@@ -222,7 +222,19 @@
                       <option value="I2V-01-Director">I2V-01-Director</option>
                       <option value="I2V-01-live">I2V-01-live</option>
                       <option value="I2V-01">I2V-01</option>
+                      <option value="pixverse-v4-image-to-video">Pixverse V4 Image2Video</option>
+                       <option value="pixverse-v4.5-image-to-video">Pixverse V4.5 Image2Video</option>
+                      <option value="pixverse-v5-image-to-video">Pixverse V5 Image2Video</option>
                     </select>
+                    <!-- Pixverse last frame uploader (hidden unless Pixverse model chosen) -->
+                    <div id="stepLastFrameWrapper" style="display:none" class="flex items-center gap-2">
+                      <label for="stepLastFrameInput" class="upload-label cursor-pointer flex items-center gap-2 text-sm border rounded px-2 py-1">
+                        <i class="fas fa-images"></i>
+                        <span>Last Frame</span>
+                        <input type="file" id="stepLastFrameInput" accept="image/*" style="display:none" />
+                      </label>
+                      <img id="stepLastFramePreview" style="display:none; max-width:80px" class="rounded shadow" />
+                    </div>
                     <button
                       id="stepGenerateVideoBtn"
                       class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center gap-2"
@@ -638,10 +650,23 @@
                   <option value="ray 2 flash">Ray 2 Flash</option>
                   <option value="ray 1.6">Ray 1.6</option>
                   <option value="MiniMax-Hailuo-02">MiniMax-Hailuo-02</option>
-                  <option value="I2V-01-Director">I2V-01-Director</option>
-                  <option value="I2V-01-live">I2V-01-live</option>
-                  <option value="I2V-01">I2V-01</option>
+                  <option value="MiniMax I2V-01-Director">I2V-01-Director</option>
+                  <option value="MiniMax I2V-01-live">I2V-01-live</option>
+                  <option value="MiniMax I2V-01">I2V-01</option>
+                  <option value="pixverse-v4-transition">Pixverse V4 Transition</option>
+                  <option value="pixverse-v4-image-to-video">Pixverse V4 Image2Video</option>
+                     <option value="pixverse-v4.5-image-to-video">Pixverse V4.5 Image2Video</option>
+                    <option value="pixverse-v5-image-to-video">Pixverse V5 Image2Video</option>
                 </select>
+                <!-- Pixverse last frame uploader (hidden unless Pixverse model chosen) -->
+                <div id="featureLastFrameWrapper" style="display:none" class="flex items-center gap-2">
+                  <label for="featureLastFrameInput" class="upload-label cursor-pointer flex items-center gap-2 text-sm border rounded px-2 py-1">
+                    <i class="fas fa-images"></i>
+                    <span>Last Frame</span>
+                    <input type="file" id="featureLastFrameInput" accept="image/*" style="display:none" />
+                  </label>
+                  <img id="featureLastFramePreview" style="display:none; max-width:80px" class="rounded shadow" />
+                </div>
                 <button
                   id="featureGenerateVideoBtn"
                   class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center gap-2"

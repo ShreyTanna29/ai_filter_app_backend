@@ -6,22 +6,31 @@ This API provides a large set of POST endpoints for generating short AI-powered 
 
 ## Table of Contents
 
-- [Base URL](#base-url)
-- [Environment Variables](#environment-variables)
-- [Request](#request)
-- [Response](#response)
-- [Example Request (cURL)](#example-request-curl)
-- [Available Endpoints](#available-endpoints)
-- [Error Codes](#error-codes)
-- [Notes](#notes)
-- [Example Response](#example-response)
-- [Contact](#contact)
+- [AI Video Generation API](#ai-video-generation-api)
+  - [Table of Contents](#table-of-contents)
+  - [Base URL](#base-url)
+  - [Environment Variables](#environment-variables)
+  - [Request](#request)
+    - [Method](#method)
+    - [Content-Type](#content-type)
+    - [Body Parameters](#body-parameters)
+    - [Image Requirements](#image-requirements)
+    - [Image URL Examples](#image-url-examples)
+  - [Response](#response)
+    - [Success Response](#success-response)
+    - [Response Fields](#response-fields)
+  - [Example Request (cURL)](#example-request-curl)
+  - [Available Endpoints](#available-endpoints)
+  - [Error Codes](#error-codes)
+  - [Notes](#notes)
+  - [Example Response](#example-response)
+  - [Contact](#contact)
 
 ---
 
 ## Base URL
 
-```
+```bash
 /api/ai-<feature>
 ```
 
@@ -40,6 +49,14 @@ ALIBABA_API_KEY=your_alibaba_cloud_api_key
 DATABASE_URL=your_postgres_db_url
 DIRECT_URL=if_using_supabase_as_db
 SENDGRID_API_KEY=your_sendgrid_api_key
+LUMA_API_KEY=your_luma_api_key
+MINIMAX_API_KEY=your_minimax_api_key
+PIXVERSE_API_KEY=your_eachlabs_or_pixverse_api_key
+# Optional Pixverse tuning
+PIXVERSE_DURATION=5                 # default 5
+PIXVERSE_QUALITY=540p               # 540p or 720p etc.
+PIXVERSE_MOTION_MODE=normal         # normal / slow / fast (if supported)
+PIXVERSE_WEBHOOK_URL=https://your.domain/webhooks/pixverse
 ```
 
 ---
