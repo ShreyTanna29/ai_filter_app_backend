@@ -213,7 +213,7 @@
                       class="upload-status text-sm mt-1"
                     ></div>
                   </div>
-                  <div class="flex items-center gap-2 mt-2">
+                  <div class="flex items-center gap-2 mt-2 max-h-[10vh] overflow-y-auto">
                     <select id="stepModelSelect" class="border rounded px-2 py-2">
                       <option value="ray 2" selected>Ray 2</option>
                       <option value="ray 2 flash">Ray 2 Flash</option>
@@ -225,6 +225,14 @@
                       <option value="pixverse-v4-image-to-video">Pixverse V4 Image2Video</option>
                        <option value="pixverse-v4.5-image-to-video">Pixverse V4.5 Image2Video</option>
                       <option value="pixverse-v5-image-to-video">Pixverse V5 Image2Video</option>
+                      <option value="kling-v1-standard-image-to-video">Kling v1 Standard Image2Video</option>
+                      <option value="kling-v1-pro-image-to-video">Kling v1 Pro Image2Video</option>
+                      <option value="kling-1.5-pro-image-to-video">Kling 1.5 Pro Image2Video</option>
+                      <option value="kling-v1.6-pro-image-to-video">Kling v1.6 Pro Image2Video</option>
+                      <option value="kling-1.6-standard-image-to-video">Kling 1.6 Standard Image2Video</option>
+                      <option value="kling-v2-master-image-to-video">Kling v2 Master Image2Video</option>
+                      <option value="kling-v2.1-standard-image-to-video">Kling v2.1 Standard Image2Video</option>
+                      <option value="kling-v2.1-pro-image-to-video">Kling v2.1 Pro Image2Video</option>
                     </select>
                     <!-- Pixverse last frame uploader (hidden unless Pixverse model chosen) -->
                     <div id="stepLastFrameWrapper" style="display:none" class="flex items-center gap-2">
@@ -644,7 +652,7 @@
                   class="upload-status text-sm mt-1"
                 ></div>
               </div>
-              <div class="flex items-center gap-2 mt-3">
+              <div class="flex items-center gap-2 mt-3 max-h-[10vh] overflow-y-auto">
                 <select id="featureModelSelect" class="border rounded px-2 py-2">
                   <option value="ray 2" selected>Ray 2</option>
                   <option value="ray 2 flash">Ray 2 Flash</option>
@@ -657,6 +665,14 @@
                   <option value="pixverse-v4-image-to-video">Pixverse V4 Image2Video</option>
                      <option value="pixverse-v4.5-image-to-video">Pixverse V4.5 Image2Video</option>
                     <option value="pixverse-v5-image-to-video">Pixverse V5 Image2Video</option>
+                  <option value="kling-v1-standard-image-to-video">Kling v1 Standard Image2Video</option>
+                    <option value="kling-v1-pro-image-to-video">Kling v1 Pro Image2Video</option>
+                  <option value="kling-1.5-pro-image-to-video">Kling 1.5 Pro Image2Video</option>
+                  <option value="kling-v1.6-pro-image-to-video">Kling v1.6 Pro Image2Video</option>
+                  <option value="kling-1.6-standard-image-to-video">Kling 1.6 Standard Image2Video</option>
+                  <option value="kling-v2-master-image-to-video">Kling v2 Master Image2Video</option>
+                  <option value="kling-v2.1-standard-image-to-video">Kling v2.1 Standard Image2Video</option>
+                  <option value="kling-v2.1-pro-image-to-video">Kling v2.1 Pro Image2Video</option>
                 </select>
                 <!-- Pixverse last frame uploader (hidden unless Pixverse model chosen) -->
                 <div id="featureLastFrameWrapper" style="display:none" class="flex items-center gap-2">

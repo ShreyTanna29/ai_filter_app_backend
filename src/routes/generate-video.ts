@@ -241,7 +241,7 @@ router.post<
       const isPixverseTransition = /pixverse-v4-transition/i.test(rawModel);
       // Support v4, v4.5 and v5 image to video variants
       const isPixverseImage2Video =
-        /pixverse-v4(?:\.5)?-image-to-video|pixverse-v5-image-to-video/i.test(
+        /pixverse-v4(?:\.5)?-image-to-video|pixverse-v5-image-to-video|kling-v1-pro-image-to-video|kling-v1-standard-image-to-video|kling-1\.5-pro-image-to-video|kling-v1\.6-pro-image-to-video|kling-1\.6-standard-image-to-video|kling-v2-master-image-to-video|kling-v2\.1-standard-image-to-video|kling-v2\.1-pro-image-to-video/i.test(
           rawModel
         );
       if (isPixverseTransition || isPixverseImage2Video) {
@@ -297,6 +297,22 @@ router.post<
         const createPayload = {
           model: isPixverseTransition
             ? "pixverse-v4-transition"
+            : /kling-v2\.1-pro-image-to-video/i.test(rawModel)
+            ? "kling-v2-1-pro-image-to-video"
+            : /kling-v2\.1-standard-image-to-video/i.test(rawModel)
+            ? "kling-v2-1-standard-image-to-video"
+            : /kling-v2-master-image-to-video/i.test(rawModel)
+            ? "kling-v2-master-image-to-video"
+            : /kling-v1\.6-pro-image-to-video/i.test(rawModel)
+            ? "kling-v1-6-pro-image-to-video"
+            : /kling-1\.6-standard-image-to-video/i.test(rawModel)
+            ? "kling-1-6-standard-image-to-video"
+            : /kling-1\.5-pro-image-to-video/i.test(rawModel)
+            ? "kling-1-5-pro-image-to-video"
+            : /kling-v1-pro-image-to-video/i.test(rawModel)
+            ? "kling-v1-pro-image-to-video"
+            : /kling-v1-standard-image-to-video/i.test(rawModel)
+            ? "kling-v1-standard-image-to-video"
             : /pixverse-v5-image-to-video/i.test(rawModel)
             ? "pixverse-v5-image-to-video"
             : /pixverse-v4\.5-image-to-video/i.test(rawModel)
