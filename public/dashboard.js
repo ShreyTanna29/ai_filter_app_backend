@@ -984,7 +984,7 @@ function displayTemplates() {
             <div class="space-y-2">
               ${(template.subcategories || [])
                 .map(
-                  (subcat) =>
+                  (subcat, scIndex) =>
                     `<div class="mb-2">
                       <div class="font-semibold text-blue-700 mb-1">${
                         subcat.name
@@ -992,7 +992,9 @@ function displayTemplates() {
                       ${(subcat.steps || [])
                         .map(
                           (step, index) => `
-                            <div class="flex items-start gap-3 bg-gray-50 rounded-lg p-3 border border-gray-200 hover:bg-blue-50 cursor-pointer transition">
+                            <div class="flex items-start gap-3 bg-gray-50 rounded-lg p-3 border border-gray-200 hover:bg-blue-50 cursor-pointer transition" data-template-id="${
+                              template.id
+                            }" data-subcat-index="${scIndex}" data-step-index="${index}">
                               <div class="flex-shrink-0 w-7 h-7 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-bold">${
                                 index + 1
                               }</div>
@@ -1024,16 +1026,23 @@ function displayTemplates() {
         el.addEventListener("click", function (e) {
           const templateId = parseInt(this.getAttribute("data-template-id"));
           const stepIndex = parseInt(this.getAttribute("data-step-index"));
-          showStepDetailPage(templateId, stepIndex);
+          const subcatIndex = parseInt(this.getAttribute("data-subcat-index"));
+          showStepDetailPage(templateId, stepIndex, subcatIndex);
           e.stopPropagation();
         });
       });
   }, 0);
   // Show step detail page for editing
-  function showStepDetailPage(templateId, stepIndex) {
+  function showStepDetailPage(templateId, stepIndex, subcatIndex) {
     const template = templates.find((t) => t.id === templateId);
     if (!template) return;
-    const step = template.steps[stepIndex];
+    let step = Array.isArray(template.steps)
+      ? template.steps[stepIndex]
+      : undefined;
+    if (!step && Array.isArray(template.subcategories)) {
+      const sc = template.subcategories[subcatIndex];
+      if (sc && Array.isArray(sc.steps)) step = sc.steps[stepIndex];
+    }
     if (!step) return;
     document.getElementById("stepDetailEndpointInput").value =
       step.endpoint || "";
@@ -1635,8 +1644,9 @@ function renderStepGeneratedVideos(containerEl, endpoint, onSelect) {
     containerEl.innerHTML = "";
     return;
   }
+  containerEl.dataset.endpoint = endpoint;
   containerEl.innerHTML =
-    '<div style="font-weight:600;margin:6px 0;">Generated videos</div><div class="text-sm text-gray-500">Loading...</div>';
+    '<div class="text-sm text-gray-500 flex items-center gap-2"><svg class="animate-spin h-4 w-4 text-gray-400" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"></circle><path d="M4 12a8 8 0 018-8" stroke="currentColor" stroke-width="4" fill="none"></path></svg> Loading videos...</div>';
   fetch(`/api/videos/${encodeURIComponent(endpoint)}`)
     .then((r) => r.json())
     .then((videos) => {
@@ -1645,17 +1655,18 @@ function renderStepGeneratedVideos(containerEl, endpoint, onSelect) {
           '<div class="text-sm text-gray-500">No videos yet for this endpoint.</div>';
         return;
       }
-      containerEl.innerHTML =
-        '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px;">' +
-        videos
-          .map(
-            (v) =>
-              `<div class="rounded border border-gray-200 p-1 bg-white cursor-pointer step-gen-video-item" data-url="${v.url}">
-                 <video src="${v.url}" style="width:100%;border-radius:6px;" preload="metadata"></video>
-               </div>`
-          )
-          .join("") +
-        "</div>";
+      const grid = document.createElement("div");
+      grid.className = "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3";
+      grid.innerHTML = videos
+        .map(
+          (v) =>
+            `<div class="rounded-lg overflow-hidden border border-gray-200 bg-white hover:border-blue-300 hover:shadow cursor-pointer step-gen-video-item" data-url="${v.url}">
+               <video src="${v.url}#t=0.1" class="w-full" style="aspect-ratio:16/9" preload="metadata"></video>
+             </div>`
+        )
+        .join("");
+      containerEl.innerHTML = "";
+      containerEl.appendChild(grid);
       containerEl.querySelectorAll(".step-gen-video-item").forEach((el) => {
         el.addEventListener(
           "click",
