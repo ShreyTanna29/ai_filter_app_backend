@@ -1157,47 +1157,76 @@ function displayTemplates() {
     document.getElementById("stepImagePreview").src = "";
     document.getElementById("stepUploadStatus").textContent = "";
     document.getElementById("stepGenStatus").textContent = "";
-    document.getElementById("stepVideoPreview").style.display = "none";
+    const legacyPreview = document.getElementById("stepVideoPreview");
+    if (legacyPreview) legacyPreview.style.display = "none";
     window._stepUploadedImageUrl = null;
     // Load existing generated videos for this step's endpoint
     const generatedListEl = document.getElementById("stepGeneratedList");
     if (generatedListEl && step.endpoint) {
       generatedListEl.innerHTML =
-        '<div class="text-xs text-gray-500 flex items-center gap-1"><svg class="animate-spin h-3 w-3 text-gray-400" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"></circle><path d="M4 12a8 8 0 018-8" stroke="currentColor" stroke-width="4" fill="none"></path></svg> Loading...</div>';
+        '<div class="col-span-full text-xs text-gray-500 flex items-center gap-1"><svg class="animate-spin h-3 w-3 text-gray-400" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"></circle><path d="M4 12a8 8 0 018-8" stroke="currentColor" stroke-width="4" fill="none"></path></svg> Loading...</div>';
       fetch(`/api/videos/${encodeURIComponent(step.endpoint)}`)
         .then((r) => r.json())
         .then((videos) => {
           if (!Array.isArray(videos) || videos.length === 0) {
             generatedListEl.innerHTML =
-              '<div class="text-xs text-gray-500">No videos yet for this endpoint.</div>';
+              '<div class="col-span-full text-xs text-gray-500">No videos yet for this endpoint.</div>';
             return;
           }
-          const grid = document.createElement("div");
-          grid.className = "grid grid-cols-2 sm:grid-cols-3 gap-3";
-          grid.innerHTML = videos
+          const html = videos
             .map(
               (v) =>
-                `<div class=\"rounded border border-gray-200 hover:border-blue-400 hover:shadow cursor-pointer p-0.5 bg-white step-detail-video\" data-url=\"${v.url}\">\n                     <video src=\"${v.url}#t=0.1\" class=\"w-full rounded\" preload=\"metadata\" style=\"aspect-ratio:16/9\"></video>\n                   </div>`
+                `<div class=\"relative rounded-lg overflow-hidden border border-gray-200 hover:border-blue-400 hover:shadow group\" data-url=\"${v.url}\" data-id=\"${v.id}\">\n                   <video src=\"${v.url}\" class=\"w-full transition-opacity duration-300 cursor-pointer step-detail-video\"  controls preload=\"metadata\" style=\"object-fit:cover\"></video>\n                   <button class=\"absolute top-1 right-1 bg-red-600/80 text-white text-[10px] px-1.5 py-0.5 rounded opacity-0 group-hover:opacity-100 transition delete-step-video-btn\" title=\"Delete video\"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#ff0000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-trash2-icon lucide-trash-2"><path d="M10 11v6"/><path d="M14 11v6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>\n                 </div>`
             )
             .join("");
-          generatedListEl.innerHTML = "";
-          generatedListEl.appendChild(grid);
+          generatedListEl.innerHTML = html;
+          // Selection highlight
           generatedListEl
-            .querySelectorAll(".step-detail-video")
-            .forEach((el) => {
-              el.addEventListener("click", () => {
-                const videoUrl = el.dataset.url;
-                const preview = document.getElementById("stepVideoPreview");
-                if (preview) {
-                  preview.style.display = "block";
-                  preview.innerHTML = `<video src="${videoUrl}" controls class="w-full max-w-md rounded"></video>`;
+            .querySelectorAll("video.step-detail-video")
+            .forEach((vid) => {
+              vid.addEventListener("click", (e) => {
+                e.preventDefault();
+                generatedListEl
+                  .querySelectorAll("div[data-id]")
+                  .forEach((n) => n.classList.remove("ring", "ring-blue-400"));
+                const parent = vid.closest("div[data-id]");
+                if (parent) parent.classList.add("ring", "ring-blue-400");
+              });
+            });
+          // Deletion
+          generatedListEl
+            .querySelectorAll(".delete-step-video-btn")
+            .forEach((btn) => {
+              btn.addEventListener("click", async (e) => {
+                e.stopPropagation();
+                const wrapper = btn.closest("div[data-id]");
+                if (!wrapper) return;
+                const id = wrapper.getAttribute("data-id");
+                if (!id) return;
+                if (!confirm("Delete this video?")) return;
+                btn.disabled = true;
+                btn.textContent = "...";
+                try {
+                  const resp = await fetch(`/api/videos/${id}`, {
+                    method: "DELETE",
+                  });
+                  if (!resp.ok) throw new Error("Failed");
+                  wrapper.remove();
+                  if (!generatedListEl.querySelector("div[data-id]")) {
+                    generatedListEl.innerHTML =
+                      '<div class="col-span-full text-xs text-gray-500">No videos yet for this endpoint.</div>';
+                  }
+                } catch (err) {
+                  alert("Failed to delete video");
+                  btn.disabled = false;
+                  btn.textContent = "✕";
                 }
               });
             });
         })
         .catch(() => {
           generatedListEl.innerHTML =
-            '<div class="text-xs text-red-500">Failed to load videos.</div>';
+            '<div class="col-span-full text-xs text-red-500">Failed to load videos.</div>';
         });
     }
     // Store for save

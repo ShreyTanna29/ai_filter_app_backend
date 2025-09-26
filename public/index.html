@@ -127,74 +127,74 @@
               <h2 class="text-2xl font-bold text-gray-800">Step Details</h2>
               <button onclick="closeStepDetailPage()" class="text-3xl text-gray-400 hover:text-gray-700">&times;</button>
             </div>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
-              <!-- Left column: edit endpoint & prompt -->
-              <div>
-                <div class="mb-4">
-                  <label class="block text-sm font-semibold text-gray-700 mb-1">Endpoint</label>
-                  <input id="stepDetailEndpointInput" type="text" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400" placeholder="ai-sample-endpoint" />
+            <div class="max-w-4xl mx-auto">
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <div>
+                  <div class="mb-4">
+                    <label class="block text-sm font-semibold text-gray-700 mb-1">Endpoint</label>
+                    <input id="stepDetailEndpointInput" type="text" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400" placeholder="ai-sample-endpoint" />
+                  </div>
+                  <div class="mb-4">
+                    <label class="block text-sm font-semibold text-gray-700 mb-1">Prompt</label>
+                    <textarea id="stepDetailPromptInput" rows="7" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400" placeholder="Enter prompt for this step..."></textarea>
+                  </div>
+                  <div id="stepDetailStatus" class="text-sm text-red-500 mb-2"></div>
+                  <div class="flex justify-end gap-2">
+                    <button id="stepDetailCancelBtn" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300">Cancel</button>
+                    <button id="stepDetailSaveBtn" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Save</button>
+                  </div>
                 </div>
-                <div class="mb-4">
-                  <label class="block text-sm font-semibold text-gray-700 mb-1">Prompt</label>
-                  <textarea id="stepDetailPromptInput" rows="7" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400" placeholder="Enter prompt for this step..."></textarea>
-                </div>
-                <div id="stepDetailStatus" class="text-sm text-red-500 mb-2"></div>
-                <div class="flex justify-end gap-2">
-                  <button id="stepDetailCancelBtn" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300">Cancel</button>
-                  <button id="stepDetailSaveBtn" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Save</button>
+                <div>
+                  <div class="mb-4">
+                    <label class="block text-sm font-semibold text-gray-700 mb-1">Generate Video for this Step</label>
+                    <div id="stepImageUploadSection" class="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center cursor-pointer hover:border-blue-400 transition relative">
+                      <div class="text-gray-500 text-sm flex flex-col items-center gap-1">
+                        <i class="fa fa-cloud-upload text-xl"></i>
+                        <span>Click or drag an image here to upload</span>
+                      </div>
+                      <input id="stepImageInput" type="file" accept="image/*" class="hidden" />
+                      <img id="stepImagePreview" class="mt-3 mx-auto rounded hidden" style="max-height:160px;" />
+                      <div id="stepUploadStatus" class="text-xs text-gray-500 mt-2"></div>
+                    </div>
+                    <div id="stepLastFrameWrapper" class="mt-4 hidden flex-col gap-2">
+                      <label class="block text-sm font-semibold text-gray-700">Last Frame (Pixverse Transition)</label>
+                      <div class="border-2 border-dashed border-gray-300 rounded-lg p-3 text-center cursor-pointer hover:border-blue-400 transition relative">
+                        <input id="stepLastFrameInput" type="file" accept="image/*" class="hidden" />
+                        <div class="text-gray-500 text-xs">Click to upload last frame image</div>
+                        <img id="stepLastFramePreview" class="mt-2 mx-auto rounded hidden" style="max-height:120px;" />
+                      </div>
+                    </div>
+                    <select id="stepModelSelect" class="mt-4 w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400">
+                      <option value="ray-2">Ray 2</option>
+                      <option value="ray-2-flash">Ray 2 Flash</option>
+                      <option value="ray-1.6">Ray 1.6</option>
+                      <option value="pixverse-v4-image-to-video">Pixverse V4 (I2V)</option>
+                      <option value="pixverse-v4-transition">Pixverse V4 Transition</option>
+                      <option value="pixverse-v4.5-image-to-video">Pixverse V4.5 (I2V)</option>
+                      <option value="pixverse-v5-image-to-video">Pixverse V5 (I2V)</option>
+                      <option value="kling-v1-pro">Kling V1 Pro</option>
+                      <option value="kling-v1-standard">Kling V1 Standard</option>
+                      <option value="kling-1.5-pro">Kling 1.5 Pro</option>
+                      <option value="kling-v1.6-pro">Kling V1.6 Pro</option>
+                      <option value="kling-1.6-standard">Kling 1.6 Standard</option>
+                      <option value="kling-v2-master">Kling V2 Master</option>
+                      <option value="kling-v2.1-standard">Kling V2.1 Standard</option>
+                      <option value="kling-v2.1-pro">Kling V2.1 Pro</option>
+                      <option value="minimax-i2v-01">MiniMax I2V 01</option>
+                      <option value="minimax-i2v-live">MiniMax I2V Live</option>
+                      <option value="minimax-i2v-director">MiniMax Director</option>
+                    </select>
+                    <button id="stepGenerateBtn" class="mt-4 w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center justify-center gap-2">
+                      <i class="fa fa-wand-magic-sparkles"></i> <span>Generate Video</span>
+                    </button>
+                    <div id="stepGenStatus" class="text-sm mt-2"></div>
+                  </div>
                 </div>
               </div>
-              <!-- Right column: generation & existing videos -->
-              <div>
-                <div class="mb-4">
-                  <label class="block text-sm font-semibold text-gray-700 mb-1">Generate Video for this Step</label>
-                  <div id="stepImageUploadSection" class="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center cursor-pointer hover:border-blue-400 transition relative">
-                    <div class="text-gray-500 text-sm flex flex-col items-center gap-1">
-                      <i class="fa fa-cloud-upload text-xl"></i>
-                      <span>Click or drag an image here to upload</span>
-                    </div>
-                    <input id="stepImageInput" type="file" accept="image/*" class="hidden" />
-                    <img id="stepImagePreview" class="mt-3 mx-auto rounded hidden" style="max-height:160px;" />
-                    <div id="stepUploadStatus" class="text-xs text-gray-500 mt-2"></div>
-                  </div>
-                  <div id="stepLastFrameWrapper" class="mt-4 hidden flex-col gap-2">
-                    <label class="block text-sm font-semibold text-gray-700">Last Frame (Pixverse Transition)</label>
-                    <div class="border-2 border-dashed border-gray-300 rounded-lg p-3 text-center cursor-pointer hover:border-blue-400 transition relative">
-                      <input id="stepLastFrameInput" type="file" accept="image/*" class="hidden" />
-                      <div class="text-gray-500 text-xs">Click to upload last frame image</div>
-                      <img id="stepLastFramePreview" class="mt-2 mx-auto rounded hidden" style="max-height:120px;" />
-                    </div>
-                  </div>
-                  <select id="stepModelSelect" class="mt-4 w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400">
-                    <option value="ray-2">Ray 2</option>
-                    <option value="ray-2-flash">Ray 2 Flash</option>
-                    <option value="ray-1.6">Ray 1.6</option>
-                    <option value="pixverse-v4-image-to-video">Pixverse V4 (I2V)</option>
-                    <option value="pixverse-v4-transition">Pixverse V4 Transition</option>
-                    <option value="pixverse-v4.5-image-to-video">Pixverse V4.5 (I2V)</option>
-                    <option value="pixverse-v5-image-to-video">Pixverse V5 (I2V)</option>
-                    <option value="kling-v1-pro">Kling V1 Pro</option>
-                    <option value="kling-v1-standard">Kling V1 Standard</option>
-                    <option value="kling-1.5-pro">Kling 1.5 Pro</option>
-                    <option value="kling-v1.6-pro">Kling V1.6 Pro</option>
-                    <option value="kling-1.6-standard">Kling 1.6 Standard</option>
-                    <option value="kling-v2-master">Kling V2 Master</option>
-                    <option value="kling-v2.1-standard">Kling V2.1 Standard</option>
-                    <option value="kling-v2.1-pro">Kling V2.1 Pro</option>
-                    <option value="minimax-i2v-01">MiniMax I2V 01</option>
-                    <option value="minimax-i2v-live">MiniMax I2V Live</option>
-                    <option value="minimax-i2v-director">MiniMax Director</option>
-                  </select>
-                  <button id="stepGenerateBtn" class="mt-4 w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center justify-center gap-2">
-                    <i class="fa fa-wand-magic-sparkles"></i> <span>Generate Video</span>
-                  </button>
-                  <div id="stepGenStatus" class="text-sm mt-2"></div>
-                  <div id="stepVideoPreview" class="mt-4 hidden"></div>
-                </div>
-                <div class="mt-6">
-                  <h3 class="text-sm font-semibold text-gray-700 mb-2">Existing Videos</h3>
-                  <div id="stepGeneratedList" class="min-h-[40px] text-xs text-gray-500">No videos yet.</div>
-                </div>
+              <!-- Existing videos now full-width at bottom -->
+              <div class="mt-10">
+                <h3 class="text-sm font-semibold text-gray-700 mb-3">Existing Videos</h3>
+                <div id="stepGeneratedList" class="grid gap-3 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 text-xs text-gray-500">No videos yet.</div>
               </div>
             </div>
           </div>

@@ -2,6 +2,7 @@ import { Router, Request, Response } from "express";
 import axios from "axios";
 import { features } from "../filters/features";
 import type { RequestHandler } from "express";
+import cloudinary from "cloudinary";
 
 const router = Router();
 
@@ -214,6 +215,45 @@ router.get("/videos/:endpoint", async (req: Request, res: Response) => {
   } catch (error) {
     console.error("Error fetching videos:", error);
     res.status(500).json({ error: "Failed to fetch videos" });
+  }
+});
+
+// Delete a generated video (Cloudinary + DB)
+router.delete("/videos/:id", async (req: Request, res: Response) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (isNaN(id)) {
+      res.status(400).json({ error: "Invalid id" });
+      return;
+    }
+    const { PrismaClient } = require("../generated/prisma/client");
+    const prisma = new PrismaClient();
+    const video = await prisma.generatedVideo.findUnique({ where: { id } });
+    if (!video) {
+      res.status(404).json({ error: "Video not found" });
+      return;
+    }
+    // Extract public id from cloudinary URL
+    let publicId: string | null = null;
+    if (video.url) {
+      const match = video.url.match(/\/upload\/v\d+\/(.+?)\.mp4/);
+      if (match) publicId = match[1];
+    }
+    if (publicId) {
+      try {
+        await cloudinary.v2.uploader.destroy(publicId, {
+          resource_type: "video",
+        });
+      } catch (e) {
+        // Non-fatal – continue with DB deletion
+        console.warn("Cloudinary delete failed for", publicId, e);
+      }
+    }
+    await prisma.generatedVideo.delete({ where: { id } });
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Error deleting generated video:", error);
+    res.status(500).json({ error: "Failed to delete video" });
   }
 });
 
