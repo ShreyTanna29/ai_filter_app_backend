@@ -266,6 +266,9 @@ window.addEventListener("DOMContentLoaded", function () {
       const showId = tabIds[idx];
       const showEl = document.getElementById(showId);
       if (showEl) showEl.classList.remove("hidden");
+      if (showId === "tab-filters") {
+        ensureFeaturesLoaded();
+      }
     });
   });
   // Show dashboard tab by default
@@ -300,9 +303,10 @@ function initializeDashboard() {
     console.log("User email displayed:", storedEmail);
   }
 
-  console.log("Loading initial data");
-  // Load initial data
-  loadFeatures();
+  console.log(
+    "Loading initial data (templates/endpoints only, features deferred)"
+  );
+  // Load initial data except features (lazy until tab open)
   loadTemplates();
   loadFeatureGraphics();
   loadAvailableEndpoints();
@@ -311,12 +315,53 @@ function initializeDashboard() {
 }
 
 let features = [];
+let featureTotal = 0;
+let featureOffset = 0;
+const FEATURE_BATCH = 20;
+let featuresLoading = false;
+let featuresFullyLoaded = false;
+let featuresInitialRequested = false;
+
+function ensureFeaturesLoaded() {
+  if (!featuresInitialRequested) {
+    featuresInitialRequested = true;
+    resetAndLoadFirstFeaturesBatch();
+    setupFeaturesInfiniteScroll();
+  }
+}
+
+function resetAndLoadFirstFeaturesBatch() {
+  features = [];
+  featureOffset = 0;
+  featureTotal = 0;
+  featuresFullyLoaded = false;
+  const grid = document.getElementById("featuresGrid");
+  if (grid)
+    grid.innerHTML =
+      '<div class="col-span-full text-sm text-gray-500">Loading features...</div>';
+  loadFeaturesBatch();
+}
+
+function setupFeaturesInfiniteScroll() {
+  const container = document.getElementById("tab-filters");
+  if (!container) return;
+  container.addEventListener("scroll", () => {
+    if (featuresFullyLoaded || featuresLoading) return;
+    const threshold = 200; // px from bottom
+    if (
+      container.scrollTop + container.clientHeight >=
+      container.scrollHeight - threshold
+    ) {
+      loadFeaturesBatch();
+    }
+  });
+}
 let templates = [];
 let availableEndpoints = [];
 let featureGraphics = {};
 
 // Display features
-function displayFeatures() {
+function displayFeatures(append = false) {
   const grid = document.getElementById("featuresGrid");
   const searchTerm = document
     .getElementById("featureSearch")
@@ -328,7 +373,7 @@ function displayFeatures() {
       feature.prompt.toLowerCase().includes(searchTerm)
   );
 
-  grid.innerHTML = filteredFeatures
+  const cardsHtml = filteredFeatures
     .map((feature) => {
       const videoUrl =
         featureGraphics[feature.endpoint] ||
@@ -350,6 +395,22 @@ function displayFeatures() {
           `;
     })
     .join("");
+  if (!append) grid.innerHTML = cardsHtml;
+  else grid.insertAdjacentHTML("beforeend", cardsHtml);
+  // Show loading / end markers
+  const existingMarker = document.getElementById("featuresEndMarker");
+  if (existingMarker) existingMarker.remove();
+  if (featuresFullyLoaded) {
+    grid.insertAdjacentHTML(
+      "beforeend",
+      '<div id="featuresEndMarker" class="col-span-full text-center text-xs text-gray-400 mt-4">All features loaded</div>'
+    );
+  } else if (features.length < featureTotal) {
+    grid.insertAdjacentHTML(
+      "beforeend",
+      '<div id="featuresEndMarker" class="col-span-full text-center text-xs text-gray-400 mt-4">Scroll to load more...</div>'
+    );
+  }
   // Delegated click handling for reliable navigation
   grid.addEventListener("click", (e) => {
     console.log("Grid click event:", e.target);
@@ -381,19 +442,57 @@ function displayFeatures() {
   });
 }
 
-// Load features
-async function loadFeatures() {
-  console.log("Loading features...");
+// Load next batch of features
+async function loadFeaturesBatch() {
+  if (featuresLoading || featuresFullyLoaded) return;
+  featuresLoading = true;
   try {
-    const response = await fetch("/api/features");
-    console.log("Features response:", response);
-    features = await response.json();
-    console.log("Loaded features:", features);
-    displayFeatures();
+    const params = new URLSearchParams({
+      offset: String(featureOffset),
+      limit: String(FEATURE_BATCH),
+    });
+    const response = await fetch(`/api/features?${params.toString()}`);
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || "Failed");
+    const {
+      items = [],
+      total = 0,
+      offset = featureOffset,
+      limit = FEATURE_BATCH,
+    } = data;
+    featureTotal = total;
+    if (items.length === 0 && features.length === 0) {
+      const grid = document.getElementById("featuresGrid");
+      if (grid)
+        grid.innerHTML =
+          '<div class="text-sm text-gray-500">No features.</div>';
+      featuresFullyLoaded = true;
+      return;
+    }
+    features = features.concat(items);
+    featureOffset = offset + items.length;
+    if (featureOffset >= featureTotal) featuresFullyLoaded = true;
+    displayFeatures(true);
     updateStats();
-  } catch (error) {
-    console.error("Error loading features:", error);
+  } catch (e) {
+    console.error("Error loading feature batch", e);
+  } finally {
+    featuresLoading = false;
   }
+}
+
+// Search handling – restart paging
+const featureSearchInput = document.getElementById("featureSearch");
+if (featureSearchInput) {
+  featureSearchInput.addEventListener("input", () => {
+    if (!featuresInitialRequested) return; // don't auto-load if tab never opened
+    // For server-side filtering we re-fetch from offset 0
+    features = [];
+    featureOffset = 0;
+    featureTotal = 0;
+    featuresFullyLoaded = false;
+    loadFeaturesBatch();
+  });
 }
 
 // Show feature detail as a full page (hides all tab content, shows detail page)
@@ -1060,9 +1159,78 @@ function displayTemplates() {
     document.getElementById("stepGenStatus").textContent = "";
     document.getElementById("stepVideoPreview").style.display = "none";
     window._stepUploadedImageUrl = null;
+    // Load existing generated videos for this step's endpoint
+    const generatedListEl = document.getElementById("stepGeneratedList");
+    if (generatedListEl && step.endpoint) {
+      generatedListEl.innerHTML =
+        '<div class="text-xs text-gray-500 flex items-center gap-1"><svg class="animate-spin h-3 w-3 text-gray-400" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"></circle><path d="M4 12a8 8 0 018-8" stroke="currentColor" stroke-width="4" fill="none"></path></svg> Loading...</div>';
+      fetch(`/api/videos/${encodeURIComponent(step.endpoint)}`)
+        .then((r) => r.json())
+        .then((videos) => {
+          if (!Array.isArray(videos) || videos.length === 0) {
+            generatedListEl.innerHTML =
+              '<div class="text-xs text-gray-500">No videos yet for this endpoint.</div>';
+            return;
+          }
+          const grid = document.createElement("div");
+          grid.className = "grid grid-cols-2 sm:grid-cols-3 gap-3";
+          grid.innerHTML = videos
+            .map(
+              (v) =>
+                `<div class=\"rounded border border-gray-200 hover:border-blue-400 hover:shadow cursor-pointer p-0.5 bg-white step-detail-video\" data-url=\"${v.url}\">\n                     <video src=\"${v.url}#t=0.1\" class=\"w-full rounded\" preload=\"metadata\" style=\"aspect-ratio:16/9\"></video>\n                   </div>`
+            )
+            .join("");
+          generatedListEl.innerHTML = "";
+          generatedListEl.appendChild(grid);
+          generatedListEl
+            .querySelectorAll(".step-detail-video")
+            .forEach((el) => {
+              el.addEventListener("click", () => {
+                const videoUrl = el.dataset.url;
+                const preview = document.getElementById("stepVideoPreview");
+                if (preview) {
+                  preview.style.display = "block";
+                  preview.innerHTML = `<video src="${videoUrl}" controls class="w-full max-w-md rounded"></video>`;
+                }
+              });
+            });
+        })
+        .catch(() => {
+          generatedListEl.innerHTML =
+            '<div class="text-xs text-red-500">Failed to load videos.</div>';
+        });
+    }
     // Store for save
     window._currentStepTemplateId = templateId;
     window._currentStepIndex = stepIndex;
+
+    // Wire up Save / Cancel buttons
+    const saveBtn = document.getElementById("stepDetailSaveBtn");
+    const cancelBtn = document.getElementById("stepDetailCancelBtn");
+    if (cancelBtn) cancelBtn.onclick = () => closeStepDetailPage();
+    if (saveBtn) {
+      saveBtn.onclick = async () => {
+        const epInput = document.getElementById("stepDetailEndpointInput");
+        const promptInput = document.getElementById("stepDetailPromptInput");
+        const statusEl = document.getElementById("stepDetailStatus");
+        if (!epInput || !promptInput) return;
+        const newEndpoint = epInput.value.trim();
+        const newPrompt = promptInput.value.trim();
+        if (!newEndpoint) {
+          statusEl.textContent = "Endpoint is required";
+          return;
+        }
+        statusEl.textContent = "Saving...";
+        try {
+          // Optimistic local update only – backend endpoint for updating a specific step not implemented here.
+          step.endpoint = newEndpoint;
+          step.prompt = newPrompt;
+          statusEl.textContent = "Saved (local).";
+        } catch (e) {
+          statusEl.textContent = "Failed to save.";
+        }
+      };
+    }
 
     // Attach image upload event listeners every time the page is shown
     const stepImageInput = document.getElementById("stepImageInput");

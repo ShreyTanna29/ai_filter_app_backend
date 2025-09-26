@@ -26,8 +26,33 @@ app.use(express.static("public")); // Serve static files from public directory
 const prisma = new PrismaClient();
 
 // Feature management routes
+// Paginated features list
 app.get("/api/features", (req: Request, res: Response): void => {
-  res.json(features);
+  try {
+    const {
+      offset = "0",
+      limit = "20",
+      q,
+    } = req.query as Record<string, string>;
+    let list = features;
+    if (q && q.trim()) {
+      const ql = q.toLowerCase();
+      list = list.filter(
+        (f) =>
+          f.endpoint.toLowerCase().includes(ql) ||
+          (f.prompt || "").toLowerCase().includes(ql)
+      );
+    }
+    const total = list.length;
+    const off = Math.max(0, parseInt(offset) || 0);
+    const limRaw = parseInt(limit) || 20;
+    const lim = Math.min(Math.max(limRaw, 1), 100); // clamp 1..100
+    const items = list.slice(off, off + lim);
+    res.json({ items, total, offset: off, limit: lim });
+  } catch (e) {
+    console.error("Error serving /api/features", e);
+    res.status(500).json({ message: "Failed to load features" });
+  }
 });
 
 app.put("/api/features/:endpoint", (req: Request, res: Response): void => {
