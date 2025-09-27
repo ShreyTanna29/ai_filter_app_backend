@@ -339,22 +339,66 @@ function resetAndLoadFirstFeaturesBatch() {
   if (grid)
     grid.innerHTML =
       '<div class="col-span-full text-sm text-gray-500">Loading features...</div>';
+  // Ensure sentinel exists (used for IntersectionObserver based infinite scroll)
+  let sentinel = document.getElementById("featuresScrollSentinel");
+  if (!sentinel && grid) {
+    sentinel = document.createElement("div");
+    sentinel.id = "featuresScrollSentinel";
+    sentinel.className = "col-span-full h-2"; // small target
+    grid.appendChild(sentinel);
+  }
   loadFeaturesBatch();
 }
 
 function setupFeaturesInfiniteScroll() {
-  const container = document.getElementById("tab-filters");
-  if (!container) return;
-  container.addEventListener("scroll", () => {
-    if (featuresFullyLoaded || featuresLoading) return;
-    const threshold = 200; // px from bottom
-    if (
-      container.scrollTop + container.clientHeight >=
-      container.scrollHeight - threshold
-    ) {
-      loadFeaturesBatch();
+  // Prefer IntersectionObserver for robustness across different layout heights
+  const grid = document.getElementById("featuresGrid");
+  if (!grid) return;
+  let sentinel = document.getElementById("featuresScrollSentinel");
+  if (!sentinel) {
+    sentinel = document.createElement("div");
+    sentinel.id = "featuresScrollSentinel";
+    sentinel.className = "col-span-full h-2";
+    grid.appendChild(sentinel);
+  }
+  // Disconnect previous observer if reinitialising
+  if (
+    window._featuresObserver &&
+    typeof window._featuresObserver.disconnect === "function"
+  ) {
+    window._featuresObserver.disconnect();
+  }
+  const observer = new IntersectionObserver(
+    (entries) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting) {
+          if (!featuresLoading && !featuresFullyLoaded) {
+            loadFeaturesBatch();
+          }
+        }
+      });
+    },
+    {
+      root: null, // viewport
+      rootMargin: "200px 0px 400px 0px",
+      threshold: 0,
     }
-  });
+  );
+  observer.observe(sentinel);
+  window._featuresObserver = observer;
+
+  // Fallback: window scroll listener (in case IntersectionObserver unsupported)
+  if (!("IntersectionObserver" in window)) {
+    function onScrollFallback() {
+      if (featuresFullyLoaded || featuresLoading) return;
+      const scrollPos = window.scrollY + window.innerHeight;
+      const docHeight = document.documentElement.scrollHeight;
+      if (docHeight - scrollPos < 600) {
+        loadFeaturesBatch();
+      }
+    }
+    window.addEventListener("scroll", onScrollFallback);
+  }
 }
 let templates = [];
 let availableEndpoints = [];
@@ -366,13 +410,11 @@ function displayFeatures(append = false) {
   const searchTerm = document
     .getElementById("featureSearch")
     .value.toLowerCase();
-
   const filteredFeatures = features.filter(
     (feature) =>
       feature.endpoint.toLowerCase().includes(searchTerm) ||
       feature.prompt.toLowerCase().includes(searchTerm)
   );
-
   const cardsHtml = filteredFeatures
     .map((feature) => {
       const videoUrl =
@@ -411,34 +453,19 @@ function displayFeatures(append = false) {
       '<div id="featuresEndMarker" class="col-span-full text-center text-xs text-gray-400 mt-4">Scroll to load more...</div>'
     );
   }
-  // Delegated click handling for reliable navigation
+  const sentinel = document.getElementById("featuresScrollSentinel");
+  if (sentinel && sentinel.parentElement === grid) {
+    grid.appendChild(sentinel);
+  }
   grid.addEventListener("click", (e) => {
-    console.log("Grid click event:", e.target);
     const btn = e.target.closest(".view-feature-details");
-    const name = e.target.closest(".feature-name");
-    let card = null;
     if (btn) {
-      console.log("Clicked view details button");
-      card = btn.closest(".feature-card");
-      e.preventDefault();
-      e.stopPropagation();
-    } else if (name) {
-      console.log("Clicked feature name");
-      card = name.closest(".feature-card");
-    } else {
-      const maybeCard = e.target.closest(".feature-card");
-      if (maybeCard && e.target.tagName !== "VIDEO") {
-        console.log("Clicked elsewhere in card");
-        card = maybeCard;
+      const card = btn.closest(".feature-card");
+      if (card) {
+        const endpoint = card.getAttribute("data-endpoint");
+        if (endpoint) showFeatureDetailPage(endpoint);
       }
     }
-    if (!card) {
-      console.log("No card found for click");
-      return;
-    }
-    const endpoint = card.getAttribute("data-endpoint");
-    console.log("Card endpoint:", endpoint);
-    if (endpoint) showFeatureDetailPage(endpoint);
   });
 }
 
@@ -1176,7 +1203,10 @@ function displayTemplates() {
           const html = videos
             .map(
               (v) =>
-                `<div class=\"relative rounded-lg overflow-hidden border border-gray-200 hover:border-blue-400 hover:shadow group\" data-url=\"${v.url}\" data-id=\"${v.id}\">\n                   <video src=\"${v.url}\" class=\"w-full transition-opacity duration-300 cursor-pointer step-detail-video\"  controls preload=\"metadata\" style=\"object-fit:cover\"></video>\n                   <button class=\"absolute top-1 right-1 bg-red-600/80 text-white text-[10px] px-1.5 py-0.5 rounded opacity-0 group-hover:opacity-100 transition delete-step-video-btn\" title=\"Delete video\"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#ff0000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-trash2-icon lucide-trash-2"><path d="M10 11v6"/><path d="M14 11v6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>\n                 </div>`
+                `<div class="relative rounded-lg overflow-hidden border border-gray-200 hover:border-blue-400 hover:shadow group" data-url="${v.url}" data-id="${v.id}">
+         <video src="${v.url}" class="w-full transition-opacity duration-300 cursor-pointer step-detail-video"  controls preload="metadata" style="object-fit:cover"></video>
+         <button class="absolute top-1 right-1 bg-red-600/80 text-white text-[10px] px-1.5 py-0.5 rounded opacity-0 group-hover:opacity-100 transition delete-step-video-btn" title="Delete video"><svg xmlns='http://www.w3.org/2000/svg' width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' class='pointer-events-none'><path d='M3 6h18'/><path d='M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2'/><path d='M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6'/><path d='M10 11v6'/><path d='M14 11v6'/></svg></button>
+       </div>`
             )
             .join("");
           generatedListEl.innerHTML = html;
@@ -1689,62 +1719,63 @@ async function loadAvailableEndpoints() {
 // Add a step to the template modal, optionally pre-filling endpoint and prompt
 function addTemplateStep(selectedEndpoint = "", promptValue = "") {
   const stepsContainer = document.getElementById("templateSteps");
+  if (!stepsContainer) return;
   const stepIndex = stepsContainer.children.length;
-  const stepHtml = `
-          <div class="step-item" style="display: flex; flex-direction: column; gap: 10px; background: #f8f9fa; border-radius: 8px; padding: 15px; margin-bottom: 15px;">
-            <div style="display: flex; align-items: flex-start; gap: 15px; width: 100%;">
-              <div class="step-order">${stepIndex + 1}</div>
-              <div class="step-content" style="flex:1;">
-                <div class="form-group">
-                  <label>Endpoint:</label>
-                  <select class="step-endpoint-select">
-                    <option value="">Select endpoint...</option>
-                    ${availableEndpoints
-                      .map(
-                        (endpoint) =>
-                          `<option value="${endpoint.endpoint}" ${
-                            selectedEndpoint === endpoint.endpoint
-                              ? "selected"
-                              : ""
-                          }>${endpoint.endpoint}</option>`
-                      )
-                      .join("")}
-                  </select>
-                </div>
-                <!-- Prompt field removed: backend uses feature prompt from features.ts -->
-              </div>
-              <button class="remove-step" onclick="removeStep(this)">Remove</button>
-            </div>
-            <div class="step-actions" style="display: flex; align-items: center; gap: 10px; margin-top: 10px;">
-              <div class="image-upload-section step-image-upload-section">
-                <label class="upload-label">
-                  <div class="upload-icon"><i class="fas fa-cloud-upload-alt"></i></div>
-                  <div class="upload-text">Click or drag an image here to upload</div>
-                  <input type="file" class="step-image-input" accept="image/*" style="display:none;">
-                </label>
-                <img class="step-image-preview" style="display:none;max-width:200px;margin:10px auto 0;">
-                <div class="step-upload-status upload-status"></div>
-              </div>
-              <button class="btn btn-primary step-generate-btn" style="flex:1; min-width:120px;">
-                <i class="fas fa-magic"></i> Generate Video
-              </button>
-            </div>
-            <div class="step-status-message" style="font-size:13px; min-height:18px; margin-top:5px;"></div>
-            <div class="step-video-preview" style="margin-top:10px; display:none;"></div>
-            <div class="step-generated-videos" style="margin-top:8px;"></div>
-          </div>
-        `;
+
+  const optionsHtml = (
+    Array.isArray(availableEndpoints) ? availableEndpoints : []
+  )
+    .map((ep) => {
+      const sel = ep.endpoint === selectedEndpoint ? "selected" : "";
+      return `<option value="${ep.endpoint}" ${sel}>${ep.endpoint}</option>`;
+    })
+    .join("");
+
+  const stepHtml = `<div class="step-item" style="display:flex;flex-direction:column;gap:10px;background:#f8f9fa;border-radius:8px;padding:15px;margin-bottom:15px;">
+    <div style="display:flex;align-items:flex-start;gap:15px;width:100%;">
+      <div class="step-order">${stepIndex + 1}</div>
+      <div class="step-content" style="flex:1;">
+        <div class="form-group">
+          <label>Endpoint:</label>
+          <select class="step-endpoint-select">
+            <option value="">Select endpoint...</option>
+            ${optionsHtml}
+          </select>
+        </div>
+      </div>
+      <button type="button" class="remove-step" onclick="removeStep(this)">Remove</button>
+    </div>
+    <div class="step-actions" style="display:flex;align-items:center;gap:10px;margin-top:10px;">
+      <div class="image-upload-section step-image-upload-section">
+        <label class="upload-label">
+          <div class="upload-icon"><i class="fas fa-cloud-upload-alt"></i></div>
+          <div class="upload-text">Click or drag an image here to upload</div>
+          <input type="file" class="step-image-input" accept="image/*" style="display:none;" />
+        </label>
+        <img class="step-image-preview" style="display:none;max-width:200px;margin:10px auto 0;" />
+        <div class="step-upload-status upload-status"></div>
+      </div>
+      <button type="button" class="btn btn-primary step-generate-btn" style="flex:1;min-width:120px;">
+        <i class="fas fa-magic"></i> Generate Video
+      </button>
+    </div>
+    <div class="step-status-message" style="font-size:13px;min-height:18px;margin-top:5px;"></div>
+    <div class="step-video-preview" style="margin-top:10px;display:none;"></div>
+    <div class="step-generated-videos" style="margin-top:8px;"></div>
+  </div>`;
+
   stepsContainer.insertAdjacentHTML("beforeend", stepHtml);
-  // Add event listener to new step
+
   const newStep = stepsContainer.lastElementChild;
+  if (!newStep) return;
   const endpointSelect = newStep.querySelector(".step-endpoint-select");
   const generateBtn = newStep.querySelector(".step-generate-btn");
   const statusDiv = newStep.querySelector(".step-status-message");
   const videoPreviewDiv = newStep.querySelector(".step-video-preview");
   const generatedListDiv = newStep.querySelector(".step-generated-videos");
-  // Setup image upload for this step
+
   const getUploadedImageUrl = setupStepImageUpload(newStep);
-  // Load and render existing generated videos for current endpoint
+
   const onSelectGenerated = (url) => {
     if (!url) return;
     videoPreviewDiv.style.display = "block";
@@ -1755,9 +1786,9 @@ function addTemplateStep(selectedEndpoint = "", promptValue = "") {
     renderStepGeneratedVideos(generatedListDiv, ep, onSelectGenerated);
   };
   endpointSelect.addEventListener("change", refreshGeneratedForSelect);
-  // Initial render if preselected
   refreshGeneratedForSelect();
-  generateBtn.onclick = async function () {
+
+  generateBtn.onclick = async () => {
     const endpoint = endpointSelect.value;
     const feat = (
       Array.isArray(availableEndpoints) ? availableEndpoints : []
@@ -1794,7 +1825,6 @@ function addTemplateStep(selectedEndpoint = "", promptValue = "") {
       videoPreviewDiv.style.display = "block";
       videoPreviewDiv.innerHTML = `<video src="${data.video.url}" controls style="width:100%;max-width:400px;"></video>`;
 
-      // Persist step video to DB if editing a template
       if (editingTemplateId) {
         try {
           await fetch(`/api/templates/${editingTemplateId}/step-video`, {
@@ -1806,8 +1836,8 @@ function addTemplateStep(selectedEndpoint = "", promptValue = "") {
               videoUrl: data.video.url,
             }),
           });
-        } catch (e) {
-          // Optionally show a warning
+        } catch (err) {
+          console.warn("Failed to persist step video", err);
         }
       }
     } catch (err) {
