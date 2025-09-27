@@ -404,8 +404,36 @@ let templates = [];
 let availableEndpoints = [];
 let featureGraphics = {};
 
+// Ensure (or recreate) the sentinel element used for infinite scroll
+function ensureFeaturesSentinel() {
+  const grid = document.getElementById("featuresGrid");
+  if (!grid || featuresFullyLoaded) return null;
+  let sentinel = document.getElementById("featuresScrollSentinel");
+  if (!sentinel) {
+    sentinel = document.createElement("div");
+    sentinel.id = "featuresScrollSentinel";
+    sentinel.className = "col-span-full h-1"; // tiny target at bottom
+    grid.appendChild(sentinel);
+  } else if (sentinel.parentElement !== grid) {
+    grid.appendChild(sentinel); // move to bottom if displaced
+  } else {
+    // already present at bottom — ensure it's last child
+    if (grid.lastElementChild !== sentinel) grid.appendChild(sentinel);
+  }
+  // (Re)observe with existing observer if available
+  if (
+    window._featuresObserver &&
+    typeof window._featuresObserver.observe === "function"
+  ) {
+    try {
+      window._featuresObserver.observe(sentinel);
+    } catch (_) {}
+  }
+  return sentinel;
+}
+
 // Display features
-function displayFeatures(append = false) {
+function displayFeatures(append = false, startIndex = 0) {
   const grid = document.getElementById("featuresGrid");
   const searchTerm = document
     .getElementById("featureSearch")
@@ -415,7 +443,12 @@ function displayFeatures(append = false) {
       feature.endpoint.toLowerCase().includes(searchTerm) ||
       feature.prompt.toLowerCase().includes(searchTerm)
   );
-  const cardsHtml = filteredFeatures
+  // When appending, only render the slice of new items to avoid duplicating earlier ones
+  const sourceList = append
+    ? filteredFeatures.slice(startIndex)
+    : filteredFeatures;
+  if (append && sourceList.length === 0) return; // nothing new to add
+  const cardsHtml = sourceList
     .map((feature) => {
       const videoUrl =
         featureGraphics[feature.endpoint] ||
@@ -437,8 +470,11 @@ function displayFeatures(append = false) {
           `;
     })
     .join("");
-  if (!append) grid.innerHTML = cardsHtml;
-  else grid.insertAdjacentHTML("beforeend", cardsHtml);
+  if (!append) {
+    grid.innerHTML = cardsHtml; // this removes previous sentinel
+  } else {
+    grid.insertAdjacentHTML("beforeend", cardsHtml);
+  }
   // Show loading / end markers
   const existingMarker = document.getElementById("featuresEndMarker");
   if (existingMarker) existingMarker.remove();
@@ -453,10 +489,7 @@ function displayFeatures(append = false) {
       '<div id="featuresEndMarker" class="col-span-full text-center text-xs text-gray-400 mt-4">Scroll to load more...</div>'
     );
   }
-  const sentinel = document.getElementById("featuresScrollSentinel");
-  if (sentinel && sentinel.parentElement === grid) {
-    grid.appendChild(sentinel);
-  }
+  ensureFeaturesSentinel();
   grid.addEventListener("click", (e) => {
     const btn = e.target.closest(".view-feature-details");
     if (btn) {
@@ -469,6 +502,18 @@ function displayFeatures(append = false) {
   });
 }
 
+// Attempt to auto-load more if the page is still short or sentinel still within viewport
+function maybeAutoLoadMore() {
+  if (featuresLoading || featuresFullyLoaded) return;
+  const sentinel = document.getElementById("featuresScrollSentinel");
+  if (!sentinel) return;
+  const rect = sentinel.getBoundingClientRect();
+  // If sentinel is within or near viewport bottom, fetch next batch
+  if (rect.top <= window.innerHeight + 120) {
+    loadFeaturesBatch();
+  }
+}
+
 // Load next batch of features
 async function loadFeaturesBatch() {
   if (featuresLoading || featuresFullyLoaded) return;
@@ -478,6 +523,10 @@ async function loadFeaturesBatch() {
       offset: String(featureOffset),
       limit: String(FEATURE_BATCH),
     });
+    const searchEl = document.getElementById("featureSearch");
+    if (searchEl && searchEl.value.trim()) {
+      params.set("q", searchEl.value.trim());
+    }
     const response = await fetch(`/api/features?${params.toString()}`);
     const data = await response.json();
     if (!response.ok) throw new Error(data.message || "Failed");
@@ -496,10 +545,20 @@ async function loadFeaturesBatch() {
       featuresFullyLoaded = true;
       return;
     }
-    features = features.concat(items);
-    featureOffset = offset + items.length;
+    const prevLength = features.length;
+    // Append new unique endpoints only (defensive dedupe)
+    const existing = new Set(features.map((f) => f.endpoint));
+    const uniqueNew = items.filter((f) => !existing.has(f.endpoint));
+    features = features.concat(uniqueNew);
+    featureOffset = offset + items.length; // advance by items length from server to keep paging consistent
     if (featureOffset >= featureTotal) featuresFullyLoaded = true;
-    displayFeatures(true);
+    if (prevLength === 0) displayFeatures(false);
+    else displayFeatures(true, prevLength);
+    // After rendering, ensure sentinel exists and maybe trigger another load if page still short
+    setTimeout(() => {
+      ensureFeaturesSentinel();
+      maybeAutoLoadMore();
+    }, 0);
     updateStats();
   } catch (e) {
     console.error("Error loading feature batch", e);
