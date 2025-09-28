@@ -567,6 +567,18 @@ async function loadFeaturesBatch() {
   }
 }
 
+// Full reload convenience used by legacy calls
+async function loadFeatures() {
+  // Reset pagination state then fetch first batch
+  featureOffset = 0;
+  featuresFullyLoaded = false;
+  featuresLoading = false;
+  features = [];
+  const grid = document.getElementById("featuresGrid");
+  if (grid) grid.innerHTML = ""; // clear grid so displayFeatures can rebuild
+  await loadFeaturesBatch();
+}
+
 // Search handling – restart paging
 const featureSearchInput = document.getElementById("featureSearch");
 if (featureSearchInput) {
@@ -839,13 +851,17 @@ function showFeatureDetailPage(endpoint) {
           if (response.ok && data && data.video && data.video.url) {
             const vEl = document.getElementById("featureDetailVideo");
             if (vEl) vEl.src = data.video.url;
-            if (genStatus) genStatus.textContent = "Video generated!";
+            if (genStatus) {
+              genStatus.textContent = "Video generated!";
+              genStatus.style.color = "green";
+            }
             await loadFeatures();
           } else {
             throw new Error((data && data.error) || "Failed to generate video");
           }
         } catch (e) {
           if (genStatus) genStatus.textContent = `Error: ${e.message || e}`;
+          if (genStatus) genStatus.style.color = "red";
         } finally {
           genBtn.disabled = false;
         }
@@ -2157,13 +2173,29 @@ async function generateVideo(endpoint, event) {
     if (result.video && result.video.url) {
       statusDiv.textContent = "Video generated successfully!";
       statusDiv.style.color = "green";
-      // Show the video in a dialog or preview
       showVideoDialog(result.video.url);
     } else {
-      throw new Error(result.error || "Unknown error");
+      // Prefer provider_message directly for clarity
+      let msg =
+        typeof result.provider_message === "string" &&
+        result.provider_message.trim()
+          ? result.provider_message.trim()
+          : result.error || "Generation failed";
+      if (
+        result.provider &&
+        msg &&
+        !msg.toLowerCase().includes(result.provider.toLowerCase())
+      ) {
+        msg = `[${result.provider}] ${msg}`;
+      }
+      if (result.provider_code && msg && !msg.includes(result.provider_code)) {
+        msg += ` (code ${result.provider_code})`;
+      }
+      throw new Error(msg);
     }
   } catch (error) {
-    statusDiv.textContent = `Error: ${error.message || error}`;
+    const finalMsg = error?.message || String(error);
+    statusDiv.textContent = `Error: ${finalMsg}`;
     statusDiv.style.color = "red";
   } finally {
     generateButton.disabled = false;

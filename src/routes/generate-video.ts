@@ -84,6 +84,17 @@ const serializeError = (err: any) => {
   return safeJson(err);
 };
 
+// Extract a short, user-friendly Cloudinary error summary (if structure matches)
+function summarizeCloudinaryError(err: any): string | undefined {
+  if (!err) return undefined;
+  const data = err?.response?.data || err?.data || err;
+  // Common Cloudinary error shapes: { error: { message: "..." } } or { message: "..." }
+  const msg = data?.error?.message || data?.message || err?.message;
+  if (!msg) return undefined;
+  // Trim overly long messages
+  return msg.length > 180 ? msg.slice(0, 177) + "..." : msg;
+}
+
 // Define interfaces for better type safety
 interface VideoGenerationRequest {
   imageUrl?: string; // primary key
@@ -96,13 +107,16 @@ interface VideoGenerationRequest {
 
 interface VideoGenerationResponse {
   success: boolean;
-  video?: {
-    url: string;
-  };
+  video?: { url: string };
   videoUrl?: string;
   cloudinaryId?: string;
   error?: string;
-  details?: string;
+  details?: any;
+  // Provider specific metadata (optional)
+  provider?: string;
+  provider_status?: string;
+  provider_message?: string;
+  provider_code?: string | number;
 }
 
 // Generate video from feature endpoint
@@ -170,17 +184,19 @@ router.post<
           }
         } catch (err) {
           const e = err as any;
+          const brief =
+            summarizeCloudinaryError(e) || "Cloudinary upload failed";
           console.error(
-            "Cloudinary upload error:",
+            "Cloudinary upload error (image):",
             e?.response?.data || e?.message || e
           );
-          // Fallback: if original URL is public, continue with it
           if (isLikelyPublic) {
+            // fallback to original if public
             imageCloudUrl = imageUrl;
           } else {
             res.status(503).json({
               success: false,
-              error: "Failed to upload image to Cloudinary (network)",
+              error: brief,
               details: serializeError(e),
             });
             return;
@@ -219,9 +235,11 @@ router.post<
             );
           }
         } catch (err) {
+          const brief =
+            summarizeCloudinaryError(err) || "Last frame upload failed";
           console.warn(
             "Last frame Cloudinary upload failed; proceeding if public:",
-            (err as any)?.message || err
+            brief
           );
           if (!isLikelyPublicLast) lastFrameCloudUrl = undefined; // drop unusable
         }
@@ -337,9 +355,17 @@ router.post<
           console.log("Pixverse create response:", prediction);
           const statusStr = String(prediction.status || "").toLowerCase();
           if (statusStr !== "success") {
+            const provider_message =
+              (prediction as any)?.message ||
+              (prediction as any)?.error ||
+              (prediction as any)?.status ||
+              "Unknown status";
             res.status(502).json({
               success: false,
-              error: `Pixverse creation unexpected status: ${prediction.status}`,
+              error: `Pixverse creation failed: ${provider_message}`,
+              provider: "Pixverse",
+              provider_status: (prediction as any)?.status,
+              provider_message,
               details: safeJson(prediction),
             });
             return;
@@ -358,10 +384,7 @@ router.post<
             return;
           }
         } catch (err) {
-          console.error(
-            "Pixverse create error (single attempt):",
-            serializeError(err)
-          );
+          console.error("Pixverse create error (single attempt):", err);
           res.status(502).json({
             success: false,
             error: "Failed to create Pixverse prediction",
@@ -409,9 +432,18 @@ router.post<
             } else if (
               ["error", "failed", "canceled", "cancelled"].includes(lower)
             ) {
+              const provider_message =
+                (result as any)?.error ||
+                (result as any)?.message ||
+                (result as any)?.status;
               res.status(500).json({
                 success: false,
-                error: "Pixverse prediction failed",
+                error: provider_message
+                  ? `Pixverse prediction failed: ${provider_message}`
+                  : "Pixverse prediction failed",
+                provider: "Pixverse",
+                provider_status: (result as any)?.status,
+                provider_message,
                 details: safeJson(result),
               });
               return;
@@ -427,9 +459,13 @@ router.post<
           }
         }
         if (!pixVideoUrl) {
-          res
-            .status(504)
-            .json({ success: false, error: "Pixverse prediction timeout" });
+          res.status(504).json({
+            success: false,
+            error: "Pixverse prediction timeout",
+            provider: "Pixverse",
+            provider_status: "timeout",
+            provider_message: "Prediction did not complete in allotted time",
+          });
           return;
         }
         // Download & upload to Cloudinary
@@ -520,13 +556,41 @@ router.post<
               timeout: 45000,
             }
           );
-          taskId = createResp.data?.task_id;
-          if (!taskId) throw new Error("No task_id returned from MiniMax");
+          const data = createResp.data || {};
+          console.log("Minimax response: ", data);
+          const base = data.base_resp || {};
+          const provider_code = base.status_code;
+          const provider_message = base.status_msg;
+          taskId = data?.task_id;
+          // If provider returns an error code (non-zero) or no task id, treat as failure and expose provider message
+          if ((provider_code !== undefined && provider_code !== 0) || !taskId) {
+            res.status(400).json({
+              success: false,
+              error: provider_message || "MiniMax creation failed",
+              provider: "MiniMax",
+              provider_code,
+              provider_message:
+                provider_message ||
+                (taskId ? undefined : "Missing task_id in response"),
+              details: safeJson(data),
+            });
+            return;
+          }
         } catch (e: any) {
-          console.error("MiniMax create error:", serializeError(e));
+          console.error("MiniMax create error:", e);
+          const respData = e?.response?.data;
+          const base = respData?.base_resp || {};
+          const provider_code = base?.status_code;
+          const provider_message =
+            base?.status_msg || respData?.message || e?.message;
           res.status(502).json({
             success: false,
-            error: "Failed to create MiniMax generation",
+            error: provider_message
+              ? `MiniMax creation failed: ${provider_message}`
+              : "Failed to create MiniMax generation",
+            provider: "MiniMax",
+            provider_code,
+            provider_message,
             details: serializeError(e),
           });
           return;
@@ -566,9 +630,22 @@ router.post<
               status === "failed" ||
               status === "error"
             ) {
+              const base = pollResp.data?.base_resp || {};
+              const provider_code = base?.status_code;
+              const provider_message =
+                base?.status_msg ||
+                pollResp.data?.status_reason ||
+                pollResp.data?.message ||
+                pollResp.data?.status;
               res.status(500).json({
                 success: false,
-                error: "MiniMax generation failed",
+                error: provider_message
+                  ? `MiniMax generation failed: ${provider_message}`
+                  : "MiniMax generation failed",
+                provider: "MiniMax",
+                provider_code,
+                provider_message,
+                provider_status: pollResp.data?.status,
                 details: safeJson(pollResp.data),
               });
               return;
@@ -579,9 +656,13 @@ router.post<
           }
         }
         if (!mmVideoUrl && !mmFileId) {
-          res
-            .status(504)
-            .json({ success: false, error: "MiniMax generation timeout" });
+          res.status(504).json({
+            success: false,
+            error: "MiniMax generation timeout",
+            provider: "MiniMax",
+            provider_status: "timeout",
+            provider_message: "Generation did not complete in allotted time",
+          });
           return;
         }
 
@@ -611,15 +692,27 @@ router.post<
               res.status(502).json({
                 success: false,
                 error: "MiniMax retrieve missing download_url",
+                provider: "MiniMax",
+                provider_message: "retrieve missing download_url",
                 details: safeJson(retrieveResp.data),
               });
               return;
             }
           } catch (e: any) {
             console.error("MiniMax retrieve error:", serializeError(e));
+            const respData = e?.response?.data;
+            const base = respData?.base_resp || {};
+            const provider_code = base?.status_code;
+            const provider_message =
+              base?.status_msg || respData?.message || e?.message;
             res.status(502).json({
               success: false,
-              error: "Failed to retrieve MiniMax video file",
+              error: provider_message
+                ? `MiniMax retrieve failed: ${provider_message}`
+                : "Failed to retrieve MiniMax video file",
+              provider: "MiniMax",
+              provider_code,
+              provider_message,
               details: serializeError(e),
             });
             return;
@@ -627,9 +720,12 @@ router.post<
         }
 
         if (!mmVideoUrl) {
-          res
-            .status(500)
-            .json({ success: false, error: "MiniMax video URL unresolved" });
+          res.status(500).json({
+            success: false,
+            error: "MiniMax video URL unresolved",
+            provider: "MiniMax",
+            provider_message: "Video URL not provided by API",
+          });
           return;
         }
         // Download video
@@ -640,9 +736,19 @@ router.post<
             timeout: 600000,
           });
         } catch (e: any) {
+          const respData = e?.response?.data;
+          const base = respData?.base_resp || {};
+          const provider_code = base?.status_code;
+          const provider_message =
+            base?.status_msg || respData?.message || e?.message;
           res.status(500).json({
             success: false,
-            error: "Failed to download MiniMax video",
+            error: provider_message
+              ? `MiniMax download failed: ${provider_message}`
+              : "Failed to download MiniMax video",
+            provider: "MiniMax",
+            provider_code,
+            provider_message,
             details: serializeError(e),
           });
           return;
@@ -754,9 +860,16 @@ router.post<
             continue;
           }
           console.error("Luma create generation error:", serializeError(e));
+          const respData = (e as any)?.response?.data;
+          const provider_message =
+            respData?.message || respData?.error || (e as any)?.message;
           res.status(503).json({
             success: false,
-            error: "Luma API unreachable or timed out",
+            error: provider_message
+              ? `Luma creation failed: ${provider_message}`
+              : "Luma API unreachable or timed out",
+            provider: "Luma",
+            provider_message,
             details: serializeError(e),
           });
           return;
@@ -814,6 +927,8 @@ router.post<
           res.status(500).json({
             success: false,
             error: "Failed to poll Luma generation",
+            provider: "Luma",
+            provider_message: e?.message,
             details: serializeError(e),
           });
           return;
@@ -837,9 +952,19 @@ router.post<
         }
         if (state === "failed") {
           console.error("Luma generation failed:", pollRes.data);
+          const provider_message =
+            pollRes.data?.failure_reason ||
+            pollRes.data?.error ||
+            pollRes.data?.message ||
+            pollRes.data?.state;
           res.status(500).json({
             success: false,
-            error: "Luma generation failed",
+            error: provider_message
+              ? `Luma generation failed: ${provider_message}`
+              : "Luma generation failed",
+            provider: "Luma",
+            provider_status: pollRes.data?.state,
+            provider_message,
             details: safeJson(pollRes.data),
           });
           return;
@@ -851,6 +976,9 @@ router.post<
         res.status(500).json({
           success: false,
           error: "Video generation did not complete in time",
+          provider: "Luma",
+          provider_status: state || "timeout",
+          provider_message: "Generation timed out",
         });
         return;
       }
@@ -868,6 +996,8 @@ router.post<
         res.status(500).json({
           success: false,
           error: "Failed to download Luma video",
+          provider: "Luma",
+          provider_message: e?.message,
           details: serializeError(e),
         });
         return;
@@ -913,7 +1043,10 @@ router.post<
         error instanceof Error ? error.message : "Unknown error";
       res.status(500).json({
         success: false,
-        error: "Failed to generate video",
+        error:
+          errorMessage && !/Failed to generate video/.test(errorMessage)
+            ? errorMessage
+            : "Failed to generate video",
         details: errorMessage,
       });
     }
