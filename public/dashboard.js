@@ -1786,6 +1786,34 @@ async function loadAvailableEndpoints() {
   try {
     const response = await fetch("/api/templates/endpoints");
     availableEndpoints = await response.json();
+    // Keep unified global list used by dynamic subcategory builder
+    if (
+      !Array.isArray(window.featureEndpointsFull) ||
+      !window.featureEndpointsFull.length
+    ) {
+      window.featureEndpointsFull = availableEndpoints.slice();
+    } else {
+      // Merge new endpoints (dedupe by endpoint key)
+      const existing = new Set(
+        window.featureEndpointsFull.map((e) => e.endpoint)
+      );
+      availableEndpoints.forEach((e) => {
+        if (!existing.has(e.endpoint)) window.featureEndpointsFull.push(e);
+      });
+    }
+    // Refresh any currently rendered step-endpoint selects that are still blank
+    document.querySelectorAll(".step-endpoint-select").forEach((sel) => {
+      if (sel.options.length <= 1) {
+        // only placeholder present
+        sel.innerHTML =
+          '<option value="">Select endpoint...</option>' +
+          (availableEndpoints || [])
+            .map(
+              (ep) => `<option value="${ep.endpoint}">${ep.endpoint}</option>`
+            )
+            .join("");
+      }
+    });
   } catch (error) {
     console.error("Error loading endpoints:", error);
   }
@@ -2515,9 +2543,13 @@ function createSubcategoryElement(subcatName = "") {
     const select = document.createElement("select");
     select.className = "flex-1 border border-gray-300 rounded px-2 py-1";
     select.required = true;
-    const endpoints = Array.isArray(window.featureEndpointsFull)
-      ? window.featureEndpointsFull
-      : [];
+    const endpoints =
+      Array.isArray(window.featureEndpointsFull) &&
+      window.featureEndpointsFull.length
+        ? window.featureEndpointsFull
+        : Array.isArray(availableEndpoints)
+        ? availableEndpoints
+        : [];
     select.innerHTML =
       `<option value="">Select endpoint...</option>` +
       endpoints
