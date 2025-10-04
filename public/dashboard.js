@@ -246,17 +246,17 @@ window.addEventListener("DOMContentLoaded", function () {
   if (modal) modal.classList.add("hidden");
 
   // Tab switching logic
-  const sidebarLinks = document.querySelectorAll("aside nav ul li a");
+  const sidebarButtons = document.querySelectorAll("aside nav ul li button");
   const tabIds = ["tab-dashboard", "tab-filters", "tab-templates"];
-  sidebarLinks.forEach((link, idx) => {
-    link.addEventListener("click", function (e) {
+  sidebarButtons.forEach((button, idx) => {
+    button.addEventListener("click", function (e) {
       e.preventDefault();
-      // Remove active class from all links
-      sidebarLinks.forEach((l) =>
-        l.classList.remove("bg-blue-50", "text-blue-600", "font-medium")
+      // Remove active class from all buttons
+      sidebarButtons.forEach((b) =>
+        b.classList.remove("bg-blue-50", "text-blue-600", "font-medium")
       );
-      // Add active class to clicked link
-      link.classList.add("bg-blue-50", "text-blue-600", "font-medium");
+      // Add active class to clicked button
+      button.classList.add("bg-blue-50", "text-blue-600", "font-medium");
       // Hide all tab contents
       tabIds.forEach((id) => {
         const el = document.getElementById(id);
@@ -277,6 +277,41 @@ window.addEventListener("DOMContentLoaded", function () {
     if (el) el.classList.toggle("hidden", idx !== 0);
   });
 });
+
+// Global function for tab switching (called from HTML onclick)
+window.switchTab = function(tabName) {
+  const tabIds = ["tab-dashboard", "tab-filters", "tab-templates"];
+  const tabIndex = tabIds.findIndex(id => id === `tab-${tabName}`);
+  
+  if (tabIndex === -1) return;
+  
+  const sidebarButtons = document.querySelectorAll("aside nav ul li button");
+  
+  // Remove active class from all buttons
+  sidebarButtons.forEach((b) =>
+    b.classList.remove("bg-blue-50", "text-blue-600", "font-medium")
+  );
+  
+  // Add active class to clicked button
+  if (sidebarButtons[tabIndex]) {
+    sidebarButtons[tabIndex].classList.add("bg-blue-50", "text-blue-600", "font-medium");
+  }
+  
+  // Hide all tab contents
+  tabIds.forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.classList.add("hidden");
+  });
+  
+  // Show selected tab
+  const showId = tabIds[tabIndex];
+  const showEl = document.getElementById(showId);
+  if (showEl) showEl.classList.remove("hidden");
+  
+  if (showId === "tab-filters") {
+    ensureFeaturesLoaded();
+  }
+};
 
 // Dashboard initialization function
 function initializeDashboard() {
@@ -723,9 +758,10 @@ function showFeatureDetailPage(endpoint) {
           handleFeatureImageUpload();
         }
       });
-      uploadSection.onclick = (e) => {
-        if (e.target.tagName !== "INPUT") input.click();
-      };
+      // Remove the onclick handler since the label already handles clicks properly
+      // uploadSection.onclick = (e) => {
+      //   if (e.target.tagName !== "INPUT") input.click();
+      // };
     }
     if (input) {
       input.onchange = handleFeatureImageUpload;
@@ -1408,9 +1444,10 @@ function displayTemplates() {
           handleStepImageUpload(newInput, newPreview, newStatus);
         }
       });
-      newSection.onclick = (e) => {
-        if (e.target.tagName !== "INPUT") newInput.click();
-      };
+      // Remove the onclick handler since the label already handles clicks properly
+      // newSection.onclick = (e) => {
+      //   if (e.target.tagName !== "INPUT") newInput.click();
+      // };
       newInput.onchange = () =>
         handleStepImageUpload(newInput, newPreview, newStatus);
     }
