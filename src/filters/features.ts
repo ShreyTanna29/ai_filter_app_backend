@@ -13,7 +13,7 @@ export const features = [
   },
   {
     "endpoint": "ai-kiss",
-    "prompt": "A deeply romantic couple sharing an intimate and passionate kiss, soft diffused lighting creating dreamy atmosphere, cinematic depth of field with beautiful bokeh background, highly emotional and authentic expressions, professional romance cinematography, 8K ultra-high quality, perfect composition with emotional storytelling"
+    "prompt": "Create a romantic video where the male from the first image and the female from the second image gently face each other and share a sweet kiss. The setting should match the style of the reference images, focusing on their faces and the affectionate moment."
   },
   {
     "endpoint": "ai-harley",
