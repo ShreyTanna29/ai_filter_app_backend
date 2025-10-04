@@ -688,6 +688,13 @@ function showFeatureDetailPage(endpoint) {
     const featureLastFrameWrapper = document.getElementById(
       "featureLastFrameWrapper"
     );
+    // Vidu Q1 extra reference wrappers
+    const featureRef2Wrapper = document.getElementById("featureRef2Wrapper");
+    const featureRef3Wrapper = document.getElementById("featureRef3Wrapper");
+    const featureRef2Input = document.getElementById("featureRef2Input");
+    const featureRef3Input = document.getElementById("featureRef3Input");
+    const featureRef2Preview = document.getElementById("featureRef2Preview");
+    const featureRef3Preview = document.getElementById("featureRef3Preview");
     const featureLastFrameInput = document.getElementById(
       "featureLastFrameInput"
     );
@@ -695,6 +702,8 @@ function showFeatureDetailPage(endpoint) {
       "featureLastFramePreview"
     );
     let featureLastFrameUrl = null;
+    let featureRef2Url = null;
+    let featureRef3Url = null;
 
     // Reset UI
     if (preview) {
@@ -763,17 +772,89 @@ function showFeatureDetailPage(endpoint) {
           });
       };
     }
+    // Vidu Q1 ref2 upload
+    if (featureRef2Input) {
+      featureRef2Input.onchange = () => {
+        const file = featureRef2Input.files && featureRef2Input.files[0];
+        if (!file) return;
+        const formData = new FormData();
+        formData.append("image", file);
+        if (uploadStatus) uploadStatus.textContent = "Uploading ref 2...";
+        fetch("/api/cloudinary/upload", { method: "POST", body: formData })
+          .then((r) => r.json())
+          .then((r) => {
+            if (r && r.success && r.url) {
+              featureRef2Url = r.url;
+              if (featureRef2Preview) {
+                featureRef2Preview.src = r.url;
+                featureRef2Preview.style.display = "block";
+              }
+              if (uploadStatus) uploadStatus.textContent = "Ref 2 uploaded!";
+            } else {
+              if (uploadStatus)
+                uploadStatus.textContent = "Ref 2 upload failed.";
+            }
+            featureRef2Input.value = "";
+          })
+          .catch(() => {
+            if (uploadStatus) uploadStatus.textContent = "Ref 2 upload failed.";
+            featureRef2Input.value = "";
+          });
+      };
+    }
+    // Vidu Q1 ref3 upload
+    if (featureRef3Input) {
+      featureRef3Input.onchange = () => {
+        const file = featureRef3Input.files && featureRef3Input.files[0];
+        if (!file) return;
+        const formData = new FormData();
+        formData.append("image", file);
+        if (uploadStatus) uploadStatus.textContent = "Uploading ref 3...";
+        fetch("/api/cloudinary/upload", { method: "POST", body: formData })
+          .then((r) => r.json())
+          .then((r) => {
+            if (r && r.success && r.url) {
+              featureRef3Url = r.url;
+              if (featureRef3Preview) {
+                featureRef3Preview.src = r.url;
+                featureRef3Preview.style.display = "block";
+              }
+              if (uploadStatus) uploadStatus.textContent = "Ref 3 uploaded!";
+            } else {
+              if (uploadStatus)
+                uploadStatus.textContent = "Ref 3 upload failed.";
+            }
+            featureRef3Input.value = "";
+          })
+          .catch(() => {
+            if (uploadStatus) uploadStatus.textContent = "Ref 3 upload failed.";
+            featureRef3Input.value = "";
+          });
+      };
+    }
     // Toggle display of last frame uploader based on model selection
     const featureModelSelect = document.getElementById("featureModelSelect");
     if (featureModelSelect && featureLastFrameWrapper) {
       const toggleFeatureLastFrame = () => {
-        if (/pixverse-v4-transition/i.test(featureModelSelect.value)) {
-          featureLastFrameWrapper.style.display = "flex";
-        } else {
-          featureLastFrameWrapper.style.display = "none";
+        const val = featureModelSelect.value || "";
+        const isPixTrans = /pixverse-v4-transition/i.test(val);
+        const isVidu = /vidu-q1-reference-to-video/i.test(val);
+        featureLastFrameWrapper.style.display = isPixTrans ? "flex" : "none";
+        if (!isPixTrans) {
           featureLastFrameUrl = null;
           if (featureLastFramePreview)
             featureLastFramePreview.style.display = "none";
+        }
+        // Toggle vidu extra refs
+        if (featureRef2Wrapper)
+          featureRef2Wrapper.style.display = isVidu ? "flex" : "none";
+        if (featureRef3Wrapper)
+          featureRef3Wrapper.style.display = isVidu ? "flex" : "none";
+        if (!isVidu) {
+          featureRef2Url = null;
+          featureRef3Url = null;
+          if (featureRef2Preview) featureRef2Preview.style.display = "none";
+          if (featureRef3Preview) featureRef3Preview.style.display = "none";
         }
       };
       featureModelSelect.addEventListener("change", toggleFeatureLastFrame);
@@ -841,6 +922,10 @@ function showFeatureDetailPage(endpoint) {
                     featureLastFrameUrl
                   ) {
                     payload.lastFrameUrl = featureLastFrameUrl;
+                  }
+                  if (/vidu-q1-reference-to-video/i.test(selectedModel || "")) {
+                    if (featureRef2Url) payload.image_url2 = featureRef2Url;
+                    if (featureRef3Url) payload.image_url3 = featureRef3Url;
                   }
                   return payload;
                 })()
@@ -1381,6 +1466,15 @@ function displayTemplates() {
     const stepLastFramePreview = document.getElementById(
       "stepLastFramePreview"
     );
+    // Vidu Q1 reference wrappers for steps
+    const stepRef2Wrapper = document.getElementById("stepRef2Wrapper");
+    const stepRef3Wrapper = document.getElementById("stepRef3Wrapper");
+    const stepRef2Input = document.getElementById("stepRef2Input");
+    const stepRef3Input = document.getElementById("stepRef3Input");
+    const stepRef2Preview = document.getElementById("stepRef2Preview");
+    const stepRef3Preview = document.getElementById("stepRef3Preview");
+    window._stepRef2Url = null;
+    window._stepRef3Url = null;
     window._stepLastFrameUrl = null;
     if (stepImageInput && stepImageUploadSection) {
       // Remove previous listeners by cloning
@@ -1476,16 +1570,92 @@ function displayTemplates() {
     }
     if (stepModelSelect && stepLastFrameWrapper) {
       const toggleStepLastFrame = () => {
-        if (/pixverse-v4-transition/i.test(stepModelSelect.value)) {
-          stepLastFrameWrapper.style.display = "flex";
-        } else {
-          stepLastFrameWrapper.style.display = "none";
+        const val = stepModelSelect.value || "";
+        const isPixTrans = /pixverse-v4-transition/i.test(val);
+        const isVidu = /vidu-q1-reference-to-video/i.test(val);
+        stepLastFrameWrapper.style.display = isPixTrans ? "flex" : "none";
+        if (!isPixTrans) {
           window._stepLastFrameUrl = null;
           if (stepLastFramePreview) stepLastFramePreview.style.display = "none";
+        }
+        if (stepRef2Wrapper)
+          stepRef2Wrapper.style.display = isVidu ? "flex" : "none";
+        if (stepRef3Wrapper)
+          stepRef3Wrapper.style.display = isVidu ? "flex" : "none";
+        if (!isVidu) {
+          window._stepRef2Url = null;
+          window._stepRef3Url = null;
+          if (stepRef2Preview) stepRef2Preview.style.display = "none";
+          if (stepRef3Preview) stepRef3Preview.style.display = "none";
         }
       };
       stepModelSelect.addEventListener("change", toggleStepLastFrame);
       toggleStepLastFrame();
+    }
+    // Step Vidu reference uploads
+    if (stepRef2Input) {
+      stepRef2Input.onchange = () => {
+        const file = stepRef2Input.files && stepRef2Input.files[0];
+        if (!file) return;
+        const fd = new FormData();
+        fd.append("image", file);
+        if (stepUploadStatus)
+          stepUploadStatus.textContent = "Uploading ref 2...";
+        fetch("/api/cloudinary/upload", { method: "POST", body: fd })
+          .then((r) => r.json())
+          .then((r) => {
+            if (r && r.success && r.url) {
+              window._stepRef2Url = r.url;
+              if (stepRef2Preview) {
+                stepRef2Preview.src = r.url;
+                stepRef2Preview.style.display = "block";
+              }
+              if (stepUploadStatus)
+                stepUploadStatus.textContent = "Ref 2 uploaded!";
+            } else {
+              if (stepUploadStatus)
+                stepUploadStatus.textContent = "Ref 2 upload failed.";
+            }
+            stepRef2Input.value = "";
+          })
+          .catch(() => {
+            if (stepUploadStatus)
+              stepUploadStatus.textContent = "Ref 2 upload failed.";
+            stepRef2Input.value = "";
+          });
+      };
+    }
+    if (stepRef3Input) {
+      stepRef3Input.onchange = () => {
+        const file = stepRef3Input.files && stepRef3Input.files[0];
+        if (!file) return;
+        const fd = new FormData();
+        fd.append("image", file);
+        if (stepUploadStatus)
+          stepUploadStatus.textContent = "Uploading ref 3...";
+        fetch("/api/cloudinary/upload", { method: "POST", body: fd })
+          .then((r) => r.json())
+          .then((r) => {
+            if (r && r.success && r.url) {
+              window._stepRef3Url = r.url;
+              if (stepRef3Preview) {
+                stepRef3Preview.src = r.url;
+                stepRef3Preview.style.display = "block";
+              }
+              if (stepUploadStatus)
+                stepUploadStatus.textContent = "Ref 3 uploaded!";
+            } else {
+              if (stepUploadStatus)
+                stepUploadStatus.textContent = "Ref 3 upload failed.";
+            }
+            stepRef3Input.value = "";
+          })
+          .catch(() => {
+            if (stepUploadStatus)
+              stepUploadStatus.textContent = "Ref 3 upload failed.";
+            stepRef3Input.value = "";
+          });
+      };
     }
   }
 
@@ -2171,6 +2341,13 @@ async function generateVideo(endpoint, event) {
       return;
     }
   }
+  // For Vidu Q1 gather additional refs if present
+  let stepRef2 = null;
+  let stepRef3 = null;
+  if (/vidu-q1-reference-to-video/i.test(selectedModel || "")) {
+    stepRef2 = window._stepRef2Url || null;
+    stepRef3 = window._stepRef3Url || null;
+  }
   statusDiv.textContent = "Generating video...";
   statusDiv.style.color = "#666";
   try {
@@ -2193,6 +2370,10 @@ async function generateVideo(endpoint, event) {
             lastFrameUrl
           )
             payload.last_frame_url = lastFrameUrl;
+          if (/vidu-q1-reference-to-video/i.test(selectedModel || "")) {
+            if (stepRef2) payload.image_url2 = stepRef2;
+            if (stepRef3) payload.image_url3 = stepRef3;
+          }
           return payload;
         })()
       ),
