@@ -35,24 +35,24 @@
         <nav class="flex-1">
           <ul class="space-y-1 mb-8">
             <li>
-              <a
-                href="#"
-                class="flex items-center px-3 py-2 rounded-lg bg-blue-50 text-blue-600 font-medium"
-                ><i class="fa fa-table-columns mr-3"></i>Dashboard</a
+              <button
+                onclick="switchTab('dashboard')"
+                class="flex items-center px-3 py-2 rounded-lg bg-blue-50 text-blue-600 font-medium w-full text-left"
+                ><i class="fa fa-table-columns mr-3"></i>Dashboard</button
               >
             </li>
             <li>
-              <a
-                href="#"
-                class="flex items-center px-3 py-2 rounded-lg text-gray-700 hover:bg-gray-100"
-                ><i class="fa fa-filter mr-3"></i>Filters</a
+              <button
+                onclick="switchTab('filters')"
+                class="flex items-center px-3 py-2 rounded-lg text-gray-700 hover:bg-gray-100 w-full text-left"
+                ><i class="fa fa-filter mr-3"></i>Filters</button
               >
             </li>
             <li>
-              <a
-                href="#"
-                class="flex items-center px-3 py-2 rounded-lg text-gray-700 hover:bg-gray-100"
-                ><i class="fa fa-layer-group mr-3"></i>Templates</a
+              <button
+                onclick="switchTab('templates')"
+                class="flex items-center px-3 py-2 rounded-lg text-gray-700 hover:bg-gray-100 w-full text-left"
+                ><i class="fa fa-layer-group mr-3"></i>Templates</button
               >
             </li>
           </ul>
@@ -148,10 +148,12 @@
                   <div class="mb-4">
                     <label class="block text-sm font-semibold text-gray-700 mb-1">Generate Video for this Step</label>
                     <div id="stepImageUploadSection" class="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center cursor-pointer hover:border-blue-400 transition relative">
-                      <div class="text-gray-500 text-sm flex flex-col items-center gap-1">
-                        <i class="fa fa-cloud-upload text-xl"></i>
-                        <span>Click or drag an image here to upload</span>
-                      </div>
+                      <label for="stepImageInput" class="cursor-pointer flex flex-col items-center gap-1">
+                        <div class="text-gray-500 text-sm flex flex-col items-center gap-1">
+                          <i class="fa fa-cloud-upload text-xl"></i>
+                          <span>Click or drag an image here to upload</span>
+                        </div>
+                      </label>
                       <input id="stepImageInput" type="file" accept="image/*" class="hidden" />
                       <img id="stepImagePreview" class="mt-3 mx-auto rounded hidden" style="max-height:160px;" />
                       <div id="stepUploadStatus" class="text-xs text-gray-500 mt-2"></div>
@@ -159,8 +161,10 @@
                     <div id="stepLastFrameWrapper" class="mt-4 hidden flex-col gap-2">
                       <label class="block text-sm font-semibold text-gray-700">Last Frame (Pixverse Transition)</label>
                       <div class="border-2 border-dashed border-gray-300 rounded-lg p-3 text-center cursor-pointer hover:border-blue-400 transition relative">
+                        <label for="stepLastFrameInput" class="cursor-pointer flex flex-col items-center gap-1">
+                          <div class="text-gray-500 text-xs">Click to upload last frame image</div>
+                        </label>
                         <input id="stepLastFrameInput" type="file" accept="image/*" class="hidden" />
-                        <div class="text-gray-500 text-xs">Click to upload last frame image</div>
                         <img id="stepLastFramePreview" class="mt-2 mx-auto rounded hidden" style="max-height:120px;" />
                       </div>
                     </div>
