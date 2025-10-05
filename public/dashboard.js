@@ -246,17 +246,17 @@ window.addEventListener("DOMContentLoaded", function () {
   if (modal) modal.classList.add("hidden");
 
   // Tab switching logic
-  const sidebarLinks = document.querySelectorAll("aside nav ul li a");
+  const sidebarButtons = document.querySelectorAll("aside nav ul li button");
   const tabIds = ["tab-dashboard", "tab-filters", "tab-templates"];
-  sidebarLinks.forEach((link, idx) => {
-    link.addEventListener("click", function (e) {
+  sidebarButtons.forEach((button, idx) => {
+    button.addEventListener("click", function (e) {
       e.preventDefault();
-      // Remove active class from all links
-      sidebarLinks.forEach((l) =>
-        l.classList.remove("bg-blue-50", "text-blue-600", "font-medium")
+      // Remove active class from all buttons
+      sidebarButtons.forEach((b) =>
+        b.classList.remove("bg-blue-50", "text-blue-600", "font-medium")
       );
-      // Add active class to clicked link
-      link.classList.add("bg-blue-50", "text-blue-600", "font-medium");
+      // Add active class to clicked button
+      button.classList.add("bg-blue-50", "text-blue-600", "font-medium");
       // Hide all tab contents
       tabIds.forEach((id) => {
         const el = document.getElementById(id);
@@ -277,6 +277,41 @@ window.addEventListener("DOMContentLoaded", function () {
     if (el) el.classList.toggle("hidden", idx !== 0);
   });
 });
+
+// Global function for tab switching (called from HTML onclick)
+window.switchTab = function(tabName) {
+  const tabIds = ["tab-dashboard", "tab-filters", "tab-templates"];
+  const tabIndex = tabIds.findIndex(id => id === `tab-${tabName}`);
+  
+  if (tabIndex === -1) return;
+  
+  const sidebarButtons = document.querySelectorAll("aside nav ul li button");
+  
+  // Remove active class from all buttons
+  sidebarButtons.forEach((b) =>
+    b.classList.remove("bg-blue-50", "text-blue-600", "font-medium")
+  );
+  
+  // Add active class to clicked button
+  if (sidebarButtons[tabIndex]) {
+    sidebarButtons[tabIndex].classList.add("bg-blue-50", "text-blue-600", "font-medium");
+  }
+  
+  // Hide all tab contents
+  tabIds.forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.classList.add("hidden");
+  });
+  
+  // Show selected tab
+  const showId = tabIds[tabIndex];
+  const showEl = document.getElementById(showId);
+  if (showEl) showEl.classList.remove("hidden");
+  
+  if (showId === "tab-filters") {
+    ensureFeaturesLoaded();
+  }
+};
 
 // Dashboard initialization function
 function initializeDashboard() {
@@ -732,9 +767,10 @@ function showFeatureDetailPage(endpoint) {
           handleFeatureImageUpload();
         }
       });
-      uploadSection.onclick = (e) => {
-        if (e.target.tagName !== "INPUT") input.click();
-      };
+      // Remove the onclick handler since the label already handles clicks properly
+      // uploadSection.onclick = (e) => {
+      //   if (e.target.tagName !== "INPUT") input.click();
+      // };
     }
     if (input) {
       input.onchange = handleFeatureImageUpload;
@@ -839,13 +875,14 @@ function showFeatureDetailPage(endpoint) {
         const val = featureModelSelect.value || "";
         const isPixTrans = /pixverse-v4-transition/i.test(val);
         const isVidu = /vidu-q1-reference-to-video/i.test(val);
+        const isViduImage2Video = /vidu-(1\.5|q1)-image-to-video/i.test(val);
         featureLastFrameWrapper.style.display = isPixTrans ? "flex" : "none";
         if (!isPixTrans) {
           featureLastFrameUrl = null;
           if (featureLastFramePreview)
             featureLastFramePreview.style.display = "none";
         }
-        // Toggle vidu extra refs
+        // Toggle vidu extra refs (only for reference-to-video model)
         if (featureRef2Wrapper)
           featureRef2Wrapper.style.display = isVidu ? "flex" : "none";
         if (featureRef3Wrapper)
@@ -874,10 +911,17 @@ function showFeatureDetailPage(endpoint) {
             if (preview) {
               preview.src = result.url;
               preview.style.display = "block";
+              preview.classList.add("image-preview");
             }
-            if (uploadStatus) uploadStatus.textContent = "Image uploaded!";
+            if (uploadStatus) {
+              uploadStatus.textContent = "Image uploaded!";
+              uploadStatus.className = "upload-status success text-sm mt-3 text-center";
+            }
           } else {
-            if (uploadStatus) uploadStatus.textContent = "Upload failed.";
+            if (uploadStatus) {
+              uploadStatus.textContent = "Upload failed.";
+              uploadStatus.className = "upload-status error text-sm mt-3 text-center";
+            }
           }
           input.value = "";
         })
@@ -1158,13 +1202,25 @@ function closeFeatureDetailPage() {
     }
   });
 
-  // Show filters tab again
-  const filtersTab = document.getElementById("tab-filters");
-  if (filtersTab) {
-    filtersTab.classList.remove("hidden");
-    filtersTab.style.display = "";
-    console.log("Filters tab shown");
-  }
+  // Restore main UI elements (same as in initializeDashboard)
+  console.log("Restoring main UI elements...");
+  document
+    .querySelectorAll(
+      "main, aside, header, .tab-content, #tab-dashboard, #tab-filters, #tab-templates"
+    )
+    .forEach((el) => {
+      if (el) {
+        console.log("Restoring element:", el.tagName, el.id || el.className);
+        el.style.display = "";
+        el.classList.remove("hidden");
+      }
+    });
+
+  // Use the normal tab switching functionality to show filters tab
+  // This ensures proper tab state management and allows users to switch to other tabs
+  switchTab('filters');
+  
+  console.log("Main UI restored successfully");
 }
 
 async function promptRenameEndpoint(oldEndpoint) {
@@ -1502,9 +1558,10 @@ function displayTemplates() {
           handleStepImageUpload(newInput, newPreview, newStatus);
         }
       });
-      newSection.onclick = (e) => {
-        if (e.target.tagName !== "INPUT") newInput.click();
-      };
+      // Remove the onclick handler since the label already handles clicks properly
+      // newSection.onclick = (e) => {
+      //   if (e.target.tagName !== "INPUT") newInput.click();
+      // };
       newInput.onchange = () =>
         handleStepImageUpload(newInput, newPreview, newStatus);
     }
@@ -1573,11 +1630,13 @@ function displayTemplates() {
         const val = stepModelSelect.value || "";
         const isPixTrans = /pixverse-v4-transition/i.test(val);
         const isVidu = /vidu-q1-reference-to-video/i.test(val);
+        const isViduImage2Video = /vidu-(1\.5|q1)-image-to-video/i.test(val);
         stepLastFrameWrapper.style.display = isPixTrans ? "flex" : "none";
         if (!isPixTrans) {
           window._stepLastFrameUrl = null;
           if (stepLastFramePreview) stepLastFramePreview.style.display = "none";
         }
+        // Toggle vidu extra refs (only for reference-to-video model)
         if (stepRef2Wrapper)
           stepRef2Wrapper.style.display = isVidu ? "flex" : "none";
         if (stepRef3Wrapper)
@@ -1663,11 +1722,38 @@ function displayTemplates() {
 }
 
 function closeStepDetailPage() {
-  document.getElementById("stepDetailPage").classList.add("hidden");
-  // Show templates tab again
-  document.getElementById("tab-templates").classList.remove("hidden");
+  console.log("Closing step detail page");
+  
+  // Hide the step detail page
+  const stepDetailPage = document.getElementById("stepDetailPage");
+  if (stepDetailPage) {
+    stepDetailPage.classList.add("hidden");
+    stepDetailPage.style.display = "none";
+  }
+
+  // Restore main UI elements (same as in initializeDashboard)
+  console.log("Restoring main UI elements...");
+  document
+    .querySelectorAll(
+      "main, aside, header, .tab-content, #tab-dashboard, #tab-filters, #tab-templates"
+    )
+    .forEach((el) => {
+      if (el) {
+        console.log("Restoring element:", el.tagName, el.id || el.className);
+        el.style.display = "";
+        el.classList.remove("hidden");
+      }
+    });
+
+  // Use the normal tab switching functionality to show templates tab
+  // This ensures proper tab state management and allows users to switch to other tabs
+  switchTab('templates');
+
+  // Reset step detail state
   window._currentStepTemplateId = null;
   window._currentStepIndex = null;
+  
+  console.log("Main UI restored successfully");
 }
 
 async function saveStepDetail() {
@@ -2019,16 +2105,24 @@ function addTemplateStep(selectedEndpoint = "", promptValue = "") {
       <button type="button" class="remove-step" onclick="removeStep(this)">Remove</button>
     </div>
     <div class="step-actions" style="display:flex;align-items:center;gap:10px;margin-top:10px;">
-      <div class="image-upload-section step-image-upload-section">
-        <label class="upload-label">
-          <div class="upload-icon"><i class="fas fa-cloud-upload-alt"></i></div>
-          <div class="upload-text">Click or drag an image here to upload</div>
-          <input type="file" class="step-image-input" accept="image/*" style="display:none;" />
+      <div class="image-upload-section step-image-upload-section bg-gradient-to-br from-indigo-50 to-blue-50 rounded-xl p-4 border border-indigo-100">
+        <h4 class="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+          <i class="fas fa-image text-indigo-600"></i>
+          Upload Image
+        </h4>
+        <label class="upload-label cursor-pointer group">
+          <div class="upload-area border-2 border-dashed border-indigo-300 rounded-lg p-4 text-center transition-all duration-300 hover:border-indigo-400 hover:bg-indigo-50 group-hover:scale-[1.02]">
+            <div class="w-8 h-8 mx-auto bg-indigo-100 rounded-full flex items-center justify-center group-hover:bg-indigo-200 transition-colors duration-300 mb-2">
+              <i class="fas fa-cloud-upload-alt text-indigo-600 text-sm"></i>
+            </div>
+            <div class="text-xs font-medium text-gray-600">Click to upload</div>
+            <input type="file" class="step-image-input" accept="image/*" style="display:none;" />
+          </div>
         </label>
-        <img class="step-image-preview" style="display:none;max-width:200px;margin:10px auto 0;" />
-        <div class="step-upload-status upload-status"></div>
+        <img class="step-image-preview rounded-lg shadow border border-gray-200 hidden" style="max-width:200px;margin:10px auto 0;" />
+        <div class="step-upload-status upload-status text-xs text-center mt-2"></div>
       </div>
-      <button type="button" class="btn btn-primary step-generate-btn" style="flex:1;min-width:120px;">
+      <button type="button" class="step-generate-btn bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white px-4 py-2 rounded-lg font-medium transition-all duration-300 hover:shadow-lg hover:scale-105 flex items-center justify-center gap-2" style="flex:1;min-width:120px;">
         <i class="fas fa-magic"></i> Generate Video
       </button>
     </div>
