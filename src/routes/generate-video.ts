@@ -849,7 +849,7 @@ router.post<
         const image3 = await maybeUploadExtra(image3Raw);
 
         const viduVersion = process.env.VIDU_2_VERSION || "0.0.1";
-        const duration = Number(process.env.VIDU_2_DURATION || 5);
+        const duration = Number(process.env.VIDU_2_DURATION || 4);
         const aspect = process.env.VIDU_2_ASPECT_RATIO || "16:9";
         const resolution = process.env.VIDU_2_RESOLUTION || "720p"; // docs assume 1080p
         const movementAmplitude =
@@ -865,7 +865,7 @@ router.post<
           bgm,
         };
         // Add references in required naming order (image_url1..3)
-        input.image_url1 = imageCloudUrl;
+        input.image_url = imageCloudUrl;
         if (lastFrameCloudUrl) input.image_url2 = lastFrameCloudUrl;
         if (image2) input.image_url2 = image2; // override if user explicitly provided second reference
         if (image3) input.image_url3 = image3;
