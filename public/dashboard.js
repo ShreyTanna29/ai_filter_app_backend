@@ -874,15 +874,14 @@ function showFeatureDetailPage(endpoint) {
       const toggleFeatureLastFrame = () => {
         const val = featureModelSelect.value || "";
         const isPixTrans = /pixverse-v4-transition/i.test(val);
-        const isVidu = /vidu-q1-reference-to-video/i.test(val);
-        const isViduImage2Video = /vidu-(1\.5|q1)-image-to-video/i.test(val);
+  const isVidu = /vidu-q1-reference-to-video/i.test(val) || /vidu-2-reference-to-video/i.test(val);
         featureLastFrameWrapper.style.display = isPixTrans ? "flex" : "none";
         if (!isPixTrans) {
           featureLastFrameUrl = null;
           if (featureLastFramePreview)
             featureLastFramePreview.style.display = "none";
         }
-        // Toggle vidu extra refs (only for reference-to-video model)
+        // Toggle vidu extra refs
         if (featureRef2Wrapper)
           featureRef2Wrapper.style.display = isVidu ? "flex" : "none";
         if (featureRef3Wrapper)
@@ -911,17 +910,10 @@ function showFeatureDetailPage(endpoint) {
             if (preview) {
               preview.src = result.url;
               preview.style.display = "block";
-              preview.classList.add("image-preview");
             }
-            if (uploadStatus) {
-              uploadStatus.textContent = "Image uploaded!";
-              uploadStatus.className = "upload-status success text-sm mt-3 text-center";
-            }
+            if (uploadStatus) uploadStatus.textContent = "Image uploaded!";
           } else {
-            if (uploadStatus) {
-              uploadStatus.textContent = "Upload failed.";
-              uploadStatus.className = "upload-status error text-sm mt-3 text-center";
-            }
+            if (uploadStatus) uploadStatus.textContent = "Upload failed.";
           }
           input.value = "";
         })
@@ -967,7 +959,7 @@ function showFeatureDetailPage(endpoint) {
                   ) {
                     payload.lastFrameUrl = featureLastFrameUrl;
                   }
-                  if (/vidu-q1-reference-to-video/i.test(selectedModel || "")) {
+                  if (/vidu-q1-reference-to-video/i.test(selectedModel || "") || /vidu-2-reference-to-video/i.test(selectedModel || "")) {
                     if (featureRef2Url) payload.image_url2 = featureRef2Url;
                     if (featureRef3Url) payload.image_url3 = featureRef3Url;
                   }
@@ -1202,25 +1194,13 @@ function closeFeatureDetailPage() {
     }
   });
 
-  // Restore main UI elements (same as in initializeDashboard)
-  console.log("Restoring main UI elements...");
-  document
-    .querySelectorAll(
-      "main, aside, header, .tab-content, #tab-dashboard, #tab-filters, #tab-templates"
-    )
-    .forEach((el) => {
-      if (el) {
-        console.log("Restoring element:", el.tagName, el.id || el.className);
-        el.style.display = "";
-        el.classList.remove("hidden");
-      }
-    });
-
-  // Use the normal tab switching functionality to show filters tab
-  // This ensures proper tab state management and allows users to switch to other tabs
-  switchTab('filters');
-  
-  console.log("Main UI restored successfully");
+  // Show filters tab again
+  const filtersTab = document.getElementById("tab-filters");
+  if (filtersTab) {
+    filtersTab.classList.remove("hidden");
+    filtersTab.style.display = "";
+    console.log("Filters tab shown");
+  }
 }
 
 async function promptRenameEndpoint(oldEndpoint) {
@@ -1630,13 +1610,11 @@ function displayTemplates() {
         const val = stepModelSelect.value || "";
         const isPixTrans = /pixverse-v4-transition/i.test(val);
         const isVidu = /vidu-q1-reference-to-video/i.test(val);
-        const isViduImage2Video = /vidu-(1\.5|q1)-image-to-video/i.test(val);
         stepLastFrameWrapper.style.display = isPixTrans ? "flex" : "none";
         if (!isPixTrans) {
           window._stepLastFrameUrl = null;
           if (stepLastFramePreview) stepLastFramePreview.style.display = "none";
         }
-        // Toggle vidu extra refs (only for reference-to-video model)
         if (stepRef2Wrapper)
           stepRef2Wrapper.style.display = isVidu ? "flex" : "none";
         if (stepRef3Wrapper)
@@ -1722,38 +1700,11 @@ function displayTemplates() {
 }
 
 function closeStepDetailPage() {
-  console.log("Closing step detail page");
-  
-  // Hide the step detail page
-  const stepDetailPage = document.getElementById("stepDetailPage");
-  if (stepDetailPage) {
-    stepDetailPage.classList.add("hidden");
-    stepDetailPage.style.display = "none";
-  }
-
-  // Restore main UI elements (same as in initializeDashboard)
-  console.log("Restoring main UI elements...");
-  document
-    .querySelectorAll(
-      "main, aside, header, .tab-content, #tab-dashboard, #tab-filters, #tab-templates"
-    )
-    .forEach((el) => {
-      if (el) {
-        console.log("Restoring element:", el.tagName, el.id || el.className);
-        el.style.display = "";
-        el.classList.remove("hidden");
-      }
-    });
-
-  // Use the normal tab switching functionality to show templates tab
-  // This ensures proper tab state management and allows users to switch to other tabs
-  switchTab('templates');
-
-  // Reset step detail state
+  document.getElementById("stepDetailPage").classList.add("hidden");
+  // Show templates tab again
+  document.getElementById("tab-templates").classList.remove("hidden");
   window._currentStepTemplateId = null;
   window._currentStepIndex = null;
-  
-  console.log("Main UI restored successfully");
 }
 
 async function saveStepDetail() {
@@ -2105,24 +2056,16 @@ function addTemplateStep(selectedEndpoint = "", promptValue = "") {
       <button type="button" class="remove-step" onclick="removeStep(this)">Remove</button>
     </div>
     <div class="step-actions" style="display:flex;align-items:center;gap:10px;margin-top:10px;">
-      <div class="image-upload-section step-image-upload-section bg-gradient-to-br from-indigo-50 to-blue-50 rounded-xl p-4 border border-indigo-100">
-        <h4 class="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
-          <i class="fas fa-image text-indigo-600"></i>
-          Upload Image
-        </h4>
-        <label class="upload-label cursor-pointer group">
-          <div class="upload-area border-2 border-dashed border-indigo-300 rounded-lg p-4 text-center transition-all duration-300 hover:border-indigo-400 hover:bg-indigo-50 group-hover:scale-[1.02]">
-            <div class="w-8 h-8 mx-auto bg-indigo-100 rounded-full flex items-center justify-center group-hover:bg-indigo-200 transition-colors duration-300 mb-2">
-              <i class="fas fa-cloud-upload-alt text-indigo-600 text-sm"></i>
-            </div>
-            <div class="text-xs font-medium text-gray-600">Click to upload</div>
-            <input type="file" class="step-image-input" accept="image/*" style="display:none;" />
-          </div>
+      <div class="image-upload-section step-image-upload-section">
+        <label class="upload-label">
+          <div class="upload-icon"><i class="fas fa-cloud-upload-alt"></i></div>
+          <div class="upload-text">Click or drag an image here to upload</div>
+          <input type="file" class="step-image-input" accept="image/*" style="display:none;" />
         </label>
-        <img class="step-image-preview rounded-lg shadow border border-gray-200 hidden" style="max-width:200px;margin:10px auto 0;" />
-        <div class="step-upload-status upload-status text-xs text-center mt-2"></div>
+        <img class="step-image-preview" style="display:none;max-width:200px;margin:10px auto 0;" />
+        <div class="step-upload-status upload-status"></div>
       </div>
-      <button type="button" class="step-generate-btn bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white px-4 py-2 rounded-lg font-medium transition-all duration-300 hover:shadow-lg hover:scale-105 flex items-center justify-center gap-2" style="flex:1;min-width:120px;">
+      <button type="button" class="btn btn-primary step-generate-btn" style="flex:1;min-width:120px;">
         <i class="fas fa-magic"></i> Generate Video
       </button>
     </div>
@@ -2508,11 +2451,22 @@ async function generateVideo(endpoint, event) {
 
 // Update stats
 function updateStats() {
-  // Example logic, replace with real values as needed
-  document.getElementById("totalFeatures").textContent = features.length;
-  document.getElementById("activeFeatures").textContent = features.filter(
-    (f) => f.active !== false
-  ).length;
+  // Total features: prefer server-reported `featureTotal` when available (>0),
+  // otherwise fall back to any bundled endpoint list (`window.featureEndpointsFull`)
+  // or the already-loaded `features` array so the dashboard doesn't show 0
+  const totalFeaturesEl = document.getElementById("totalFeatures");
+  if (totalFeaturesEl) {
+    const backendTotal = typeof featureTotal === "number" ? featureTotal : 0;
+    const bundledTotal = Array.isArray(window.featureEndpointsFull) &&
+      window.featureEndpointsFull.length
+      ? window.featureEndpointsFull.length
+      : features.length;
+    const computedTotal = backendTotal > 0 ? backendTotal : bundledTotal;
+    totalFeaturesEl.textContent = String(computedTotal);
+    // Apply same number to active features per request
+    const activeFeaturesEl = document.getElementById("activeFeatures");
+    if (activeFeaturesEl) activeFeaturesEl.textContent = String(computedTotal);
+  }
   document.getElementById("totalTemplates").textContent = templates.length;
   document.getElementById("activeTemplates").textContent = templates.filter(
     (t) => t.active !== false
