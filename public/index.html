@@ -164,28 +164,10 @@
                         <img id="stepLastFramePreview" class="mt-2 mx-auto rounded hidden" style="max-height:120px;" />
                       </div>
                     </div>
-                    <!-- Vidu Q1 extra reference images (hidden unless Vidu model selected) -->
-                    <div id="stepRef2Wrapper" class="mt-4 hidden flex-col gap-2">
-                      <label class="block text-sm font-semibold text-gray-700">Reference Image 2 (Vidu Q1)</label>
-                      <div class="border-2 border-dashed border-gray-300 rounded-lg p-3 text-center cursor-pointer hover:border-blue-400 transition relative">
-                        <input id="stepRef2Input" type="file" accept="image/*" class="hidden" />
-                        <div class="text-gray-500 text-xs">Click to upload second reference</div>
-                        <img id="stepRef2Preview" class="mt-2 mx-auto rounded hidden" style="max-height:120px;" />
-                      </div>
-                    </div>
-                    <div id="stepRef3Wrapper" class="mt-4 hidden flex-col gap-2">
-                      <label class="block text-sm font-semibold text-gray-700">Reference Image 3 (Vidu Q1)</label>
-                      <div class="border-2 border-dashed border-gray-300 rounded-lg p-3 text-center cursor-pointer hover:border-blue-400 transition relative">
-                        <input id="stepRef3Input" type="file" accept="image/*" class="hidden" />
-                        <div class="text-gray-500 text-xs">Click to upload third reference</div>
-                        <img id="stepRef3Preview" class="mt-2 mx-auto rounded hidden" style="max-height:120px;" />
-                      </div>
-                    </div>
                     <select id="stepModelSelect" class="mt-4 w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400">
                       <option value="ray-2">Ray 2</option>
                       <option value="ray-2-flash">Ray 2 Flash</option>
                       <option value="ray-1.6">Ray 1.6</option>
-                      <option value="vidu-q1-reference-to-video">Vidu Q1 Reference2Video</option>
                       <option value="pixverse-v4-image-to-video">Pixverse V4 (I2V)</option>
                       <option value="pixverse-v4-transition">Pixverse V4 Transition</option>
                       <option value="pixverse-v4.5-image-to-video">Pixverse V4.5 (I2V)</option>
@@ -613,7 +595,6 @@
                   <option value="ray 2" selected>Ray 2</option>
                   <option value="ray 2 flash">Ray 2 Flash</option>
                   <option value="ray 1.6">Ray 1.6</option>
-                  <option value="vidu-q1-reference-to-video">Vidu Q1 Reference2Video</option>
                   <option value="MiniMax-Hailuo-02">MiniMax-Hailuo-02</option>
                   <option value="MiniMax I2V-01-Director">I2V-01-Director</option>
                   <option value="MiniMax I2V-01-live">I2V-01-live</option>
@@ -639,23 +620,6 @@
                     <input type="file" id="featureLastFrameInput" accept="image/*" style="display:none" />
                   </label>
                   <img id="featureLastFramePreview" style="display:none; max-width:80px" class="rounded shadow" />
-                </div>
-                <!-- Vidu Q1 extra reference images (hidden unless Vidu model selected) -->
-                <div id="featureRef2Wrapper" style="display:none" class="flex items-center gap-2">
-                  <label for="featureRef2Input" class="upload-label cursor-pointer flex items-center gap-2 text-sm border rounded px-2 py-1">
-                    <i class="fas fa-images"></i>
-                    <span>Ref 2</span>
-                    <input type="file" id="featureRef2Input" accept="image/*" style="display:none" />
-                  </label>
-                  <img id="featureRef2Preview" style="display:none; max-width:80px" class="rounded shadow" />
-                </div>
-                <div id="featureRef3Wrapper" style="display:none" class="flex items-center gap-2">
-                  <label for="featureRef3Input" class="upload-label cursor-pointer flex items-center gap-2 text-sm border rounded px-2 py-1">
-                    <i class="fas fa-images"></i>
-                    <span>Ref 3</span>
-                    <input type="file" id="featureRef3Input" accept="image/*" style="display:none" />
-                  </label>
-                  <img id="featureRef3Preview" style="display:none; max-width:80px" class="rounded shadow" />
                 </div>
                 <button
                   id="featureGenerateVideoBtn"

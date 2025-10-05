@@ -57,14 +57,6 @@ PIXVERSE_DURATION=5                 # default 5
 PIXVERSE_QUALITY=540p               # 540p or 720p etc.
 PIXVERSE_MOTION_MODE=normal         # normal / slow / fast (if supported)
 PIXVERSE_WEBHOOK_URL=https://your.domain/webhooks/pixverse
-# Optional Vidu Q1 (Eachlabs) tuning (uses same PIXVERSE_API_KEY/EACHLABS key)
-VIDU_Q1_VERSION=0.0.1
-VIDU_Q1_DURATION=5              # seconds
-VIDU_Q1_ASPECT_RATIO=16:9
-VIDU_Q1_RESOLUTION=1080p
-VIDU_Q1_MOVEMENT_AMPLITUDE=auto # auto|low|high (if supported)
-VIDU_Q1_BGM=false               # background music generation toggle
-VIDU_Q1_WEBHOOK_URL=https://your.domain/webhooks/vidu
 ```
 
 ---
