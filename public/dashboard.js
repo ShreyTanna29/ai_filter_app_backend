@@ -874,7 +874,7 @@ function showFeatureDetailPage(endpoint) {
       const toggleFeatureLastFrame = () => {
         const val = featureModelSelect.value || "";
         const isPixTrans = /pixverse-v4-transition/i.test(val);
-        const isVidu = /vidu-q1-reference-to-video/i.test(val);
+  const isVidu = /vidu-q1-reference-to-video/i.test(val) || /vidu-2-reference-to-video/i.test(val);
         featureLastFrameWrapper.style.display = isPixTrans ? "flex" : "none";
         if (!isPixTrans) {
           featureLastFrameUrl = null;
@@ -959,7 +959,7 @@ function showFeatureDetailPage(endpoint) {
                   ) {
                     payload.lastFrameUrl = featureLastFrameUrl;
                   }
-                  if (/vidu-q1-reference-to-video/i.test(selectedModel || "")) {
+                  if (/vidu-q1-reference-to-video/i.test(selectedModel || "") || /vidu-2-reference-to-video/i.test(selectedModel || "")) {
                     if (featureRef2Url) payload.image_url2 = featureRef2Url;
                     if (featureRef3Url) payload.image_url3 = featureRef3Url;
                   }
@@ -2451,11 +2451,22 @@ async function generateVideo(endpoint, event) {
 
 // Update stats
 function updateStats() {
-  // Example logic, replace with real values as needed
-  document.getElementById("totalFeatures").textContent = features.length;
-  document.getElementById("activeFeatures").textContent = features.filter(
-    (f) => f.active !== false
-  ).length;
+  // Total features: prefer server-reported `featureTotal` when available (>0),
+  // otherwise fall back to any bundled endpoint list (`window.featureEndpointsFull`)
+  // or the already-loaded `features` array so the dashboard doesn't show 0
+  const totalFeaturesEl = document.getElementById("totalFeatures");
+  if (totalFeaturesEl) {
+    const backendTotal = typeof featureTotal === "number" ? featureTotal : 0;
+    const bundledTotal = Array.isArray(window.featureEndpointsFull) &&
+      window.featureEndpointsFull.length
+      ? window.featureEndpointsFull.length
+      : features.length;
+    const computedTotal = backendTotal > 0 ? backendTotal : bundledTotal;
+    totalFeaturesEl.textContent = String(computedTotal);
+    // Apply same number to active features per request
+    const activeFeaturesEl = document.getElementById("activeFeatures");
+    if (activeFeaturesEl) activeFeaturesEl.textContent = String(computedTotal);
+  }
   document.getElementById("totalTemplates").textContent = templates.length;
   document.getElementById("activeTemplates").textContent = templates.filter(
     (t) => t.active !== false
