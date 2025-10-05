@@ -18,6 +18,84 @@
         color: #222 !important;
         opacity: 0.7;
       }
+      
+      /* Enhanced upload section styling */
+      .upload-area.dragover {
+        border-color: #3b82f6 !important;
+        background-color: #eff6ff !important;
+        transform: scale(1.02);
+        box-shadow: 0 10px 25px -5px rgba(59, 130, 246, 0.1), 0 10px 10px -5px rgba(59, 130, 246, 0.04);
+      }
+      
+      .upload-area {
+        position: relative;
+        overflow: hidden;
+      }
+      
+      .upload-area::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: -100%;
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
+        transition: left 0.5s;
+      }
+      
+      .upload-area:hover::before {
+        left: 100%;
+      }
+      
+      /* Upload status styling */
+      .upload-status {
+        transition: all 0.3s ease;
+      }
+      
+      .upload-status.success {
+        color: #059669;
+        font-weight: 500;
+      }
+      
+      .upload-status.error {
+        color: #dc2626;
+        font-weight: 500;
+      }
+      
+      .upload-status.uploading {
+        color: #2563eb;
+        font-weight: 500;
+      }
+      
+      /* Image preview animations */
+      .image-preview {
+        animation: fadeInScale 0.3s ease-out;
+      }
+      
+      @keyframes fadeInScale {
+        from {
+          opacity: 0;
+          transform: scale(0.9);
+        }
+        to {
+          opacity: 1;
+          transform: scale(1);
+        }
+      }
+      
+      /* Hover effects for upload sections */
+      .upload-label:hover .upload-area {
+        transform: translateY(-2px);
+        box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+      }
+      
+      /* Gradient text effect */
+      .gradient-text {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+      }
     </style>
   </head>
   <body class="bg-gray-50 min-h-screen">
@@ -146,50 +224,104 @@
                 </div>
                 <div>
                   <div class="mb-4">
-                    <label class="block text-sm font-semibold text-gray-700 mb-1">Generate Video for this Step</label>
-                    <div id="stepImageUploadSection" class="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center cursor-pointer hover:border-blue-400 transition relative">
-                      <label for="stepImageInput" class="cursor-pointer flex flex-col items-center gap-1">
-                        <div class="text-gray-500 text-sm flex flex-col items-center gap-1">
-                          <i class="fa fa-cloud-upload text-xl"></i>
-                          <span>Click or drag an image here to upload</span>
-                        </div>
-                      </label>
-                      <input id="stepImageInput" type="file" accept="image/*" class="hidden" />
-                      <img id="stepImagePreview" class="mt-3 mx-auto rounded hidden" style="max-height:160px;" />
-                      <div id="stepUploadStatus" class="text-xs text-gray-500 mt-2"></div>
-                    </div>
-                    <div id="stepLastFrameWrapper" class="mt-4 hidden flex-col gap-2">
-                      <label class="block text-sm font-semibold text-gray-700">Last Frame (Pixverse Transition)</label>
-                      <div class="border-2 border-dashed border-gray-300 rounded-lg p-3 text-center cursor-pointer hover:border-blue-400 transition relative">
-                        <label for="stepLastFrameInput" class="cursor-pointer flex flex-col items-center gap-1">
-                          <div class="text-gray-500 text-xs">Click to upload last frame image</div>
+                    <div class="bg-gradient-to-br from-indigo-50 to-blue-50 rounded-2xl p-6 border border-indigo-100 shadow-sm">
+                      <h3 class="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
+                        <i class="fas fa-video text-indigo-600"></i>
+                        Generate Video for this Step
+                      </h3>
+                      <div id="stepImageUploadSection" class="image-upload-section">
+                        <label for="stepImageInput" class="upload-label cursor-pointer group">
+                          <div class="upload-area border-2 border-dashed border-indigo-300 rounded-xl p-8 text-center transition-all duration-300 hover:border-indigo-400 hover:bg-indigo-50 group-hover:scale-[1.02]">
+                            <div class="upload-icon mb-4">
+                              <div class="w-16 h-16 mx-auto bg-indigo-100 rounded-full flex items-center justify-center group-hover:bg-indigo-200 transition-colors duration-300">
+                                <i class="fa fa-cloud-upload text-2xl text-indigo-600"></i>
+                              </div>
+                            </div>
+                            <div class="upload-text">
+                              <p class="text-lg font-medium text-gray-700 mb-2">Drop your image here</p>
+                              <p class="text-sm text-gray-500 mb-4">or click to browse files</p>
+                              <div class="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium group-hover:bg-indigo-700 transition-colors duration-300">
+                                <i class="fas fa-plus"></i>
+                                Choose Image
+                              </div>
+                            </div>
+                            <input id="stepImageInput" type="file" accept="image/*" class="hidden" />
+                          </div>
                         </label>
-                        <input id="stepLastFrameInput" type="file" accept="image/*" class="hidden" />
-                        <img id="stepLastFramePreview" class="mt-2 mx-auto rounded hidden" style="max-height:120px;" />
+                        <div class="mt-4">
+                          <img id="stepImagePreview" class="mx-auto rounded-xl shadow-lg border border-gray-200 hidden" style="max-height:200px;" />
+                          <div id="stepUploadStatus" class="text-sm mt-3 text-center text-gray-500"></div>
+                        </div>
                       </div>
                     </div>
-                    <!-- Vidu Q1 extra reference images (hidden unless Vidu model selected) -->
-                    <div id="stepRef2Wrapper" class="mt-4 hidden flex-col gap-2">
-                      <label class="block text-sm font-semibold text-gray-700">Reference Image 2 (Vidu Q1)</label>
-                      <div class="border-2 border-dashed border-gray-300 rounded-lg p-3 text-center cursor-pointer hover:border-blue-400 transition relative">
-                        <input id="stepRef2Input" type="file" accept="image/*" class="hidden" />
-                        <div class="text-gray-500 text-xs">Click to upload second reference</div>
-                        <img id="stepRef2Preview" class="mt-2 mx-auto rounded hidden" style="max-height:120px;" />
+                    <div id="stepLastFrameWrapper" class="mt-4 hidden">
+                      <div class="bg-gradient-to-br from-orange-50 to-amber-50 rounded-xl p-4 border border-orange-100">
+                        <h4 class="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                          <i class="fas fa-image text-orange-600"></i>
+                          Last Frame (Pixverse Transition)
+                        </h4>
+                        <div class="flex items-center gap-3">
+                          <label for="stepLastFrameInput" class="upload-label cursor-pointer group">
+                            <div class="border-2 border-dashed border-orange-300 rounded-lg p-4 text-center transition-all duration-300 hover:border-orange-400 hover:bg-orange-50 group-hover:scale-[1.02] min-w-[120px]">
+                              <div class="w-8 h-8 mx-auto bg-orange-100 rounded-full flex items-center justify-center group-hover:bg-orange-200 transition-colors duration-300 mb-2">
+                                <i class="fas fa-plus text-orange-600 text-sm"></i>
+                              </div>
+                              <span class="text-xs font-medium text-gray-600">Add Image</span>
+                              <input id="stepLastFrameInput" type="file" accept="image/*" class="hidden" />
+                            </div>
+                          </label>
+                          <img id="stepLastFramePreview" class="rounded-lg shadow border border-gray-200 hidden" style="max-height:120px; max-width:160px;" />
+                        </div>
                       </div>
                     </div>
-                    <div id="stepRef3Wrapper" class="mt-4 hidden flex-col gap-2">
-                      <label class="block text-sm font-semibold text-gray-700">Reference Image 3 (Vidu Q1)</label>
-                      <div class="border-2 border-dashed border-gray-300 rounded-lg p-3 text-center cursor-pointer hover:border-blue-400 transition relative">
-                        <input id="stepRef3Input" type="file" accept="image/*" class="hidden" />
-                        <div class="text-gray-500 text-xs">Click to upload third reference</div>
-                        <img id="stepRef3Preview" class="mt-2 mx-auto rounded hidden" style="max-height:120px;" />
-                      </div>
-                    </div>
+                     <!-- Vidu Q1 extra reference images (hidden unless Vidu model selected) -->
+                     <div id="stepRef2Wrapper" class="mt-4 hidden">
+                       <div class="bg-gradient-to-br from-purple-50 to-pink-50 rounded-xl p-4 border border-purple-100">
+                         <h4 class="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                           <i class="fas fa-image text-purple-600"></i>
+                           Reference Image 2 (Vidu Q1)
+                         </h4>
+                         <div class="flex items-center gap-3">
+                           <label for="stepRef2Input" class="upload-label cursor-pointer group">
+                             <div class="border-2 border-dashed border-purple-300 rounded-lg p-4 text-center transition-all duration-300 hover:border-purple-400 hover:bg-purple-50 group-hover:scale-[1.02] min-w-[120px]">
+                               <div class="w-8 h-8 mx-auto bg-purple-100 rounded-full flex items-center justify-center group-hover:bg-purple-200 transition-colors duration-300 mb-2">
+                                 <i class="fas fa-plus text-purple-600 text-sm"></i>
+                               </div>
+                               <span class="text-xs font-medium text-gray-600">Add Image</span>
+                               <input id="stepRef2Input" type="file" accept="image/*" class="hidden" />
+                             </div>
+                           </label>
+                           <img id="stepRef2Preview" class="rounded-lg shadow border border-gray-200 hidden" style="max-height:120px; max-width:160px;" />
+                         </div>
+                       </div>
+                     </div>
+                     <div id="stepRef3Wrapper" class="mt-4 hidden">
+                       <div class="bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl p-4 border border-green-100">
+                         <h4 class="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                           <i class="fas fa-image text-green-600"></i>
+                           Reference Image 3 (Vidu Q1)
+                         </h4>
+                         <div class="flex items-center gap-3">
+                           <label for="stepRef3Input" class="upload-label cursor-pointer group">
+                             <div class="border-2 border-dashed border-green-300 rounded-lg p-4 text-center transition-all duration-300 hover:border-green-400 hover:bg-green-50 group-hover:scale-[1.02] min-w-[120px]">
+                               <div class="w-8 h-8 mx-auto bg-green-100 rounded-full flex items-center justify-center group-hover:bg-green-200 transition-colors duration-300 mb-2">
+                                 <i class="fas fa-plus text-green-600 text-sm"></i>
+                               </div>
+                               <span class="text-xs font-medium text-gray-600">Add Image</span>
+                               <input id="stepRef3Input" type="file" accept="image/*" class="hidden" />
+                             </div>
+                           </label>
+                           <img id="stepRef3Preview" class="rounded-lg shadow border border-gray-200 hidden" style="max-height:120px; max-width:160px;" />
+                         </div>
+                       </div>
+                     </div>
                     <select id="stepModelSelect" class="mt-4 w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400">
                       <option value="ray-2">Ray 2</option>
                       <option value="ray-2-flash">Ray 2 Flash</option>
                       <option value="ray-1.6">Ray 1.6</option>
                       <option value="vidu-q1-reference-to-video">Vidu Q1 Reference2Video</option>
+                      <option value="vidu-1.5-image-to-video">Vidu 1.5 Image2Video</option>
+                      <option value="vidu-q1-image-to-video">Vidu Q1 Image2Video</option>
                       <option value="pixverse-v4-image-to-video">Pixverse V4 (I2V)</option>
                       <option value="pixverse-v4-transition">Pixverse V4 Transition</option>
                       <option value="pixverse-v4.5-image-to-video">Pixverse V4.5 (I2V)</option>
@@ -206,7 +338,7 @@
                       <option value="minimax-i2v-live">MiniMax I2V Live</option>
                       <option value="minimax-i2v-director">MiniMax Director</option>
                     </select>
-                    <button id="stepGenerateBtn" class="mt-4 w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center justify-center gap-2">
+                    <button id="stepGenerateBtn" class="mt-4 w-full px-6 py-3 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white rounded-xl font-semibold transition-all duration-300 hover:shadow-lg hover:scale-105 flex items-center justify-center gap-2">
                       <i class="fa fa-wand-magic-sparkles"></i> <span>Generate Video</span>
                     </button>
                     <div id="stepGenStatus" class="text-sm mt-2"></div>
@@ -552,7 +684,7 @@
           id="featureDetailPage"
           class="hidden w-full h-full px-10 py-8 bg-gray-50 overflow-auto"
         >
-          <div class="max-w-2xl mx-auto bg-white rounded-xl shadow p-8">
+          <div class=" max-w-3xl mx-auto bg-white rounded-xl shadow p-8">
             <div class="flex justify-between items-center mb-6">
               <div class="flex items-center gap-2">
                 <h2
@@ -584,42 +716,60 @@
             ></video>
             <!-- Feature video generation section -->
             <div id="featureVideoGenSection" class="mb-6">
-              <div class="image-upload-section" id="featureImageUploadSection">
-                <label
-                  for="featureImageInput"
-                  class="upload-label cursor-pointer flex items-center gap-2"
-                >
-                  <div class="upload-icon">
-                    <i class="fas fa-cloud-upload-alt"></i>
+              <div class="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-2xl p-6 border border-blue-100 shadow-sm">
+                <h3 class="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
+                  <i class="fas fa-image text-blue-600"></i>
+                  Upload Reference Image
+                </h3>
+                <div class="image-upload-section" id="featureImageUploadSection">
+                  <label
+                    for="featureImageInput"
+                    class="upload-label cursor-pointer group"
+                  >
+                    <div class="upload-area border-2 border-dashed border-blue-300 rounded-xl p-8 text-center transition-all duration-300 hover:border-blue-400 hover:bg-blue-50 group-hover:scale-[1.02]">
+                      <div class="upload-icon mb-4">
+                        <div class="w-16 h-16 mx-auto bg-blue-100 rounded-full flex items-center justify-center group-hover:bg-blue-200 transition-colors duration-300">
+                          <i class="fas fa-cloud-upload-alt text-2xl text-blue-600"></i>
+                        </div>
+                      </div>
+                      <div class="upload-text">
+                        <p class="text-lg font-medium text-gray-700 mb-2">Drop your image here</p>
+                        <p class="text-sm text-gray-500 mb-4">or click to browse files</p>
+                        <div class="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium group-hover:bg-blue-700 transition-colors duration-300">
+                          <i class="fas fa-plus"></i>
+                          Choose Image
+                        </div>
+                      </div>
+                      <input
+                        type="file"
+                        id="featureImageInput"
+                        accept="image/*"
+                        style="display: none"
+                      />
+                    </div>
+                  </label>
+                  <div class="mt-4">
+                    <img
+                      id="featureImagePreview"
+                      style="display: none; max-width: 100%; max-height: 300px; margin: 0 auto"
+                      class="rounded-xl shadow-lg border border-gray-200"
+                    />
+                    <div
+                      id="featureUploadStatus"
+                      class="upload-status text-sm mt-3 text-center"
+                    ></div>
                   </div>
-                  <div class="upload-text">
-                    Click or drag an image here to upload
-                  </div>
-                  <input
-                    type="file"
-                    id="featureImageInput"
-                    accept="image/*"
-                    style="display: none"
-                  />
-                </label>
-                <img
-                  id="featureImagePreview"
-                  style="display: none; max-width: 200px; margin: 10px auto 0"
-                  class="rounded shadow"
-                />
-                <div
-                  id="featureUploadStatus"
-                  class="upload-status text-sm mt-1"
-                ></div>
+                </div>
               </div>
               <div class="flex items-center gap-2 mt-3 max-h-[10vh] overflow-y-auto">
                 <select id="featureModelSelect" class="border rounded px-2 py-2">
                   <option value="ray 2" selected>Ray 2</option>
                   <option value="ray 2 flash">Ray 2 Flash</option>
                   <option value="ray 1.6">Ray 1.6</option>
-                  <option value="vidu-q1-reference-to-video">Vidu Q1 Reference2Video</option>
-                  <option value="vidu-2-reference-to-video">Vidu 2.0 Reference2Video</option>
-                  <option value="MiniMax-Hailuo-02">MiniMax-Hailuo-02</option>
+                    <option value="vidu-q1-reference-to-video">Vidu Q1 Reference2Video</option>
+                    <option value="vidu-1.5-image-to-video">Vidu 1.5 Image2Video</option>
+                    <option value="vidu-q1-image-to-video">Vidu Q1 Image2Video</option>
+                    <option value="MiniMax-Hailuo-02">MiniMax-Hailuo-02</option>
                   <option value="MiniMax I2V-01-Director">I2V-01-Director</option>
                   <option value="MiniMax I2V-01-live">I2V-01-live</option>
                   <option value="MiniMax I2V-01">I2V-01</option>
@@ -645,29 +795,56 @@
                   </label>
                   <img id="featureLastFramePreview" style="display:none; max-width:80px" class="rounded shadow" />
                 </div>
-                <!-- Vidu Q1 extra reference images (hidden unless Vidu model selected) -->
-                <div id="featureRef2Wrapper" style="display:none" class="flex items-center gap-2">
-                  <label for="featureRef2Input" class="upload-label cursor-pointer flex items-center gap-2 text-sm border rounded px-2 py-1">
-                    <i class="fas fa-images"></i>
-                    <span>Ref 2</span>
-                    <input type="file" id="featureRef2Input" accept="image/*" style="display:none" />
-                  </label>
-                  <img id="featureRef2Preview" style="display:none; max-width:80px" class="rounded shadow" />
-                </div>
-                <div id="featureRef3Wrapper" style="display:none" class="flex items-center gap-2">
-                  <label for="featureRef3Input" class="upload-label cursor-pointer flex items-center gap-2 text-sm border rounded px-2 py-1">
-                    <i class="fas fa-images"></i>
-                    <span>Ref 3</span>
-                    <input type="file" id="featureRef3Input" accept="image/*" style="display:none" />
-                  </label>
-                  <img id="featureRef3Preview" style="display:none; max-width:80px" class="rounded shadow" />
-                </div>
                 <button
                   id="featureGenerateVideoBtn"
-                  class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center gap-2"
+                  class="px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl font-semibold transition-all duration-300 hover:shadow-lg hover:scale-105 flex items-center justify-center gap-2"
                 >
                   <i class="fas fa-magic"></i> Generate Video
                 </button>
+              </div>
+              
+              <!-- Vidu Q1 extra reference images (hidden unless Vidu model selected) - moved below main controls -->
+              <div class="mt-4 flex gap-4">
+                <div id="featureRef2Wrapper" style="display:none" class="flex-1">
+                  <div class="bg-gradient-to-br from-purple-50 to-pink-50 rounded-xl p-4 border border-purple-100">
+                    <h4 class="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                      <i class="fas fa-image text-purple-600"></i>
+                      Reference Image 2
+                    </h4>
+                    <div class="flex items-center gap-3">
+                      <label for="featureRef2Input" class="upload-label cursor-pointer group">
+                        <div class="border-2 border-dashed border-purple-300 rounded-lg p-4 text-center transition-all duration-300 hover:border-purple-400 hover:bg-purple-50 group-hover:scale-[1.02] min-w-[120px]">
+                          <div class="w-8 h-8 mx-auto bg-purple-100 rounded-full flex items-center justify-center group-hover:bg-purple-200 transition-colors duration-300 mb-2">
+                            <i class="fas fa-plus text-purple-600 text-sm"></i>
+                          </div>
+                          <span class="text-xs font-medium text-gray-600">Add Image</span>
+                          <input type="file" id="featureRef2Input" accept="image/*" style="display:none" />
+                        </div>
+                      </label>
+                      <img id="featureRef2Preview" style="display:none; max-width:120px; max-height:80px" class="rounded-lg shadow border border-gray-200" />
+                    </div>
+                  </div>
+                </div>
+                <div id="featureRef3Wrapper" style="display:none" class="flex-1">
+                  <div class="bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl p-4 border border-green-100">
+                    <h4 class="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                      <i class="fas fa-image text-green-600"></i>
+                      Reference Image 3
+                    </h4>
+                    <div class="flex items-center gap-3">
+                      <label for="featureRef3Input" class="upload-label cursor-pointer group">
+                        <div class="border-2 border-dashed border-green-300 rounded-lg p-4 text-center transition-all duration-300 hover:border-green-400 hover:bg-green-50 group-hover:scale-[1.02] min-w-[120px]">
+                          <div class="w-8 h-8 mx-auto bg-green-100 rounded-full flex items-center justify-center group-hover:bg-green-200 transition-colors duration-300 mb-2">
+                            <i class="fas fa-plus text-green-600 text-sm"></i>
+                          </div>
+                          <span class="text-xs font-medium text-gray-600">Add Image</span>
+                          <input type="file" id="featureRef3Input" accept="image/*" style="display:none" />
+                        </div>
+                      </label>
+                      <img id="featureRef3Preview" style="display:none; max-width:120px; max-height:80px" class="rounded-lg shadow border border-gray-200" />
+                    </div>
+                  </div>
+                </div>
               </div>
               <div id="featureGenStatus" class="text-sm mt-2"></div>
             </div>

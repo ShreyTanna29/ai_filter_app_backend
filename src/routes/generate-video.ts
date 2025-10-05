@@ -388,10 +388,12 @@ router.post<
           }
         } catch (err) {
           console.error("Pixverse create error (single attempt):", err);
+          const e = err as any;
+          let provider_message = (e?.response?.data?.message || e?.response?.data?.error || e?.message || "Unknown error");
           res.status(502).json({
             success: false,
-            error: "Failed to create Pixverse prediction",
-            details: serializeError(err),
+            error: provider_message,
+            details: serializeError(e),
           });
           return;
         }
@@ -523,7 +525,6 @@ router.post<
       }
       // Eachlabs Vidu Q1 Reference to Video (multi-reference) branch
       const isViduQ1 = /vidu-q1-reference-to-video/i.test(rawModel);
-  const isVidu2 = /vidu-2-reference-to-video/i.test(rawModel);
       if (isViduQ1) {
         const eachLabsKey =
           process.env.PIXVERSE_API_KEY || process.env.EACHLABS_API_KEY;
@@ -596,13 +597,13 @@ router.post<
           bgm,
         };
         // Add references in required naming order (image_url1..3)
-        input.image_url1 = imageCloudUrl;
+        input.image_url = imageCloudUrl;
         if (lastFrameCloudUrl) input.image_url2 = lastFrameCloudUrl;
         if (image2) input.image_url2 = image2; // override if user explicitly provided second reference
         if (image3) input.image_url3 = image3;
 
         const createPayload = {
-          model: "vidu-q1-reference-to-video",
+          model: "vidu-q-1-reference-to-video",
           version: viduVersion,
           input,
           webhook_url: process.env.VIDU_Q1_WEBHOOK_URL || "",
@@ -793,8 +794,10 @@ router.post<
           });
         return;
       }
-      // Eachlabs Vidu 2.0 Reference to Video (multi-reference) branch
-      if (isVidu2) {
+      
+      // Eachlabs Vidu 1.5 Image to Video branch
+      const isVidu15Image2Video = /vidu-1\.5-image-to-video/i.test(rawModel);
+      if (isVidu15Image2Video) {
         const eachLabsKey =
           process.env.PIXVERSE_API_KEY || process.env.EACHLABS_API_KEY;
         if (!eachLabsKey) {
@@ -807,130 +810,76 @@ router.post<
           return;
         }
 
-        // Collect up to three reference images similar to Vidu Q1
-        let image2Raw: string | undefined = (req.body as any).image_url2;
-        let image3Raw: string | undefined = (req.body as any).image_url3;
-        const maybeUploadExtra = async (
-          raw?: string
-        ): Promise<string | undefined> => {
-          if (!raw) return undefined;
-          if (raw.includes("cloudinary.com")) return raw; // already hosted
-          const isLikelyPublic =
-            /^https?:\/\//i.test(raw) && !/localhost|127\.|^file:/i.test(raw);
-          try {
-            if (
-              process.env.CLOUDINARY_UPLOAD_URL &&
-              process.env.CLOUDINARY_UPLOAD_PRESET
-            ) {
-              const formD = new (require("form-data"))();
-              formD.append("file", raw);
-              formD.append(
-                "upload_preset",
-                process.env.CLOUDINARY_UPLOAD_PRESET
-              );
-              const upRes = await axios.post(
-                process.env.CLOUDINARY_UPLOAD_URL,
-                formD,
-                { headers: formD.getHeaders(), timeout: 60000 }
-              );
-              return upRes.data?.secure_url || upRes.data?.url || raw;
-            }
-            if (isLikelyPublic) return raw; // allow public
-          } catch (e) {
-            console.warn(
-              "Optional reference image upload failed (ignored)",
-              serializeError(e)
-            );
-            if (isLikelyPublic) return raw;
-          }
-          return undefined;
-        };
-        const image2 = await maybeUploadExtra(image2Raw);
-        const image3 = await maybeUploadExtra(image3Raw);
+        const viduVersion = process.env.VIDU_15_VERSION || "0.0.1";
+        const duration = Number(process.env.VIDU_15_DURATION || 5);
+        const aspect = process.env.VIDU_15_ASPECT_RATIO || "16:9";
+        const resolution = process.env.VIDU_15_RESOLUTION || "1080p";
 
-        const viduVersion = process.env.VIDU_2_VERSION || "0.0.1";
-        const duration = Number(process.env.VIDU_2_DURATION || 5);
-        const aspect = process.env.VIDU_2_ASPECT_RATIO || "16:9";
-        const resolution = process.env.VIDU_2_RESOLUTION || "720p"; // docs assume 1080p
-        const movementAmplitude =
-          process.env.VIDU_2_MOVEMENT_AMPLITUDE || "auto"; // auto / low / high
-        const bgm = process.env.VIDU_2_BGM || "false"; // "true" / "false"
-
-        const input: any = {
-          resolution,
-          prompt, // Use feature prompt or override
-          duration,
+        const input = {
+          image_url: imageCloudUrl,
+          prompt: prompt,
+          duration: duration,
           aspect_ratio: aspect,
-          movement_amplitude: movementAmplitude,
-          bgm,
+          resolution: resolution,
         };
-        // Add references in required naming order (image_url1..3)
-        input.image_url1 = imageCloudUrl;
-        if (lastFrameCloudUrl) input.image_url2 = lastFrameCloudUrl;
-        if (image2) input.image_url2 = image2; // override if user explicitly provided second reference
-        if (image3) input.image_url3 = image3;
 
         const createPayload = {
-          model: "vidu-2-0-reference-to-video",
+          model: "vidu-1.5-image-to-video",
           version: viduVersion,
           input,
-          webhook_url: process.env.VIDU_2_WEBHOOK_URL || "",
+          webhook_url: process.env.VIDU_15_WEBHOOK_URL || "",
         };
 
-        let predictionId: string | undefined;
+        let createResp: any;
+        let predictionId: string;
         try {
-          const createResp = await axios.post(
-            "https://api.eachlabs.ai/v1/prediction/",
+          createResp = await axios.post(
+            "https://api.eachlabs.ai/v1/predictions",
             createPayload,
             {
               headers: {
-                "X-API-Key": eachLabsKey,
+                Authorization: `Bearer ${eachLabsKey}`,
                 "Content-Type": "application/json",
               },
-              timeout: 45000,
+              timeout: 30000,
             }
           );
           const prediction = createResp.data || {};
-          console.log("Vidu 2 create response:", prediction);
+          console.log("Vidu 1.5 create response:", prediction);
           const statusStr = String(prediction.status || "").toLowerCase();
           if (statusStr !== "success") {
             const provider_message =
-              (prediction as any)?.message ||
               (prediction as any)?.error ||
-              (prediction as any)?.status ||
+              (prediction as any)?.message ||
               "Unknown status";
             res.status(502).json({
               success: false,
-              error: `Vidu 2 creation failed: ${provider_message}`,
-              provider: "Vidu2",
+              error: `Vidu 1.5 creation failed: ${provider_message}`,
+              provider: "Vidu15",
               provider_status: (prediction as any)?.status,
               provider_message,
               details: safeJson(prediction),
             });
             return;
           }
-          predictionId =
-            prediction.predictionID ||
-            prediction.predictionId ||
-            prediction.id ||
-            prediction.task_id;
+          predictionId = (prediction as any)?.id;
           if (!predictionId) {
             res
               .status(502)
               .json({
                 success: false,
-                error: "Vidu 2 response missing prediction id",
+                error: "Vidu 1.5 response missing prediction id",
                 details: safeJson(prediction),
               });
             return;
           }
         } catch (err) {
-          console.error("Vidu 2 create error:", err);
+          console.error("Vidu 1.5 create error:", err);
           res
             .status(502)
             .json({
               success: false,
-              error: "Failed to create Vidu 2 prediction",
+              error: "Failed to create Vidu 1.5 prediction",
               details: serializeError(err),
             });
           return;
@@ -942,14 +891,16 @@ router.post<
           // up to ~5 min
           await new Promise((r) => setTimeout(r, 1000));
           try {
-            const pollResp = await axios.get(
-              `https://api.eachlabs.ai/v1/prediction/${predictionId}`,
-              { headers: { "X-API-Key": eachLabsKey }, timeout: 20000 }
+            const result = await axios.get(
+              `https://api.eachlabs.ai/v1/predictions/${predictionId}`,
+              {
+                headers: { Authorization: `Bearer ${eachLabsKey}` },
+                timeout: 10000,
+              }
             );
-            const result = pollResp.data || {};
-            const lower = String(result.status || "").toLowerCase();
+            const lower = String(result.data.status || "").toLowerCase();
             if (lower === "success" || lower === "completed") {
-              const rawOut = result.output;
+              const rawOut = result.data.output;
               if (typeof rawOut === "string") viduVideoUrl = rawOut;
               else if (rawOut) {
                 const out: any = rawOut;
@@ -957,36 +908,34 @@ router.post<
                   out.video_url ||
                   out.video ||
                   (Array.isArray(out) ? out[0]?.video_url || out[0] : null) ||
-                  result.video_url ||
-                  result.video ||
                   out.url ||
-                  result.url ||
+                  result.data.url ||
                   null;
               } else {
                 viduVideoUrl =
-                  result.video_url || result.video || result.url || null;
+                  result.data.video_url || result.data.video || result.data.url || null;
               }
               break;
-            } else if (
-              ["error", "failed", "canceled", "cancelled"].includes(lower)
-            ) {
+            } else if (lower === "failed" || lower === "error") {
               const provider_message =
-                (result as any)?.error || (result as any)?.message || (result as any)?.status;
+                result.data.error ||
+                result.data.message ||
+                "Unknown error";
               res.status(500).json({
                 success: false,
                 error: provider_message
-                  ? `Vidu 2 prediction failed: ${provider_message}`
-                  : "Vidu 2 prediction failed",
-                provider: "Vidu2",
-                provider_status: (result as any)?.status,
+                  ? `Vidu 1.5 prediction failed: ${provider_message}`
+                  : "Vidu 1.5 prediction failed",
+                provider: "Vidu15",
+                provider_status: (result.data as any)?.status,
                 provider_message,
-                details: safeJson(result),
+                details: safeJson(result.data),
               });
               return;
             }
           } catch (e) {
             console.warn(
-              "Vidu 2 poll error (continuing)",
+              "Vidu 1.5 poll error (continuing)",
               (e as any)?.message || e
             );
             continue;
@@ -997,17 +946,17 @@ router.post<
             .status(504)
             .json({
               success: false,
-              error: "Vidu 2 prediction timeout",
-              provider: "Vidu2",
+              error: "Vidu 1.5 prediction timeout",
+              provider: "Vidu15",
               provider_status: "timeout",
               provider_message: "Prediction did not complete in allotted time",
             });
           return;
         }
         // Download & upload to Cloudinary
-        let viduStream2;
+        let viduStream;
         try {
-          viduStream2 = await axios.get(viduVideoUrl, {
+          viduStream = await axios.get(viduVideoUrl, {
             responseType: "stream",
             timeout: 600000,
           });
@@ -1016,50 +965,266 @@ router.post<
             .status(500)
             .json({
               success: false,
-              error: "Failed to download Vidu 2 video",
+              error: "Failed to download Vidu 1.5 video",
               details: serializeError(e),
             });
           return;
         }
-        let viduUpload2: UploadApiResponse;
+        let viduUpload: UploadApiResponse;
         try {
-          viduUpload2 = await new Promise((resolve, reject) => {
+          viduUpload = await new Promise((resolve, reject) => {
             const uploadStream = cloudinary.uploader.upload_stream(
               {
                 resource_type: "video",
                 folder: "generated-videos",
-                public_id: `${feature}-vidu2-${Date.now()}`,
+                public_id: `${feature}-vidu15-${Date.now()}`,
                 chunk_size: 6000000,
               },
               (error, result) => {
-                if (error) return reject(error);
-                resolve(result as UploadApiResponse);
+                if (error) reject(error);
+                else resolve(result as UploadApiResponse);
               }
             );
-            viduStream2.data.pipe(uploadStream);
+            viduStream.data.pipe(uploadStream);
           });
         } catch (e) {
           res
             .status(500)
             .json({
               success: false,
-              error: "Failed to upload Vidu 2 video",
+              error: "Failed to upload Vidu 1.5 video",
               details: serializeError(e),
             });
           return;
         }
         await prisma.generatedVideo.create({
-          data: { feature, url: viduUpload2.secure_url },
+          data: { feature, url: viduUpload.secure_url },
         });
         res
           .status(200)
           .json({
             success: true,
-            video: { url: viduUpload2.secure_url },
-            cloudinaryId: viduUpload2.public_id,
+            video: { url: viduUpload.secure_url },
+            cloudinaryId: viduUpload.public_id,
           });
         return;
       }
+
+      // Eachlabs Vidu Q1 Image to Video branch
+      const isViduQ1Image2Video = /vidu-q1-image-to-video/i.test(rawModel);
+      if (isViduQ1Image2Video) {
+        const eachLabsKey =
+          process.env.PIXVERSE_API_KEY || process.env.EACHLABS_API_KEY;
+        if (!eachLabsKey) {
+          res
+            .status(500)
+            .json({
+              success: false,
+              error: "EACHLABS / PIXVERSE API key not set",
+            });
+          return;
+        }
+
+        const viduVersion = process.env.VIDU_Q1_I2V_VERSION || "0.0.1";
+        const duration = Number(process.env.VIDU_Q1_I2V_DURATION || 5);
+        const aspect = process.env.VIDU_Q1_I2V_ASPECT_RATIO || "16:9";
+        const resolution = process.env.VIDU_Q1_I2V_RESOLUTION || "1080p";
+
+        const input = {
+          image_url: imageCloudUrl,
+          prompt: prompt,
+          duration: duration,
+          aspect_ratio: aspect,
+          resolution: resolution,
+        };
+
+        const createPayload = {
+          model: "vidu-q1-image-to-video",
+          version: viduVersion,
+          input,
+          webhook_url: process.env.VIDU_Q1_I2V_WEBHOOK_URL || "",
+        };
+
+        let createResp: any;
+        let predictionId: string;
+        try {
+          createResp = await axios.post(
+            "https://api.eachlabs.ai/v1/predictions",
+            createPayload,
+            {
+              headers: {
+                Authorization: `Bearer ${eachLabsKey}`,
+                "Content-Type": "application/json",
+              },
+              timeout: 30000,
+            }
+          );
+          const prediction = createResp.data || {};
+          console.log("Vidu Q1 I2V create response:", prediction);
+          const statusStr = String(prediction.status || "").toLowerCase();
+          if (statusStr !== "success") {
+            const provider_message =
+              (prediction as any)?.error ||
+              (prediction as any)?.message ||
+              "Unknown status";
+            res.status(502).json({
+              success: false,
+              error: `Vidu Q1 I2V creation failed: ${provider_message}`,
+              provider: "ViduQ1I2V",
+              provider_status: (prediction as any)?.status,
+              provider_message,
+              details: safeJson(prediction),
+            });
+            return;
+          }
+          predictionId = (prediction as any)?.id;
+          if (!predictionId) {
+            res
+              .status(502)
+              .json({
+                success: false,
+                error: "Vidu Q1 I2V response missing prediction id",
+                details: safeJson(prediction),
+              });
+            return;
+          }
+        } catch (err) {
+          console.error("Vidu Q1 I2V create error:", err);
+          res
+            .status(502)
+            .json({
+              success: false,
+              error: "Failed to create Vidu Q1 I2V prediction",
+              details: serializeError(err),
+            });
+          return;
+        }
+
+        // Poll
+        let viduVideoUrl: string | undefined;
+        for (let i = 0; i < 300; i++) {
+          // up to ~5 min
+          await new Promise((r) => setTimeout(r, 1000));
+          try {
+            const result = await axios.get(
+              `https://api.eachlabs.ai/v1/predictions/${predictionId}`,
+              {
+                headers: { Authorization: `Bearer ${eachLabsKey}` },
+                timeout: 10000,
+              }
+            );
+            const lower = String(result.data.status || "").toLowerCase();
+            if (lower === "success" || lower === "completed") {
+              const rawOut = result.data.output;
+              if (typeof rawOut === "string") viduVideoUrl = rawOut;
+              else if (rawOut) {
+                const out: any = rawOut;
+                viduVideoUrl =
+                  out.video_url ||
+                  out.video ||
+                  (Array.isArray(out) ? out[0]?.video_url || out[0] : null) ||
+                  out.url ||
+                  result.data.url ||
+                  null;
+              } else {
+                viduVideoUrl =
+                  result.data.video_url || result.data.video || result.data.url || null;
+              }
+              break;
+            } else if (lower === "failed" || lower === "error") {
+              const provider_message =
+                result.data.error ||
+                result.data.message ||
+                "Unknown error";
+              res.status(500).json({
+                success: false,
+                error: provider_message
+                  ? `Vidu Q1 I2V prediction failed: ${provider_message}`
+                  : "Vidu Q1 I2V prediction failed",
+                provider: "ViduQ1I2V",
+                provider_status: (result.data as any)?.status,
+                provider_message,
+                details: safeJson(result.data),
+              });
+              return;
+            }
+          } catch (e) {
+            console.warn(
+              "Vidu Q1 I2V poll error (continuing)",
+              (e as any)?.message || e
+            );
+            continue;
+          }
+        }
+        if (!viduVideoUrl) {
+          res
+            .status(504)
+            .json({
+              success: false,
+              error: "Vidu Q1 I2V prediction timeout",
+              provider: "ViduQ1I2V",
+              provider_status: "timeout",
+              provider_message: "Prediction did not complete in allotted time",
+            });
+          return;
+        }
+        // Download & upload to Cloudinary
+        let viduStream;
+        try {
+          viduStream = await axios.get(viduVideoUrl, {
+            responseType: "stream",
+            timeout: 600000,
+          });
+        } catch (e) {
+          res
+            .status(500)
+            .json({
+              success: false,
+              error: "Failed to download Vidu Q1 I2V video",
+              details: serializeError(e),
+            });
+          return;
+        }
+        let viduUpload: UploadApiResponse;
+        try {
+          viduUpload = await new Promise((resolve, reject) => {
+            const uploadStream = cloudinary.uploader.upload_stream(
+              {
+                resource_type: "video",
+                folder: "generated-videos",
+                public_id: `${feature}-viduq1i2v-${Date.now()}`,
+                chunk_size: 6000000,
+              },
+              (error, result) => {
+                if (error) reject(error);
+                else resolve(result as UploadApiResponse);
+              }
+            );
+            viduStream.data.pipe(uploadStream);
+          });
+        } catch (e) {
+          res
+            .status(500)
+            .json({
+              success: false,
+              error: "Failed to upload Vidu Q1 I2V video",
+              details: serializeError(e),
+            });
+          return;
+        }
+        await prisma.generatedVideo.create({
+          data: { feature, url: viduUpload.secure_url },
+        });
+        res
+          .status(200)
+          .json({
+            success: true,
+            video: { url: viduUpload.secure_url },
+            cloudinaryId: viduUpload.public_id,
+          });
+        return;
+      }
+
       const isMiniMax =
         /MiniMax-Hailuo-02|I2V-01-Director|I2V-01-live|I2V-01/i.test(rawModel);
 
