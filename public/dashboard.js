@@ -279,35 +279,39 @@ window.addEventListener("DOMContentLoaded", function () {
 });
 
 // Global function for tab switching (called from HTML onclick)
-window.switchTab = function(tabName) {
+window.switchTab = function (tabName) {
   const tabIds = ["tab-dashboard", "tab-filters", "tab-templates"];
-  const tabIndex = tabIds.findIndex(id => id === `tab-${tabName}`);
-  
+  const tabIndex = tabIds.findIndex((id) => id === `tab-${tabName}`);
+
   if (tabIndex === -1) return;
-  
+
   const sidebarButtons = document.querySelectorAll("aside nav ul li button");
-  
+
   // Remove active class from all buttons
   sidebarButtons.forEach((b) =>
     b.classList.remove("bg-blue-50", "text-blue-600", "font-medium")
   );
-  
+
   // Add active class to clicked button
   if (sidebarButtons[tabIndex]) {
-    sidebarButtons[tabIndex].classList.add("bg-blue-50", "text-blue-600", "font-medium");
+    sidebarButtons[tabIndex].classList.add(
+      "bg-blue-50",
+      "text-blue-600",
+      "font-medium"
+    );
   }
-  
+
   // Hide all tab contents
   tabIds.forEach((id) => {
     const el = document.getElementById(id);
     if (el) el.classList.add("hidden");
   });
-  
+
   // Show selected tab
   const showId = tabIds[tabIndex];
   const showEl = document.getElementById(showId);
   if (showEl) showEl.classList.remove("hidden");
-  
+
   if (showId === "tab-filters") {
     ensureFeaturesLoaded();
   }
@@ -339,12 +343,19 @@ function initializeDashboard() {
   }
 
   console.log(
-    "Loading initial data (templates/endpoints only, features deferred)"
+    "Loading initial data (templates, endpoints, and features for dashboard stats)"
   );
-  // Load initial data except features (lazy until tab open)
+  // Load initial data including features for dashboard counts
   loadTemplates();
   loadFeatureGraphics();
+  loadLatestVideos();
   loadAvailableEndpoints();
+
+  // Load features for dashboard stats
+  ensureFeaturesLoaded();
+
+  // Update stats with initial values
+  updateStats();
 
   console.log("Dashboard initialization complete");
 }
@@ -438,6 +449,7 @@ function setupFeaturesInfiniteScroll() {
 let templates = [];
 let availableEndpoints = [];
 let featureGraphics = {};
+let latestVideos = {};
 
 // Ensure (or recreate) the sentinel element used for infinite scroll
 function ensureFeaturesSentinel() {
@@ -485,8 +497,10 @@ function displayFeatures(append = false, startIndex = 0) {
   if (append && sourceList.length === 0) return; // nothing new to add
   const cardsHtml = sourceList
     .map((feature) => {
+      // Priority: 1. Manual feature graphics, 2. Latest generated video, 3. Fallback URL
       const videoUrl =
         featureGraphics[feature.endpoint] ||
+        latestVideos[feature.endpoint] ||
         `https://res.cloudinary.com/do60wtwwc/video/upload/v1754319544/generated-videos/generated-videos/${feature.endpoint}.mp4#t=0.5`;
       return `
         <div class="feature-card bg-white rounded-lg shadow p-4 flex flex-col gap-2 cursor-pointer" data-endpoint="${feature.endpoint}">
@@ -707,6 +721,7 @@ function showFeatureDetailPage(endpoint) {
     if (promptEl) promptEl.textContent = feature.prompt || "";
     const videoUrl =
       featureGraphics[feature.endpoint] ||
+      latestVideos[feature.endpoint] ||
       `https://res.cloudinary.com/do60wtwwc/video/upload/v1754319544/generated-videos/generated-videos/${feature.endpoint}.mp4#t=0.5`;
     const videoEl = document.getElementById("featureDetailVideo");
     console.log("Video element:", videoEl, "Video URL:", videoUrl);
@@ -875,7 +890,10 @@ function showFeatureDetailPage(endpoint) {
         const val = featureModelSelect.value || "";
         const isPixTrans = /pixverse-v4-transition/i.test(val);
         const isVidu = /vidu-q1-reference-to-video/i.test(val);
-        const isViduImage2Video = /vidu-(1\.5|q1)-image-to-video/i.test(val);
+        const isViduImage2Video =
+          /vidu-(1\.5|q1)-image-to-video|veo-2-image-to-video|veo-3-image-to-video/i.test(
+            val
+          );
         featureLastFrameWrapper.style.display = isPixTrans ? "flex" : "none";
         if (!isPixTrans) {
           featureLastFrameUrl = null;
@@ -915,12 +933,14 @@ function showFeatureDetailPage(endpoint) {
             }
             if (uploadStatus) {
               uploadStatus.textContent = "Image uploaded!";
-              uploadStatus.className = "upload-status success text-sm mt-3 text-center";
+              uploadStatus.className =
+                "upload-status success text-sm mt-3 text-center";
             }
           } else {
             if (uploadStatus) {
               uploadStatus.textContent = "Upload failed.";
-              uploadStatus.className = "upload-status error text-sm mt-3 text-center";
+              uploadStatus.className =
+                "upload-status error text-sm mt-3 text-center";
             }
           }
           input.value = "";
@@ -1165,6 +1185,23 @@ async function loadFeatureGraphics() {
   }
 }
 
+// Load latest videos for all endpoints
+async function loadLatestVideos() {
+  try {
+    const res = await fetch("/api/videos/latest");
+    const data = await res.json();
+    latestVideos = {};
+    if (Array.isArray(data)) {
+      data.forEach((video) => {
+        latestVideos[video.endpoint] = video.url;
+      });
+    }
+  } catch (e) {
+    // Non-fatal: just proceed without latest videos
+    latestVideos = {};
+  }
+}
+
 // Close feature detail page and show filters tab
 function closeFeatureDetailPage() {
   console.log("Closing feature detail page");
@@ -1218,8 +1255,8 @@ function closeFeatureDetailPage() {
 
   // Use the normal tab switching functionality to show filters tab
   // This ensures proper tab state management and allows users to switch to other tabs
-  switchTab('filters');
-  
+  switchTab("filters");
+
   console.log("Main UI restored successfully");
 }
 
@@ -1374,356 +1411,352 @@ function displayTemplates() {
         });
       });
   }, 0);
-  // Show step detail page for editing
-  function showStepDetailPage(templateId, stepIndex, subcatIndex) {
-    const template = templates.find((t) => t.id === templateId);
-    if (!template) return;
-    let step = Array.isArray(template.steps)
-      ? template.steps[stepIndex]
-      : undefined;
-    if (!step && Array.isArray(template.subcategories)) {
-      const sc = template.subcategories[subcatIndex];
-      if (sc && Array.isArray(sc.steps)) step = sc.steps[stepIndex];
-    }
-    if (!step) return;
-    document.getElementById("stepDetailEndpointInput").value =
-      step.endpoint || "";
-    document.getElementById("stepDetailPromptInput").value = step.prompt || "";
-    document.getElementById("stepDetailStatus").textContent = "";
-    // Hide all tab content and show only step details
-    document
-      .querySelectorAll(".tab-content, #featureDetailPage")
-      .forEach((el) => el.classList.add("hidden"));
-    document.getElementById("stepDetailPage").classList.remove("hidden");
-    // Reset video gen UI
-    document.getElementById("stepImagePreview").style.display = "none";
-    document.getElementById("stepImagePreview").src = "";
-    document.getElementById("stepUploadStatus").textContent = "";
-    document.getElementById("stepGenStatus").textContent = "";
-    const legacyPreview = document.getElementById("stepVideoPreview");
-    if (legacyPreview) legacyPreview.style.display = "none";
-    window._stepUploadedImageUrl = null;
-    // Load existing generated videos for this step's endpoint
-    const generatedListEl = document.getElementById("stepGeneratedList");
-    if (generatedListEl && step.endpoint) {
-      generatedListEl.innerHTML =
-        '<div class="col-span-full text-xs text-gray-500 flex items-center gap-1"><svg class="animate-spin h-3 w-3 text-gray-400" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"></circle><path d="M4 12a8 8 0 018-8" stroke="currentColor" stroke-width="4" fill="none"></path></svg> Loading...</div>';
-      fetch(`/api/videos/${encodeURIComponent(step.endpoint)}`)
-        .then((r) => r.json())
-        .then((videos) => {
-          if (!Array.isArray(videos) || videos.length === 0) {
-            generatedListEl.innerHTML =
-              '<div class="col-span-full text-xs text-gray-500">No videos yet for this endpoint.</div>';
-            return;
-          }
-          const html = videos
-            .map(
-              (v) =>
-                `<div class="relative rounded-lg overflow-hidden border border-gray-200 hover:border-blue-400 hover:shadow group" data-url="${v.url}" data-id="${v.id}">
-         <video src="${v.url}" class="w-full transition-opacity duration-300 cursor-pointer step-detail-video"  controls preload="metadata" style="object-fit:cover"></video>
-         <button class="absolute top-1 right-1 bg-red-600/80 text-white text-[10px] px-1.5 py-0.5 rounded opacity-0 group-hover:opacity-100 transition delete-step-video-btn" title="Delete video"><svg xmlns='http://www.w3.org/2000/svg' width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' class='pointer-events-none'><path d='M3 6h18'/><path d='M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2'/><path d='M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6'/><path d='M10 11v6'/><path d='M14 11v6'/></svg></button>
-       </div>`
-            )
-            .join("");
-          generatedListEl.innerHTML = html;
-          // Selection highlight
-          generatedListEl
-            .querySelectorAll("video.step-detail-video")
-            .forEach((vid) => {
-              vid.addEventListener("click", (e) => {
-                e.preventDefault();
-                generatedListEl
-                  .querySelectorAll("div[data-id]")
-                  .forEach((n) => n.classList.remove("ring", "ring-blue-400"));
-                const parent = vid.closest("div[data-id]");
-                if (parent) parent.classList.add("ring", "ring-blue-400");
-              });
-            });
-          // Deletion
-          generatedListEl
-            .querySelectorAll(".delete-step-video-btn")
-            .forEach((btn) => {
-              btn.addEventListener("click", async (e) => {
-                e.stopPropagation();
-                const wrapper = btn.closest("div[data-id]");
-                if (!wrapper) return;
-                const id = wrapper.getAttribute("data-id");
-                if (!id) return;
-                if (!confirm("Delete this video?")) return;
-                btn.disabled = true;
-                btn.textContent = "...";
-                try {
-                  const resp = await fetch(`/api/videos/${id}`, {
-                    method: "DELETE",
-                  });
-                  if (!resp.ok) throw new Error("Failed");
-                  wrapper.remove();
-                  if (!generatedListEl.querySelector("div[data-id]")) {
-                    generatedListEl.innerHTML =
-                      '<div class="col-span-full text-xs text-gray-500">No videos yet for this endpoint.</div>';
-                  }
-                } catch (err) {
-                  alert("Failed to delete video");
-                  btn.disabled = false;
-                  btn.textContent = "✕";
-                }
-              });
-            });
-        })
-        .catch(() => {
-          generatedListEl.innerHTML =
-            '<div class="col-span-full text-xs text-red-500">Failed to load videos.</div>';
-        });
-    }
-    // Store for save
-    window._currentStepTemplateId = templateId;
-    window._currentStepIndex = stepIndex;
+}
 
-    // Wire up Save / Cancel buttons
-    const saveBtn = document.getElementById("stepDetailSaveBtn");
-    const cancelBtn = document.getElementById("stepDetailCancelBtn");
-    if (cancelBtn) cancelBtn.onclick = () => closeStepDetailPage();
-    if (saveBtn) {
-      saveBtn.onclick = async () => {
-        const epInput = document.getElementById("stepDetailEndpointInput");
-        const promptInput = document.getElementById("stepDetailPromptInput");
-        const statusEl = document.getElementById("stepDetailStatus");
-        if (!epInput || !promptInput) return;
-        const newEndpoint = epInput.value.trim();
-        const newPrompt = promptInput.value.trim();
-        if (!newEndpoint) {
-          statusEl.textContent = "Endpoint is required";
+// Show step detail page for editing
+function showStepDetailPage(templateId, stepIndex, subcatIndex) {
+  const template = templates.find((t) => t.id === templateId);
+  if (!template) return;
+  let step = Array.isArray(template.steps)
+    ? template.steps[stepIndex]
+    : undefined;
+  if (!step && Array.isArray(template.subcategories)) {
+    const sc = template.subcategories[subcatIndex];
+    if (sc && Array.isArray(sc.steps)) step = sc.steps[stepIndex];
+  }
+  if (!step) return;
+  document.getElementById("stepDetailEndpointInput").value =
+    step.endpoint || "";
+  document.getElementById("stepDetailPromptInput").value = step.prompt || "";
+  document.getElementById("stepDetailStatus").textContent = "";
+  // Hide all tab content and show only step details
+  document
+    .querySelectorAll(".tab-content, #featureDetailPage")
+    .forEach((el) => el.classList.add("hidden"));
+  document.getElementById("stepDetailPage").classList.remove("hidden");
+  // Reset video gen UI
+  document.getElementById("stepImagePreview").style.display = "none";
+  document.getElementById("stepImagePreview").src = "";
+  document.getElementById("stepUploadStatus").textContent = "";
+  document.getElementById("stepGenStatus").textContent = "";
+  const legacyPreview = document.getElementById("stepVideoPreview");
+  if (legacyPreview) legacyPreview.style.display = "none";
+  window._stepUploadedImageUrl = null;
+  // Load existing generated videos for this step's endpoint
+  const generatedListEl = document.getElementById("stepGeneratedList");
+  if (generatedListEl && step.endpoint) {
+    generatedListEl.innerHTML =
+      '<div class="col-span-full text-xs text-gray-500 flex items-center gap-1"><svg class="animate-spin h-3 w-3 text-gray-400" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"></circle><path d="M4 12a8 8 0 018-8" stroke="currentColor" stroke-width="4" fill="none"></path></svg> Loading...</div>';
+    fetch(`/api/videos/${encodeURIComponent(step.endpoint)}`)
+      .then((r) => r.json())
+      .then((videos) => {
+        if (!Array.isArray(videos) || videos.length === 0) {
+          generatedListEl.innerHTML =
+            '<div class="col-span-full text-xs text-gray-500">No videos yet for this endpoint.</div>';
           return;
         }
-        statusEl.textContent = "Saving...";
-        try {
-          // Optimistic local update only – backend endpoint for updating a specific step not implemented here.
-          step.endpoint = newEndpoint;
-          step.prompt = newPrompt;
-          statusEl.textContent = "Saved (local).";
-        } catch (e) {
-          statusEl.textContent = "Failed to save.";
-        }
-      };
-    }
+        const html = videos
+          .map(
+            (v) =>
+              `<div class="relative rounded-lg overflow-hidden border border-gray-200 hover:border-blue-400 hover:shadow group" data-url="${v.url}" data-id="${v.id}">
+       <video src="${v.url}" class="w-full transition-opacity duration-300 cursor-pointer step-detail-video"  controls preload="metadata" style="object-fit:cover"></video>
+       <button class="absolute top-1 right-1 bg-red-600/80 text-white text-[10px] px-1.5 py-0.5 rounded opacity-0 group-hover:opacity-100 transition delete-step-video-btn" title="Delete video"><svg xmlns='http://www.w3.org/2000/svg' width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' class='pointer-events-none'><path d='M3 6h18'/><path d='M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2'/><path d='M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6'/><path d='M10 11v6'/><path d='M14 11v6'/></svg></button>
+     </div>`
+          )
+          .join("");
+        generatedListEl.innerHTML = html;
+        // Selection highlight
+        generatedListEl
+          .querySelectorAll("video.step-detail-video")
+          .forEach((vid) => {
+            vid.addEventListener("click", (e) => {
+              e.preventDefault();
+              generatedListEl
+                .querySelectorAll("div[data-id]")
+                .forEach((n) => n.classList.remove("ring", "ring-blue-400"));
+              const parent = vid.closest("div[data-id]");
+              if (parent) parent.classList.add("ring", "ring-blue-400");
+            });
+          });
+        // Deletion
+        generatedListEl
+          .querySelectorAll(".delete-step-video-btn")
+          .forEach((btn) => {
+            btn.addEventListener("click", async (e) => {
+              e.stopPropagation();
+              const wrapper = btn.closest("div[data-id]");
+              if (!wrapper) return;
+              const id = wrapper.getAttribute("data-id");
+              if (!id) return;
+              if (!confirm("Delete this video?")) return;
+              btn.disabled = true;
+              btn.textContent = "...";
+              try {
+                const resp = await fetch(`/api/videos/${id}`, {
+                  method: "DELETE",
+                });
+                if (!resp.ok) throw new Error("Failed");
+                wrapper.remove();
+                if (!generatedListEl.querySelector("div[data-id]")) {
+                  generatedListEl.innerHTML =
+                    '<div class="col-span-full text-xs text-gray-500">No videos yet for this endpoint.</div>';
+                }
+              } catch (err) {
+                alert("Failed to delete video");
+                btn.disabled = false;
+                btn.textContent = "✕";
+              }
+            });
+          });
+      })
+      .catch(() => {
+        generatedListEl.innerHTML =
+          '<div class="col-span-full text-xs text-red-500">Failed to load videos.</div>';
+      });
+  }
+  // Store for save
+  window._currentStepTemplateId = templateId;
+  window._currentStepIndex = stepIndex;
 
-    // Attach image upload event listeners every time the page is shown
-    const stepImageInput = document.getElementById("stepImageInput");
-    const stepImagePreview = document.getElementById("stepImagePreview");
-    const stepUploadStatus = document.getElementById("stepUploadStatus");
-    const stepImageUploadSection = document.getElementById(
-      "stepImageUploadSection"
+  // Wire up Save / Cancel buttons
+  const saveBtn = document.getElementById("stepDetailSaveBtn");
+  const cancelBtn = document.getElementById("stepDetailCancelBtn");
+  if (cancelBtn) cancelBtn.onclick = () => closeStepDetailPage();
+  if (saveBtn) {
+    saveBtn.onclick = async () => {
+      const epInput = document.getElementById("stepDetailEndpointInput");
+      const promptInput = document.getElementById("stepDetailPromptInput");
+      const statusEl = document.getElementById("stepDetailStatus");
+      if (!epInput || !promptInput) return;
+      const newEndpoint = epInput.value.trim();
+      const newPrompt = promptInput.value.trim();
+      if (!newEndpoint) {
+        statusEl.textContent = "Endpoint is required";
+        return;
+      }
+      statusEl.textContent = "Saving...";
+      try {
+        // Optimistic local update only – backend endpoint for updating a specific step not implemented here.
+        step.endpoint = newEndpoint;
+        step.prompt = newPrompt;
+        statusEl.textContent = "Saved (local).";
+      } catch (e) {
+        statusEl.textContent = "Failed to save.";
+      }
+    };
+  }
+
+  // Attach image upload event listeners every time the page is shown
+  const stepImageInput = document.getElementById("stepImageInput");
+  const stepImagePreview = document.getElementById("stepImagePreview");
+  const stepUploadStatus = document.getElementById("stepUploadStatus");
+  const stepImageUploadSection = document.getElementById(
+    "stepImageUploadSection"
+  );
+  const stepModelSelect = document.getElementById("stepModelSelect");
+  const stepLastFrameWrapper = document.getElementById("stepLastFrameWrapper");
+  const stepLastFrameInput = document.getElementById("stepLastFrameInput");
+  const stepLastFramePreview = document.getElementById("stepLastFramePreview");
+  // Vidu Q1 reference wrappers for steps
+  const stepRef2Wrapper = document.getElementById("stepRef2Wrapper");
+  const stepRef3Wrapper = document.getElementById("stepRef3Wrapper");
+  const stepRef2Input = document.getElementById("stepRef2Input");
+  const stepRef3Input = document.getElementById("stepRef3Input");
+  const stepRef2Preview = document.getElementById("stepRef2Preview");
+  const stepRef3Preview = document.getElementById("stepRef3Preview");
+  window._stepRef2Url = null;
+  window._stepRef3Url = null;
+  window._stepLastFrameUrl = null;
+  if (stepImageInput && stepImageUploadSection) {
+    // Remove previous listeners by cloning
+    const newSection = stepImageUploadSection.cloneNode(true);
+    stepImageUploadSection.parentNode.replaceChild(
+      newSection,
+      stepImageUploadSection
     );
-    const stepModelSelect = document.getElementById("stepModelSelect");
-    const stepLastFrameWrapper = document.getElementById(
-      "stepLastFrameWrapper"
+    const newInput = newSection.querySelector("#stepImageInput");
+    const newPreview = newSection.querySelector("#stepImagePreview");
+    const newStatus = newSection.querySelector("#stepUploadStatus");
+    newSection.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      newSection.classList.add("dragover");
+    });
+    newSection.addEventListener("dragleave", () =>
+      newSection.classList.remove("dragover")
     );
-    const stepLastFrameInput = document.getElementById("stepLastFrameInput");
-    const stepLastFramePreview = document.getElementById(
-      "stepLastFramePreview"
-    );
-    // Vidu Q1 reference wrappers for steps
-    const stepRef2Wrapper = document.getElementById("stepRef2Wrapper");
-    const stepRef3Wrapper = document.getElementById("stepRef3Wrapper");
-    const stepRef2Input = document.getElementById("stepRef2Input");
-    const stepRef3Input = document.getElementById("stepRef3Input");
-    const stepRef2Preview = document.getElementById("stepRef2Preview");
-    const stepRef3Preview = document.getElementById("stepRef3Preview");
-    window._stepRef2Url = null;
-    window._stepRef3Url = null;
-    window._stepLastFrameUrl = null;
-    if (stepImageInput && stepImageUploadSection) {
-      // Remove previous listeners by cloning
-      const newSection = stepImageUploadSection.cloneNode(true);
-      stepImageUploadSection.parentNode.replaceChild(
-        newSection,
-        stepImageUploadSection
-      );
-      const newInput = newSection.querySelector("#stepImageInput");
-      const newPreview = newSection.querySelector("#stepImagePreview");
-      const newStatus = newSection.querySelector("#stepUploadStatus");
-      newSection.addEventListener("dragover", (e) => {
-        e.preventDefault();
-        newSection.classList.add("dragover");
-      });
-      newSection.addEventListener("dragleave", () =>
-        newSection.classList.remove("dragover")
-      );
-      newSection.addEventListener("drop", (e) => {
-        e.preventDefault();
-        newSection.classList.remove("dragover");
-        const files = e.dataTransfer.files;
-        if (files.length > 0 && files[0].type.startsWith("image/")) {
-          newInput.files = files;
-          handleStepImageUpload(newInput, newPreview, newStatus);
-        }
-      });
-      // Remove the onclick handler since the label already handles clicks properly
-      // newSection.onclick = (e) => {
-      //   if (e.target.tagName !== "INPUT") newInput.click();
-      // };
-      newInput.onchange = () =>
+    newSection.addEventListener("drop", (e) => {
+      e.preventDefault();
+      newSection.classList.remove("dragover");
+      const files = e.dataTransfer.files;
+      if (files.length > 0 && files[0].type.startsWith("image/")) {
+        newInput.files = files;
         handleStepImageUpload(newInput, newPreview, newStatus);
-    }
+      }
+    });
+    // Remove the onclick handler since the label already handles clicks properly
+    // newSection.onclick = (e) => {
+    //   if (e.target.tagName !== "INPUT") newInput.click();
+    // };
+    newInput.onchange = () =>
+      handleStepImageUpload(newInput, newPreview, newStatus);
+  }
 
-    function handleStepImageUpload(input, preview, uploadStatus) {
-      const file = input.files && input.files[0];
+  function handleStepImageUpload(input, preview, uploadStatus) {
+    const file = input.files && input.files[0];
+    if (!file) return;
+    const formData = new FormData();
+    formData.append("image", file);
+    if (uploadStatus) uploadStatus.textContent = "Uploading...";
+    fetch("/api/cloudinary/upload", { method: "POST", body: formData })
+      .then((res) => res.json())
+      .then((result) => {
+        if (result && result.success && result.url) {
+          window._stepUploadedImageUrl = result.url;
+          if (preview) {
+            preview.src = result.url;
+            preview.style.display = "block";
+          }
+          if (uploadStatus) uploadStatus.textContent = "Image uploaded!";
+        } else {
+          if (uploadStatus) uploadStatus.textContent = "Upload failed.";
+        }
+        input.value = "";
+      })
+      .catch(() => {
+        if (uploadStatus) uploadStatus.textContent = "Upload failed.";
+        input.value = "";
+      });
+  }
+  // Pixverse last frame upload logic
+  if (stepLastFrameInput) {
+    stepLastFrameInput.onchange = () => {
+      const file = stepLastFrameInput.files && stepLastFrameInput.files[0];
       if (!file) return;
       const formData = new FormData();
       formData.append("image", file);
-      if (uploadStatus) uploadStatus.textContent = "Uploading...";
+      if (stepUploadStatus)
+        stepUploadStatus.textContent = "Uploading last frame...";
       fetch("/api/cloudinary/upload", { method: "POST", body: formData })
-        .then((res) => res.json())
-        .then((result) => {
-          if (result && result.success && result.url) {
-            window._stepUploadedImageUrl = result.url;
-            if (preview) {
-              preview.src = result.url;
-              preview.style.display = "block";
+        .then((r) => r.json())
+        .then((r) => {
+          if (r && r.success && r.url) {
+            window._stepLastFrameUrl = r.url;
+            if (stepLastFramePreview) {
+              stepLastFramePreview.src = r.url;
+              stepLastFramePreview.style.display = "block";
             }
-            if (uploadStatus) uploadStatus.textContent = "Image uploaded!";
+            if (stepUploadStatus)
+              stepUploadStatus.textContent = "Last frame uploaded!";
           } else {
-            if (uploadStatus) uploadStatus.textContent = "Upload failed.";
-          }
-          input.value = "";
-        })
-        .catch(() => {
-          if (uploadStatus) uploadStatus.textContent = "Upload failed.";
-          input.value = "";
-        });
-    }
-    // Pixverse last frame upload logic
-    if (stepLastFrameInput) {
-      stepLastFrameInput.onchange = () => {
-        const file = stepLastFrameInput.files && stepLastFrameInput.files[0];
-        if (!file) return;
-        const formData = new FormData();
-        formData.append("image", file);
-        if (stepUploadStatus)
-          stepUploadStatus.textContent = "Uploading last frame...";
-        fetch("/api/cloudinary/upload", { method: "POST", body: formData })
-          .then((r) => r.json())
-          .then((r) => {
-            if (r && r.success && r.url) {
-              window._stepLastFrameUrl = r.url;
-              if (stepLastFramePreview) {
-                stepLastFramePreview.src = r.url;
-                stepLastFramePreview.style.display = "block";
-              }
-              if (stepUploadStatus)
-                stepUploadStatus.textContent = "Last frame uploaded!";
-            } else {
-              if (stepUploadStatus)
-                stepUploadStatus.textContent = "Last frame upload failed.";
-            }
-            stepLastFrameInput.value = "";
-          })
-          .catch(() => {
             if (stepUploadStatus)
               stepUploadStatus.textContent = "Last frame upload failed.";
-            stepLastFrameInput.value = "";
-          });
-      };
-    }
-    if (stepModelSelect && stepLastFrameWrapper) {
-      const toggleStepLastFrame = () => {
-        const val = stepModelSelect.value || "";
-        const isPixTrans = /pixverse-v4-transition/i.test(val);
-        const isVidu = /vidu-q1-reference-to-video/i.test(val);
-        const isViduImage2Video = /vidu-(1\.5|q1)-image-to-video/i.test(val);
-        stepLastFrameWrapper.style.display = isPixTrans ? "flex" : "none";
-        if (!isPixTrans) {
-          window._stepLastFrameUrl = null;
-          if (stepLastFramePreview) stepLastFramePreview.style.display = "none";
-        }
-        // Toggle vidu extra refs (only for reference-to-video model)
-        if (stepRef2Wrapper)
-          stepRef2Wrapper.style.display = isVidu ? "flex" : "none";
-        if (stepRef3Wrapper)
-          stepRef3Wrapper.style.display = isVidu ? "flex" : "none";
-        if (!isVidu) {
-          window._stepRef2Url = null;
-          window._stepRef3Url = null;
-          if (stepRef2Preview) stepRef2Preview.style.display = "none";
-          if (stepRef3Preview) stepRef3Preview.style.display = "none";
-        }
-      };
-      stepModelSelect.addEventListener("change", toggleStepLastFrame);
-      toggleStepLastFrame();
-    }
-    // Step Vidu reference uploads
-    if (stepRef2Input) {
-      stepRef2Input.onchange = () => {
-        const file = stepRef2Input.files && stepRef2Input.files[0];
-        if (!file) return;
-        const fd = new FormData();
-        fd.append("image", file);
-        if (stepUploadStatus)
-          stepUploadStatus.textContent = "Uploading ref 2...";
-        fetch("/api/cloudinary/upload", { method: "POST", body: fd })
-          .then((r) => r.json())
-          .then((r) => {
-            if (r && r.success && r.url) {
-              window._stepRef2Url = r.url;
-              if (stepRef2Preview) {
-                stepRef2Preview.src = r.url;
-                stepRef2Preview.style.display = "block";
-              }
-              if (stepUploadStatus)
-                stepUploadStatus.textContent = "Ref 2 uploaded!";
-            } else {
-              if (stepUploadStatus)
-                stepUploadStatus.textContent = "Ref 2 upload failed.";
+          }
+          stepLastFrameInput.value = "";
+        })
+        .catch(() => {
+          if (stepUploadStatus)
+            stepUploadStatus.textContent = "Last frame upload failed.";
+          stepLastFrameInput.value = "";
+        });
+    };
+  }
+  if (stepModelSelect && stepLastFrameWrapper) {
+    const toggleStepLastFrame = () => {
+      const val = stepModelSelect.value || "";
+      const isPixTrans = /pixverse-v4-transition/i.test(val);
+      const isVidu = /vidu-q1-reference-to-video/i.test(val);
+      const isViduImage2Video =
+        /vidu-(1\.5|q1)-image-to-video|veo-2-image-to-video|veo-3-image-to-video/i.test(
+          val
+        );
+      stepLastFrameWrapper.style.display = isPixTrans ? "flex" : "none";
+      if (!isPixTrans) {
+        window._stepLastFrameUrl = null;
+        if (stepLastFramePreview) stepLastFramePreview.style.display = "none";
+      }
+      // Toggle vidu extra refs (only for reference-to-video model)
+      if (stepRef2Wrapper)
+        stepRef2Wrapper.style.display = isVidu ? "flex" : "none";
+      if (stepRef3Wrapper)
+        stepRef3Wrapper.style.display = isVidu ? "flex" : "none";
+      if (!isVidu) {
+        window._stepRef2Url = null;
+        window._stepRef3Url = null;
+        if (stepRef2Preview) stepRef2Preview.style.display = "none";
+        if (stepRef3Preview) stepRef3Preview.style.display = "none";
+      }
+    };
+    stepModelSelect.addEventListener("change", toggleStepLastFrame);
+    toggleStepLastFrame();
+  }
+  // Step Vidu reference uploads
+  if (stepRef2Input) {
+    stepRef2Input.onchange = () => {
+      const file = stepRef2Input.files && stepRef2Input.files[0];
+      if (!file) return;
+      const fd = new FormData();
+      fd.append("image", file);
+      if (stepUploadStatus) stepUploadStatus.textContent = "Uploading ref 2...";
+      fetch("/api/cloudinary/upload", { method: "POST", body: fd })
+        .then((r) => r.json())
+        .then((r) => {
+          if (r && r.success && r.url) {
+            window._stepRef2Url = r.url;
+            if (stepRef2Preview) {
+              stepRef2Preview.src = r.url;
+              stepRef2Preview.style.display = "block";
             }
-            stepRef2Input.value = "";
-          })
-          .catch(() => {
+            if (stepUploadStatus)
+              stepUploadStatus.textContent = "Ref 2 uploaded!";
+          } else {
             if (stepUploadStatus)
               stepUploadStatus.textContent = "Ref 2 upload failed.";
-            stepRef2Input.value = "";
-          });
-      };
-    }
-    if (stepRef3Input) {
-      stepRef3Input.onchange = () => {
-        const file = stepRef3Input.files && stepRef3Input.files[0];
-        if (!file) return;
-        const fd = new FormData();
-        fd.append("image", file);
-        if (stepUploadStatus)
-          stepUploadStatus.textContent = "Uploading ref 3...";
-        fetch("/api/cloudinary/upload", { method: "POST", body: fd })
-          .then((r) => r.json())
-          .then((r) => {
-            if (r && r.success && r.url) {
-              window._stepRef3Url = r.url;
-              if (stepRef3Preview) {
-                stepRef3Preview.src = r.url;
-                stepRef3Preview.style.display = "block";
-              }
-              if (stepUploadStatus)
-                stepUploadStatus.textContent = "Ref 3 uploaded!";
-            } else {
-              if (stepUploadStatus)
-                stepUploadStatus.textContent = "Ref 3 upload failed.";
+          }
+          stepRef2Input.value = "";
+        })
+        .catch(() => {
+          if (stepUploadStatus)
+            stepUploadStatus.textContent = "Ref 2 upload failed.";
+          stepRef2Input.value = "";
+        });
+    };
+  }
+  if (stepRef3Input) {
+    stepRef3Input.onchange = () => {
+      const file = stepRef3Input.files && stepRef3Input.files[0];
+      if (!file) return;
+      const fd = new FormData();
+      fd.append("image", file);
+      if (stepUploadStatus) stepUploadStatus.textContent = "Uploading ref 3...";
+      fetch("/api/cloudinary/upload", { method: "POST", body: fd })
+        .then((r) => r.json())
+        .then((r) => {
+          if (r && r.success && r.url) {
+            window._stepRef3Url = r.url;
+            if (stepRef3Preview) {
+              stepRef3Preview.src = r.url;
+              stepRef3Preview.style.display = "block";
             }
-            stepRef3Input.value = "";
-          })
-          .catch(() => {
+            if (stepUploadStatus)
+              stepUploadStatus.textContent = "Ref 3 uploaded!";
+          } else {
             if (stepUploadStatus)
               stepUploadStatus.textContent = "Ref 3 upload failed.";
-            stepRef3Input.value = "";
-          });
-      };
-    }
+          }
+          stepRef3Input.value = "";
+        })
+        .catch(() => {
+          if (stepUploadStatus)
+            stepUploadStatus.textContent = "Ref 3 upload failed.";
+          stepRef3Input.value = "";
+        });
+    };
   }
-
-  // Step video generation logic
 }
 
 function closeStepDetailPage() {
   console.log("Closing step detail page");
-  
+
   // Hide the step detail page
   const stepDetailPage = document.getElementById("stepDetailPage");
   if (stepDetailPage) {
@@ -1747,12 +1780,12 @@ function closeStepDetailPage() {
 
   // Use the normal tab switching functionality to show templates tab
   // This ensures proper tab state management and allows users to switch to other tabs
-  switchTab('templates');
+  switchTab("templates");
 
   // Reset step detail state
   window._currentStepTemplateId = null;
   window._currentStepIndex = null;
-  
+
   console.log("Main UI restored successfully");
 }
 
@@ -2314,15 +2347,10 @@ async function saveTemplate() {
 }
 
 async function deleteTemplate(templateId) {
-  if (!confirm("Are you sure you want to delete this template?")) return;
   // Find the delete button and show loading state
-  const deleteBtn =
-    document.querySelector(
-      `.btn-danger[onclick="deleteTemplate(${templateId})"]`
-    ) ||
-    document.querySelector(
-      `.btn-outline-danger[onclick="deleteTemplate(${templateId})"]`
-    );
+  const deleteBtn = document.querySelector(
+    `button[onclick="deleteTemplate(${templateId})"]`
+  );
   let originalText = null;
   if (deleteBtn) {
     originalText = deleteBtn.innerHTML;
@@ -2338,11 +2366,10 @@ async function deleteTemplate(templateId) {
       loadTemplates();
     } else {
       const error = await response.json();
-      alert("Error deleting template: " + error.error);
+      console.error("Error deleting template:", error.error);
     }
   } catch (error) {
     console.error("Error deleting template:", error);
-    alert("Error deleting template");
   } finally {
     if (deleteBtn) {
       deleteBtn.disabled = false;

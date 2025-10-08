@@ -389,7 +389,11 @@ router.post<
         } catch (err) {
           console.error("Pixverse create error (single attempt):", err);
           const e = err as any;
-          let provider_message = (e?.response?.data?.message || e?.response?.data?.error || e?.message || "Unknown error");
+          let provider_message =
+            e?.response?.data?.message ||
+            e?.response?.data?.error ||
+            e?.message ||
+            "Unknown error";
           res.status(502).json({
             success: false,
             error: provider_message,
@@ -529,12 +533,10 @@ router.post<
         const eachLabsKey =
           process.env.PIXVERSE_API_KEY || process.env.EACHLABS_API_KEY;
         if (!eachLabsKey) {
-          res
-            .status(500)
-            .json({
-              success: false,
-              error: "EACHLABS / PIXVERSE API key not set",
-            });
+          res.status(500).json({
+            success: false,
+            error: "EACHLABS / PIXVERSE API key not set",
+          });
           return;
         }
 
@@ -647,24 +649,20 @@ router.post<
             prediction.id ||
             prediction.task_id;
           if (!predictionId) {
-            res
-              .status(502)
-              .json({
-                success: false,
-                error: "Vidu Q1 response missing prediction id",
-                details: safeJson(prediction),
-              });
+            res.status(502).json({
+              success: false,
+              error: "Vidu Q1 response missing prediction id",
+              details: safeJson(prediction),
+            });
             return;
           }
         } catch (err) {
           console.error("Vidu Q1 create error:", err);
-          res
-            .status(502)
-            .json({
-              success: false,
-              error: "Failed to create Vidu Q1 prediction",
-              details: serializeError(err),
-            });
+          res.status(502).json({
+            success: false,
+            error: "Failed to create Vidu Q1 prediction",
+            details: serializeError(err),
+          });
           return;
         }
 
@@ -727,15 +725,13 @@ router.post<
           }
         }
         if (!viduVideoUrl) {
-          res
-            .status(504)
-            .json({
-              success: false,
-              error: "Vidu Q1 prediction timeout",
-              provider: "ViduQ1",
-              provider_status: "timeout",
-              provider_message: "Prediction did not complete in allotted time",
-            });
+          res.status(504).json({
+            success: false,
+            error: "Vidu Q1 prediction timeout",
+            provider: "ViduQ1",
+            provider_status: "timeout",
+            provider_message: "Prediction did not complete in allotted time",
+          });
           return;
         }
         // Download & upload to Cloudinary
@@ -746,13 +742,11 @@ router.post<
             timeout: 600000,
           });
         } catch (e) {
-          res
-            .status(500)
-            .json({
-              success: false,
-              error: "Failed to download Vidu Q1 video",
-              details: serializeError(e),
-            });
+          res.status(500).json({
+            success: false,
+            error: "Failed to download Vidu Q1 video",
+            details: serializeError(e),
+          });
           return;
         }
         let viduUpload: UploadApiResponse;
@@ -773,40 +767,34 @@ router.post<
             viduStream.data.pipe(uploadStream);
           });
         } catch (e) {
-          res
-            .status(500)
-            .json({
-              success: false,
-              error: "Failed to upload Vidu Q1 video",
-              details: serializeError(e),
-            });
+          res.status(500).json({
+            success: false,
+            error: "Failed to upload Vidu Q1 video",
+            details: serializeError(e),
+          });
           return;
         }
         await prisma.generatedVideo.create({
           data: { feature, url: viduUpload.secure_url },
         });
-        res
-          .status(200)
-          .json({
-            success: true,
-            video: { url: viduUpload.secure_url },
-            cloudinaryId: viduUpload.public_id,
-          });
+        res.status(200).json({
+          success: true,
+          video: { url: viduUpload.secure_url },
+          cloudinaryId: viduUpload.public_id,
+        });
         return;
       }
-      
+
       // Eachlabs Vidu 1.5 Image to Video branch
       const isVidu15Image2Video = /vidu-1\.5-image-to-video/i.test(rawModel);
       if (isVidu15Image2Video) {
         const eachLabsKey =
           process.env.PIXVERSE_API_KEY || process.env.EACHLABS_API_KEY;
         if (!eachLabsKey) {
-          res
-            .status(500)
-            .json({
-              success: false,
-              error: "EACHLABS / PIXVERSE API key not set",
-            });
+          res.status(500).json({
+            success: false,
+            error: "EACHLABS / PIXVERSE API key not set",
+          });
           return;
         }
 
@@ -864,24 +852,20 @@ router.post<
           }
           predictionId = (prediction as any)?.id;
           if (!predictionId) {
-            res
-              .status(502)
-              .json({
-                success: false,
-                error: "Vidu 1.5 response missing prediction id",
-                details: safeJson(prediction),
-              });
+            res.status(502).json({
+              success: false,
+              error: "Vidu 1.5 response missing prediction id",
+              details: safeJson(prediction),
+            });
             return;
           }
         } catch (err) {
           console.error("Vidu 1.5 create error:", err);
-          res
-            .status(502)
-            .json({
-              success: false,
-              error: "Failed to create Vidu 1.5 prediction",
-              details: serializeError(err),
-            });
+          res.status(502).json({
+            success: false,
+            error: "Failed to create Vidu 1.5 prediction",
+            details: serializeError(err),
+          });
           return;
         }
 
@@ -913,14 +897,15 @@ router.post<
                   null;
               } else {
                 viduVideoUrl =
-                  result.data.video_url || result.data.video || result.data.url || null;
+                  result.data.video_url ||
+                  result.data.video ||
+                  result.data.url ||
+                  null;
               }
               break;
             } else if (lower === "failed" || lower === "error") {
               const provider_message =
-                result.data.error ||
-                result.data.message ||
-                "Unknown error";
+                result.data.error || result.data.message || "Unknown error";
               res.status(500).json({
                 success: false,
                 error: provider_message
@@ -942,15 +927,13 @@ router.post<
           }
         }
         if (!viduVideoUrl) {
-          res
-            .status(504)
-            .json({
-              success: false,
-              error: "Vidu 1.5 prediction timeout",
-              provider: "Vidu15",
-              provider_status: "timeout",
-              provider_message: "Prediction did not complete in allotted time",
-            });
+          res.status(504).json({
+            success: false,
+            error: "Vidu 1.5 prediction timeout",
+            provider: "Vidu15",
+            provider_status: "timeout",
+            provider_message: "Prediction did not complete in allotted time",
+          });
           return;
         }
         // Download & upload to Cloudinary
@@ -961,13 +944,11 @@ router.post<
             timeout: 600000,
           });
         } catch (e) {
-          res
-            .status(500)
-            .json({
-              success: false,
-              error: "Failed to download Vidu 1.5 video",
-              details: serializeError(e),
-            });
+          res.status(500).json({
+            success: false,
+            error: "Failed to download Vidu 1.5 video",
+            details: serializeError(e),
+          });
           return;
         }
         let viduUpload: UploadApiResponse;
@@ -988,25 +969,21 @@ router.post<
             viduStream.data.pipe(uploadStream);
           });
         } catch (e) {
-          res
-            .status(500)
-            .json({
-              success: false,
-              error: "Failed to upload Vidu 1.5 video",
-              details: serializeError(e),
-            });
+          res.status(500).json({
+            success: false,
+            error: "Failed to upload Vidu 1.5 video",
+            details: serializeError(e),
+          });
           return;
         }
         await prisma.generatedVideo.create({
           data: { feature, url: viduUpload.secure_url },
         });
-        res
-          .status(200)
-          .json({
-            success: true,
-            video: { url: viduUpload.secure_url },
-            cloudinaryId: viduUpload.public_id,
-          });
+        res.status(200).json({
+          success: true,
+          video: { url: viduUpload.secure_url },
+          cloudinaryId: viduUpload.public_id,
+        });
         return;
       }
 
@@ -1016,12 +993,10 @@ router.post<
         const eachLabsKey =
           process.env.PIXVERSE_API_KEY || process.env.EACHLABS_API_KEY;
         if (!eachLabsKey) {
-          res
-            .status(500)
-            .json({
-              success: false,
-              error: "EACHLABS / PIXVERSE API key not set",
-            });
+          res.status(500).json({
+            success: false,
+            error: "EACHLABS / PIXVERSE API key not set",
+          });
           return;
         }
 
@@ -1079,24 +1054,20 @@ router.post<
           }
           predictionId = (prediction as any)?.id;
           if (!predictionId) {
-            res
-              .status(502)
-              .json({
-                success: false,
-                error: "Vidu Q1 I2V response missing prediction id",
-                details: safeJson(prediction),
-              });
+            res.status(502).json({
+              success: false,
+              error: "Vidu Q1 I2V response missing prediction id",
+              details: safeJson(prediction),
+            });
             return;
           }
         } catch (err) {
           console.error("Vidu Q1 I2V create error:", err);
-          res
-            .status(502)
-            .json({
-              success: false,
-              error: "Failed to create Vidu Q1 I2V prediction",
-              details: serializeError(err),
-            });
+          res.status(502).json({
+            success: false,
+            error: "Failed to create Vidu Q1 I2V prediction",
+            details: serializeError(err),
+          });
           return;
         }
 
@@ -1128,14 +1099,15 @@ router.post<
                   null;
               } else {
                 viduVideoUrl =
-                  result.data.video_url || result.data.video || result.data.url || null;
+                  result.data.video_url ||
+                  result.data.video ||
+                  result.data.url ||
+                  null;
               }
               break;
             } else if (lower === "failed" || lower === "error") {
               const provider_message =
-                result.data.error ||
-                result.data.message ||
-                "Unknown error";
+                result.data.error || result.data.message || "Unknown error";
               res.status(500).json({
                 success: false,
                 error: provider_message
@@ -1157,15 +1129,13 @@ router.post<
           }
         }
         if (!viduVideoUrl) {
-          res
-            .status(504)
-            .json({
-              success: false,
-              error: "Vidu Q1 I2V prediction timeout",
-              provider: "ViduQ1I2V",
-              provider_status: "timeout",
-              provider_message: "Prediction did not complete in allotted time",
-            });
+          res.status(504).json({
+            success: false,
+            error: "Vidu Q1 I2V prediction timeout",
+            provider: "ViduQ1I2V",
+            provider_status: "timeout",
+            provider_message: "Prediction did not complete in allotted time",
+          });
           return;
         }
         // Download & upload to Cloudinary
@@ -1176,13 +1146,11 @@ router.post<
             timeout: 600000,
           });
         } catch (e) {
-          res
-            .status(500)
-            .json({
-              success: false,
-              error: "Failed to download Vidu Q1 I2V video",
-              details: serializeError(e),
-            });
+          res.status(500).json({
+            success: false,
+            error: "Failed to download Vidu Q1 I2V video",
+            details: serializeError(e),
+          });
           return;
         }
         let viduUpload: UploadApiResponse;
@@ -1203,25 +1171,643 @@ router.post<
             viduStream.data.pipe(uploadStream);
           });
         } catch (e) {
-          res
-            .status(500)
-            .json({
-              success: false,
-              error: "Failed to upload Vidu Q1 I2V video",
-              details: serializeError(e),
-            });
+          res.status(500).json({
+            success: false,
+            error: "Failed to upload Vidu Q1 I2V video",
+            details: serializeError(e),
+          });
           return;
         }
         await prisma.generatedVideo.create({
           data: { feature, url: viduUpload.secure_url },
         });
-        res
-          .status(200)
-          .json({
-            success: true,
-            video: { url: viduUpload.secure_url },
-            cloudinaryId: viduUpload.public_id,
+        res.status(200).json({
+          success: true,
+          video: { url: viduUpload.secure_url },
+          cloudinaryId: viduUpload.public_id,
+        });
+        return;
+      }
+
+      // Eachlabs Vidu 2.0 Image to Video branch
+      const isVidu20Image2Video = /vidu-2\.0-image-to-video/i.test(rawModel);
+      if (isVidu20Image2Video) {
+        const eachLabsKey =
+          process.env.PIXVERSE_API_KEY || process.env.EACHLABS_API_KEY;
+        if (!eachLabsKey) {
+          res.status(500).json({
+            success: false,
+            error: "EACHLABS / PIXVERSE API key not set",
           });
+          return;
+        }
+
+        const viduVersion = process.env.VIDU_20_VERSION || "0.0.1";
+        const duration = Number(process.env.VIDU_20_DURATION || 5);
+        const aspect = process.env.VIDU_20_ASPECT_RATIO || "16:9";
+        const resolution = process.env.VIDU_20_RESOLUTION || "1080p";
+
+        const input = {
+          image_url: imageCloudUrl,
+          prompt: prompt,
+          duration: duration,
+          aspect_ratio: aspect,
+          resolution: resolution,
+        };
+
+        const createPayload = {
+          model: "vidu-2.0-image-to-video",
+          version: viduVersion,
+          input,
+          webhook_url: process.env.VIDU_20_WEBHOOK_URL || "",
+        };
+
+        let createResp: any;
+        let predictionId: string;
+        try {
+          createResp = await axios.post(
+            "https://api.eachlabs.ai/v1/predictions",
+            createPayload,
+            {
+              headers: {
+                Authorization: `Bearer ${eachLabsKey}`,
+                "Content-Type": "application/json",
+              },
+              timeout: 30000,
+            }
+          );
+          const prediction = createResp.data || {};
+          console.log("Vidu 2.0 create response:", prediction);
+          const statusStr = String(prediction.status || "").toLowerCase();
+          if (statusStr !== "success") {
+            const provider_message =
+              (prediction as any)?.message ||
+              (prediction as any)?.error ||
+              (prediction as any)?.status ||
+              "Unknown status";
+            res.status(502).json({
+              success: false,
+              error: `Vidu 2.0 creation failed: ${provider_message}`,
+              provider: "Vidu20",
+              provider_status: (prediction as any)?.status,
+              provider_message,
+              details: safeJson(prediction),
+            });
+            return;
+          }
+          predictionId = (prediction as any)?.id;
+          if (!predictionId) {
+            res.status(502).json({
+              success: false,
+              error: "Vidu 2.0 response missing prediction id",
+              details: safeJson(prediction),
+            });
+            return;
+          }
+        } catch (err) {
+          console.error("Vidu 2.0 create error:", err);
+          res.status(502).json({
+            success: false,
+            error: "Failed to create Vidu 2.0 prediction",
+            details: serializeError(err),
+          });
+          return;
+        }
+
+        // Poll
+        let viduVideoUrl: string | undefined;
+        for (let i = 0; i < 300; i++) {
+          // up to ~5 min
+          await new Promise((r) => setTimeout(r, 1000));
+          try {
+            const pollResp = await axios.get(
+              `https://api.eachlabs.ai/v1/predictions/${predictionId}`,
+              {
+                headers: { Authorization: `Bearer ${eachLabsKey}` },
+                timeout: 20000,
+              }
+            );
+            const result = pollResp.data || {};
+            const lower = String(result.status || "").toLowerCase();
+            if (lower === "success" || lower === "completed") {
+              const rawOut = result.output;
+              if (typeof rawOut === "string") {
+                viduVideoUrl = rawOut;
+              } else if (rawOut) {
+                const out: any = rawOut;
+                viduVideoUrl =
+                  out.video_url ||
+                  out.video ||
+                  (Array.isArray(out) ? out[0]?.video_url || out[0] : null) ||
+                  result.video_url ||
+                  result.video ||
+                  out.url ||
+                  result.url ||
+                  null;
+              } else {
+                viduVideoUrl =
+                  result.video_url || result.video || result.url || null;
+              }
+              break;
+            } else if (
+              ["error", "failed", "canceled", "cancelled"].includes(lower)
+            ) {
+              const provider_message =
+                (result as any)?.error ||
+                (result as any)?.message ||
+                (result as any)?.status;
+              res.status(500).json({
+                success: false,
+                error: provider_message
+                  ? `Vidu 2.0 prediction failed: ${provider_message}`
+                  : "Vidu 2.0 prediction failed",
+                provider: "Vidu20",
+                provider_status: (result as any)?.status,
+                provider_message,
+                details: safeJson(result),
+              });
+              return;
+            }
+          } catch (e) {
+            console.warn(
+              "Vidu 2.0 poll error (continuing)",
+              (e as any)?.message || e
+            );
+            continue;
+          }
+        }
+        if (!viduVideoUrl) {
+          res.status(504).json({
+            success: false,
+            error: "Vidu 2.0 prediction timeout",
+            provider: "Vidu20",
+            provider_status: "timeout",
+            provider_message: "Prediction did not complete in allotted time",
+          });
+          return;
+        }
+        // Download & upload to Cloudinary
+        let viduStream;
+        try {
+          viduStream = await axios.get(viduVideoUrl, {
+            responseType: "stream",
+            timeout: 600000,
+          });
+        } catch (e) {
+          res.status(500).json({
+            success: false,
+            error: "Failed to download Vidu 2.0 video",
+            details: serializeError(e),
+          });
+          return;
+        }
+        let viduUpload: UploadApiResponse;
+        try {
+          viduUpload = await new Promise((resolve, reject) => {
+            const uploadStream = cloudinary.uploader.upload_stream(
+              {
+                resource_type: "video",
+                folder: "generated-videos",
+                public_id: `${feature}-vidu20-${Date.now()}`,
+                chunk_size: 6000000,
+              },
+              (error, result) => {
+                if (error) return reject(error);
+                resolve(result as UploadApiResponse);
+              }
+            );
+            viduStream.data.pipe(uploadStream);
+          });
+        } catch (e) {
+          res.status(500).json({
+            success: false,
+            error: "Failed to upload Vidu 2.0 video",
+            details: serializeError(e),
+          });
+          return;
+        }
+        await prisma.generatedVideo.create({
+          data: { feature, url: viduUpload.secure_url },
+        });
+        res.status(200).json({
+          success: true,
+          video: { url: viduUpload.secure_url },
+          cloudinaryId: viduUpload.public_id,
+        });
+        return;
+      }
+
+      // Eachlabs Veo 2 Image to Video branch
+      const isVeo2Image2Video = /veo-2-image-to-video/i.test(rawModel);
+      if (isVeo2Image2Video) {
+        const eachLabsKey = process.env.EACHLABS_API_KEY;
+        if (!eachLabsKey) {
+          res.status(500).json({
+            success: false,
+            error: "EACHLABS API key not set",
+          });
+          return;
+        }
+
+        const veoVersion = process.env.VEO_2_VERSION || "0.0.1";
+        const duration = Number(process.env.VEO_2_DURATION || 5);
+        const aspect = process.env.VEO_2_ASPECT_RATIO || "auto";
+        const resolution = process.env.VEO_2_RESOLUTION || "720p";
+
+        const input = {
+          image_url: imageCloudUrl,
+          prompt: prompt,
+          duration: duration,
+          aspect_ratio: aspect,
+          resolution: resolution,
+        };
+
+        const createPayload = {
+          model: "veo-2-image-to-video",
+          version: veoVersion,
+          input,
+          webhook_url: process.env.VEO_2_WEBHOOK_URL || "",
+        };
+
+        let createResp: any;
+        let predictionId: string;
+        try {
+          createResp = await axios.post(
+            "https://api.eachlabs.ai/v1/prediction/",
+            createPayload,
+            {
+              headers: {
+                "X-API-Key": eachLabsKey,
+                "Content-Type": "application/json",
+              },
+              timeout: 30000,
+            }
+          );
+          const prediction = createResp.data || {};
+          console.log("Veo 2 Image to Video create response:", prediction);
+          const statusStr = String(prediction.status || "").toLowerCase();
+          if (statusStr !== "success") {
+            const provider_message =
+              (prediction as any)?.message ||
+              (prediction as any)?.error ||
+              (prediction as any)?.status ||
+              "Unknown status";
+            res.status(502).json({
+              success: false,
+              error: `Veo 2 Image to Video creation failed: ${provider_message}`,
+              provider: "Veo2Image2Video",
+              provider_status: (prediction as any)?.status,
+              provider_message,
+              details: safeJson(prediction),
+            });
+            return;
+          }
+          predictionId = (prediction as any)?.id;
+          if (!predictionId) {
+            res.status(502).json({
+              success: false,
+              error: "Veo 2 Image to Video response missing prediction id",
+              details: safeJson(prediction),
+            });
+            return;
+          }
+        } catch (err) {
+          console.error("Veo 2 Image to Video create error:", err);
+          res.status(502).json({
+            success: false,
+            error: "Failed to create Veo 2 Image to Video prediction",
+            details: serializeError(err),
+          });
+          return;
+        }
+
+        // Poll
+        let veoVideoUrl: string | undefined;
+        for (let i = 0; i < 300; i++) {
+          // up to ~5 min
+          await new Promise((r) => setTimeout(r, 1000));
+          try {
+            const pollResp = await axios.get(
+              `https://api.eachlabs.ai/v1/predictions/${predictionId}`,
+              {
+                headers: { Authorization: `Bearer ${eachLabsKey}` },
+                timeout: 20000,
+              }
+            );
+            const result = pollResp.data || {};
+            const lower = String(result.status || "").toLowerCase();
+            if (lower === "success" || lower === "completed") {
+              const rawOut = result.output;
+              if (typeof rawOut === "string") {
+                veoVideoUrl = rawOut;
+              } else if (rawOut) {
+                const out: any = rawOut;
+                veoVideoUrl =
+                  out.video_url ||
+                  out.video ||
+                  (Array.isArray(out) ? out[0]?.video_url || out[0] : null) ||
+                  result.video_url ||
+                  result.video ||
+                  out.url ||
+                  result.url ||
+                  null;
+              } else {
+                veoVideoUrl =
+                  result.video_url || result.video || result.url || null;
+              }
+              break;
+            } else if (
+              ["error", "failed", "canceled", "cancelled"].includes(lower)
+            ) {
+              const provider_message =
+                (result as any)?.error ||
+                (result as any)?.message ||
+                (result as any)?.status;
+              res.status(500).json({
+                success: false,
+                error: provider_message
+                  ? `Veo 2 Image to Video prediction failed: ${provider_message}`
+                  : "Veo 2 Image to Video prediction failed",
+                provider: "Veo2Image2Video",
+                provider_status: (result as any)?.status,
+                provider_message,
+                details: safeJson(result),
+              });
+              return;
+            }
+          } catch (e) {
+            console.warn(
+              "Veo 2 Image to Video poll error (continuing)",
+              (e as any)?.message || e
+            );
+            continue;
+          }
+        }
+        if (!veoVideoUrl) {
+          res.status(504).json({
+            success: false,
+            error: "Veo 2 Image to Video prediction timeout",
+            provider: "Veo2Image2Video",
+            provider_status: "timeout",
+            provider_message: "Prediction did not complete in allotted time",
+          });
+          return;
+        }
+        // Download & upload to Cloudinary
+        let veoStream;
+        try {
+          veoStream = await axios.get(veoVideoUrl, {
+            responseType: "stream",
+            timeout: 600000,
+          });
+        } catch (e) {
+          res.status(500).json({
+            success: false,
+            error: "Failed to download Veo 2 Image to Video video",
+            details: serializeError(e),
+          });
+          return;
+        }
+        let veoUpload: UploadApiResponse;
+        try {
+          veoUpload = await new Promise((resolve, reject) => {
+            const uploadStream = cloudinary.uploader.upload_stream(
+              {
+                resource_type: "video",
+                folder: "generated-videos",
+                public_id: `${feature}-veo2i2v-${Date.now()}`,
+                chunk_size: 6000000,
+              },
+              (error, result) => {
+                if (error) return reject(error);
+                resolve(result as UploadApiResponse);
+              }
+            );
+            veoStream.data.pipe(uploadStream);
+          });
+        } catch (e) {
+          res.status(500).json({
+            success: false,
+            error: "Failed to upload Veo 2 Image to Video video",
+            details: serializeError(e),
+          });
+          return;
+        }
+        await prisma.generatedVideo.create({
+          data: { feature, url: veoUpload.secure_url },
+        });
+        res.status(200).json({
+          success: true,
+          video: { url: veoUpload.secure_url },
+          cloudinaryId: veoUpload.public_id,
+        });
+        return;
+      }
+
+      // Eachlabs Veo 3 Image to Video branch
+      const isVeo3Image2Video = /veo-3-image-to-video/i.test(rawModel);
+      if (isVeo3Image2Video) {
+        const eachLabsKey = process.env.EACHLABS_API_KEY;
+        if (!eachLabsKey) {
+          res.status(500).json({
+            success: false,
+            error: "EACHLABS API key not set",
+          });
+          return;
+        }
+
+        const veoVersion = process.env.VEO_3_VERSION || "0.0.1";
+        const duration = Number(process.env.VEO_3_DURATION || 5);
+        const aspect = process.env.VEO_3_ASPECT_RATIO || "16:9";
+        const resolution = process.env.VEO_3_RESOLUTION || "1080p";
+
+        const input = {
+          image_url: imageCloudUrl,
+          prompt: prompt,
+          duration: duration,
+          aspect_ratio: aspect,
+          resolution: resolution,
+        };
+
+        const createPayload = {
+          model: "veo-3-image-to-video",
+          version: veoVersion,
+          input,
+          webhook_url: process.env.VEO_3_WEBHOOK_URL || "",
+        };
+
+        let createResp: any;
+        let predictionId: string;
+        try {
+          createResp = await axios.post(
+            "https://api.eachlabs.ai/v1/predictions",
+            createPayload,
+            {
+              headers: {
+                Authorization: `Bearer ${eachLabsKey}`,
+                "Content-Type": "application/json",
+              },
+              timeout: 30000,
+            }
+          );
+          const prediction = createResp.data || {};
+          console.log("Veo 3 Image to Video create response:", prediction);
+          const statusStr = String(prediction.status || "").toLowerCase();
+          if (statusStr !== "success") {
+            const provider_message =
+              (prediction as any)?.message ||
+              (prediction as any)?.error ||
+              (prediction as any)?.status ||
+              "Unknown status";
+            res.status(502).json({
+              success: false,
+              error: `Veo 3 Image to Video creation failed: ${provider_message}`,
+              provider: "Veo3Image2Video",
+              provider_status: (prediction as any)?.status,
+              provider_message,
+              details: safeJson(prediction),
+            });
+            return;
+          }
+          predictionId = (prediction as any)?.id;
+          if (!predictionId) {
+            res.status(502).json({
+              success: false,
+              error: "Veo 3 Image to Video response missing prediction id",
+              details: safeJson(prediction),
+            });
+            return;
+          }
+        } catch (err) {
+          console.error("Veo 3 Image to Video create error:", err);
+          res.status(502).json({
+            success: false,
+            error: "Failed to create Veo 3 Image to Video prediction",
+            details: serializeError(err),
+          });
+          return;
+        }
+
+        // Poll
+        let veoVideoUrl: string | undefined;
+        for (let i = 0; i < 300; i++) {
+          // up to ~5 min
+          await new Promise((r) => setTimeout(r, 1000));
+          try {
+            const pollResp = await axios.get(
+              `https://api.eachlabs.ai/v1/predictions/${predictionId}`,
+              {
+                headers: { Authorization: `Bearer ${eachLabsKey}` },
+                timeout: 20000,
+              }
+            );
+            const result = pollResp.data || {};
+            const lower = String(result.status || "").toLowerCase();
+            if (lower === "success" || lower === "completed") {
+              const rawOut = result.output;
+              if (typeof rawOut === "string") {
+                veoVideoUrl = rawOut;
+              } else if (rawOut) {
+                const out: any = rawOut;
+                veoVideoUrl =
+                  out.video_url ||
+                  out.video ||
+                  (Array.isArray(out) ? out[0]?.video_url || out[0] : null) ||
+                  result.video_url ||
+                  result.video ||
+                  out.url ||
+                  result.url ||
+                  null;
+              } else {
+                veoVideoUrl =
+                  result.video_url || result.video || result.url || null;
+              }
+              break;
+            } else if (
+              ["error", "failed", "canceled", "cancelled"].includes(lower)
+            ) {
+              const provider_message =
+                (result as any)?.error ||
+                (result as any)?.message ||
+                (result as any)?.status;
+              res.status(500).json({
+                success: false,
+                error: provider_message
+                  ? `Veo 3 Image to Video prediction failed: ${provider_message}`
+                  : "Veo 3 Image to Video prediction failed",
+                provider: "Veo3Image2Video",
+                provider_status: (result as any)?.status,
+                provider_message,
+                details: safeJson(result),
+              });
+              return;
+            }
+          } catch (e) {
+            console.warn(
+              "Veo 3 Image to Video poll error (continuing)",
+              (e as any)?.message || e
+            );
+            continue;
+          }
+        }
+        if (!veoVideoUrl) {
+          res.status(504).json({
+            success: false,
+            error: "Veo 3 Image to Video prediction timeout",
+            provider: "Veo3Image2Video",
+            provider_status: "timeout",
+            provider_message: "Prediction did not complete in allotted time",
+          });
+          return;
+        }
+        // Download & upload to Cloudinary
+        let veoStream;
+        try {
+          veoStream = await axios.get(veoVideoUrl, {
+            responseType: "stream",
+            timeout: 600000,
+          });
+        } catch (e) {
+          res.status(500).json({
+            success: false,
+            error: "Failed to download Veo 3 Image to Video video",
+            details: serializeError(e),
+          });
+          return;
+        }
+        let veoUpload: UploadApiResponse;
+        try {
+          veoUpload = await new Promise((resolve, reject) => {
+            const uploadStream = cloudinary.uploader.upload_stream(
+              {
+                resource_type: "video",
+                folder: "generated-videos",
+                public_id: `${feature}-veo3i2v-${Date.now()}`,
+                chunk_size: 6000000,
+              },
+              (error, result) => {
+                if (error) return reject(error);
+                resolve(result as UploadApiResponse);
+              }
+            );
+            veoStream.data.pipe(uploadStream);
+          });
+        } catch (e) {
+          res.status(500).json({
+            success: false,
+            error: "Failed to upload Veo 3 Image to Video video",
+            details: serializeError(e),
+          });
+          return;
+        }
+        await prisma.generatedVideo.create({
+          data: { feature, url: veoUpload.secure_url },
+        });
+        res.status(200).json({
+          success: true,
+          video: { url: veoUpload.secure_url },
+          cloudinaryId: veoUpload.public_id,
+        });
         return;
       }
 

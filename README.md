@@ -65,6 +65,18 @@ VIDU_Q1_RESOLUTION=1080p
 VIDU_Q1_MOVEMENT_AMPLITUDE=auto # auto|low|high (if supported)
 VIDU_Q1_BGM=false               # background music generation toggle
 VIDU_Q1_WEBHOOK_URL=https://your.domain/webhooks/vidu
+# Optional Vidu 2.0 (Eachlabs) tuning (uses same PIXVERSE_API_KEY/EACHLABS key)
+VIDU_20_VERSION=0.0.1
+VIDU_20_DURATION=5              # seconds
+VIDU_20_ASPECT_RATIO=16:9
+VIDU_20_RESOLUTION=1080p
+VIDU_20_WEBHOOK_URL=https://your.domain/webhooks/vidu2
+# Optional Google Veo 2 (Eachlabs) tuning (uses same PIXVERSE_API_KEY/EACHLABS key)
+VEO_2_VERSION=0.0.1
+VEO_2_DURATION=5                # seconds
+VEO_2_ASPECT_RATIO=16:9
+VEO_2_RESOLUTION=1080p
+VEO_2_WEBHOOK_URL=https://your.domain/webhooks/veo2
 ```
 
 ---
