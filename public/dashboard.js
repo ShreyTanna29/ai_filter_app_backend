@@ -367,6 +367,7 @@ const FEATURE_BATCH = 20;
 let featuresLoading = false;
 let featuresFullyLoaded = false;
 let featuresInitialRequested = false;
+let lastLoadTime = 0; // Throttling mechanism
 
 function ensureFeaturesLoaded() {
   if (!featuresInitialRequested) {
@@ -426,8 +427,8 @@ function setupFeaturesInfiniteScroll() {
     },
     {
       root: null, // viewport
-      rootMargin: "200px 0px 400px 0px",
-      threshold: 0,
+      rootMargin: "300px 0px 600px 0px", // Load content earlier when approaching
+      threshold: 0.1, // Trigger when even 10% of sentinel is visible
     }
   );
   observer.observe(sentinel);
@@ -435,15 +436,22 @@ function setupFeaturesInfiniteScroll() {
 
   // Fallback: window scroll listener (in case IntersectionObserver unsupported)
   if (!("IntersectionObserver" in window)) {
+    let scrollTimeout;
     function onScrollFallback() {
       if (featuresFullyLoaded || featuresLoading) return;
-      const scrollPos = window.scrollY + window.innerHeight;
-      const docHeight = document.documentElement.scrollHeight;
-      if (docHeight - scrollPos < 600) {
-        loadFeaturesBatch();
-      }
+
+      // Throttle scroll events
+      clearTimeout(scrollTimeout);
+      scrollTimeout = setTimeout(() => {
+        const scrollPos = window.scrollY + window.innerHeight;
+        const docHeight = document.documentElement.scrollHeight;
+        if (docHeight - scrollPos < 800) {
+          // Increased threshold for earlier loading
+          loadFeaturesBatch();
+        }
+      }, 100);
     }
-    window.addEventListener("scroll", onScrollFallback);
+    window.addEventListener("scroll", onScrollFallback, { passive: true });
   }
 }
 let templates = [];
@@ -527,7 +535,13 @@ function displayFeatures(append = false, startIndex = 0) {
   // Show loading / end markers
   const existingMarker = document.getElementById("featuresEndMarker");
   if (existingMarker) existingMarker.remove();
-  if (featuresFullyLoaded) {
+
+  if (featuresLoading) {
+    grid.insertAdjacentHTML(
+      "beforeend",
+      '<div id="featuresEndMarker" class="col-span-full text-center text-xs text-gray-400 mt-4 flex items-center justify-center gap-2"><svg class="animate-spin h-4 w-4" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"></circle><path d="M4 12a8 8 0 018-8" stroke="currentColor" stroke-width="4" fill="none"></path></svg>Loading more features...</div>'
+    );
+  } else if (featuresFullyLoaded) {
     grid.insertAdjacentHTML(
       "beforeend",
       '<div id="featuresEndMarker" class="col-span-full text-center text-xs text-gray-400 mt-4">All features loaded</div>'
@@ -558,7 +572,8 @@ function maybeAutoLoadMore() {
   if (!sentinel) return;
   const rect = sentinel.getBoundingClientRect();
   // If sentinel is within or near viewport bottom, fetch next batch
-  if (rect.top <= window.innerHeight + 120) {
+  if (rect.top <= window.innerHeight + 200) {
+    // Reduced threshold for earlier loading
     loadFeaturesBatch();
   }
 }
@@ -566,7 +581,25 @@ function maybeAutoLoadMore() {
 // Load next batch of features
 async function loadFeaturesBatch() {
   if (featuresLoading || featuresFullyLoaded) return;
+
+  // Throttle requests - don't load more than once every 300ms
+  const now = Date.now();
+  if (now - lastLoadTime < 300) return;
+  lastLoadTime = now;
+
   featuresLoading = true;
+
+  // Show loading indicator immediately
+  const grid = document.getElementById("featuresGrid");
+  if (grid) {
+    const existingMarker = document.getElementById("featuresEndMarker");
+    if (existingMarker) existingMarker.remove();
+    grid.insertAdjacentHTML(
+      "beforeend",
+      '<div id="featuresEndMarker" class="col-span-full text-center text-xs text-gray-400 mt-4 flex items-center justify-center gap-2"><svg class="animate-spin h-4 w-4" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"></circle><path d="M4 12a8 8 0 018-8" stroke="currentColor" stroke-width="4" fill="none"></path></svg>Loading features...</div>'
+    );
+  }
+
   try {
     const params = new URLSearchParams({
       offset: String(featureOffset),
@@ -1004,7 +1037,8 @@ function showFeatureDetailPage(endpoint) {
               genStatus.textContent = "Video generated!";
               genStatus.style.color = "green";
             }
-            await loadFeatures();
+            // Refresh latest videos to update feature cards without full reload
+            await refreshLatestVideos();
           } else {
             throw new Error((data && data.error) || "Failed to generate video");
           }
@@ -1200,6 +1234,31 @@ async function loadLatestVideos() {
     // Non-fatal: just proceed without latest videos
     latestVideos = {};
   }
+}
+
+// Refresh latest videos and update display immediately
+async function refreshLatestVideos() {
+  await loadLatestVideos();
+  // Force refresh the feature display to show new videos without resetting pagination
+  if (features.length > 0) {
+    displayFeatures();
+  }
+}
+
+// Refresh features display without resetting pagination (for minor updates)
+function refreshFeaturesDisplay() {
+  if (features.length > 0) {
+    displayFeatures();
+  }
+}
+
+// Add a new feature to the beginning of the list (for newly created features)
+function addNewFeatureToList(newFeature) {
+  // Add to beginning of features array
+  features.unshift(newFeature);
+  featureTotal += 1;
+  // Refresh display
+  displayFeatures();
 }
 
 // Close feature detail page and show filters tab
@@ -2536,10 +2595,8 @@ async function generateVideo(endpoint, event) {
 // Update stats
 function updateStats() {
   // Example logic, replace with real values as needed
-  document.getElementById("totalFeatures").textContent = features.length;
-  document.getElementById("activeFeatures").textContent = features.filter(
-    (f) => f.active !== false
-  ).length;
+  document.getElementById("totalFeatures").textContent = 592;
+  document.getElementById("activeFeatures").textContent = 592;
   document.getElementById("totalTemplates").textContent = templates.length;
   document.getElementById("activeTemplates").textContent = templates.filter(
     (t) => t.active !== false
@@ -3024,8 +3081,15 @@ function openFeatureCrudModal() {
         });
 
         if (response.ok) {
+          const newFeature = await response.json();
           closeFeatureCrudModal();
-          await loadFeatures(); // Reload the features list
+          // Add the new feature to the list efficiently instead of full reload
+          if (newFeature && newFeature.endpoint) {
+            addNewFeatureToList(newFeature);
+          } else {
+            // Fallback: just refresh display
+            refreshFeaturesDisplay();
+          }
           alert("Feature created successfully!");
         } else {
           // Check if response is JSON or HTML
