@@ -318,7 +318,7 @@ window.switchTab = function (tabName) {
 };
 
 // Dashboard initialization function
-function initializeDashboard() {
+async function initializeDashboard() {
   console.log("initializeDashboard called");
 
   // Show dashboard UI
@@ -342,154 +342,140 @@ function initializeDashboard() {
     console.log("User email displayed:", storedEmail);
   }
 
-  console.log(
-    "Loading initial data (templates, endpoints, and features for dashboard stats)"
-  );
-  // Load initial data including features for dashboard counts
-  loadTemplates();
-  loadFeatureGraphics();
-  loadLatestVideos();
-  loadAvailableEndpoints();
+  console.log("Starting data loading sequence...");
 
-  // Load features for dashboard stats
-  ensureFeaturesLoaded();
+  try {
+    // Load templates and endpoints (non-blocking)
+    loadTemplates();
+    loadAvailableEndpoints();
 
-  // Update stats with initial values
-  updateStats();
+    // Load graphics first, then features to ensure videos are available when features display
+    console.log("Loading feature graphics...");
+    await loadFeatureGraphics(); // This now loads both graphics and latest videos
+    console.log("Feature graphics loaded, now loading features...");
 
-  console.log("Dashboard initialization complete");
+    // Load features for dashboard stats
+    await ensureFeaturesLoaded();
+    console.log("Features loaded and displayed");
+
+    // Update stats with initial values
+    updateStats();
+
+    console.log("Dashboard initialization complete");
+  } catch (error) {
+    console.error("Error during dashboard initialization:", error);
+  }
 }
 
 let features = [];
-let featureTotal = 0;
-let featureOffset = 0;
-const FEATURE_BATCH = 20;
 let featuresLoading = false;
-let featuresFullyLoaded = false;
 let featuresInitialRequested = false;
-let lastLoadTime = 0; // Throttling mechanism
 
-function ensureFeaturesLoaded() {
+async function ensureFeaturesLoaded() {
   if (!featuresInitialRequested) {
     featuresInitialRequested = true;
-    resetAndLoadFirstFeaturesBatch();
-    setupFeaturesInfiniteScroll();
+    await loadAllFeatures();
   }
 }
 
-function resetAndLoadFirstFeaturesBatch() {
-  features = [];
-  featureOffset = 0;
-  featureTotal = 0;
-  featuresFullyLoaded = false;
+// Load all features at once
+async function loadAllFeatures() {
+  if (featuresLoading) return;
+
+  featuresLoading = true;
   const grid = document.getElementById("featuresGrid");
-  if (grid)
+
+  // Show loading indicator
+  if (grid) {
     grid.innerHTML =
-      '<div class="col-span-full text-sm text-gray-500">Loading features...</div>';
-  // Ensure sentinel exists (used for IntersectionObserver based infinite scroll)
-  let sentinel = document.getElementById("featuresScrollSentinel");
-  if (!sentinel && grid) {
-    sentinel = document.createElement("div");
-    sentinel.id = "featuresScrollSentinel";
-    sentinel.className = "col-span-full h-2"; // small target
-    grid.appendChild(sentinel);
+      '<div class="col-span-full text-sm text-gray-500">Loading all features...</div>';
   }
-  loadFeaturesBatch();
-}
 
-function setupFeaturesInfiniteScroll() {
-  // Prefer IntersectionObserver for robustness across different layout heights
-  const grid = document.getElementById("featuresGrid");
-  if (!grid) return;
-  let sentinel = document.getElementById("featuresScrollSentinel");
-  if (!sentinel) {
-    sentinel = document.createElement("div");
-    sentinel.id = "featuresScrollSentinel";
-    sentinel.className = "col-span-full h-2";
-    grid.appendChild(sentinel);
-  }
-  // Disconnect previous observer if reinitialising
-  if (
-    window._featuresObserver &&
-    typeof window._featuresObserver.disconnect === "function"
-  ) {
-    window._featuresObserver.disconnect();
-  }
-  const observer = new IntersectionObserver(
-    (entries) => {
-      entries.forEach((entry) => {
-        if (entry.isIntersecting) {
-          if (!featuresLoading && !featuresFullyLoaded) {
-            loadFeaturesBatch();
-          }
-        }
+  try {
+    const searchEl = document.getElementById("featureSearch");
+    const params = new URLSearchParams();
+
+    if (searchEl && searchEl.value.trim()) {
+      params.set("q", searchEl.value.trim());
+    }
+
+    // Fetch all features without pagination
+    const response = await fetch(`/api/features/all?${params.toString()}`);
+
+    // If the endpoint doesn't exist, fallback to regular endpoint with high limit
+    if (!response.ok && response.status === 404) {
+      const fallbackParams = new URLSearchParams({
+        offset: "0",
+        limit: "10000", // Very high limit to get all features
       });
-    },
-    {
-      root: null, // viewport
-      rootMargin: "300px 0px 600px 0px", // Load content earlier when approaching
-      threshold: 0.1, // Trigger when even 10% of sentinel is visible
+      if (searchEl && searchEl.value.trim()) {
+        fallbackParams.set("q", searchEl.value.trim());
+      }
+      const fallbackResponse = await fetch(
+        `/api/features?${fallbackParams.toString()}`
+      );
+      const fallbackData = await fallbackResponse.json();
+      if (!fallbackResponse.ok)
+        throw new Error(fallbackData.message || "Failed");
+      features = fallbackData.items || [];
+    } else {
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || "Failed");
+      features = Array.isArray(data) ? data : data.items || [];
     }
-  );
-  observer.observe(sentinel);
-  window._featuresObserver = observer;
 
-  // Fallback: window scroll listener (in case IntersectionObserver unsupported)
-  if (!("IntersectionObserver" in window)) {
-    let scrollTimeout;
-    function onScrollFallback() {
-      if (featuresFullyLoaded || featuresLoading) return;
-
-      // Throttle scroll events
-      clearTimeout(scrollTimeout);
-      scrollTimeout = setTimeout(() => {
-        const scrollPos = window.scrollY + window.innerHeight;
-        const docHeight = document.documentElement.scrollHeight;
-        if (docHeight - scrollPos < 800) {
-          // Increased threshold for earlier loading
-          loadFeaturesBatch();
-        }
-      }, 100);
+    if (features.length === 0) {
+      if (grid) {
+        grid.innerHTML =
+          '<div class="text-sm text-gray-500">No features found.</div>';
+      }
+      return;
     }
-    window.addEventListener("scroll", onScrollFallback, { passive: true });
+
+    // Check if graphics are loaded, if not wait for them
+    const graphicsCount = Object.keys(featureGraphics).length;
+    const videosCount = Object.keys(latestVideos).length;
+    console.log(
+      `Before displaying: ${graphicsCount} graphics, ${videosCount} videos loaded`
+    );
+
+    if (graphicsCount === 0 && videosCount === 0) {
+      console.log("Graphics not loaded yet, loading them now...");
+      await loadFeatureGraphics();
+    }
+
+    displayFeatures();
+    updateStats();
+  } catch (e) {
+    console.error("Error loading features", e);
+    if (grid) {
+      grid.innerHTML =
+        '<div class="text-sm text-red-500">Error loading features. Please try again.</div>';
+    }
+  } finally {
+    featuresLoading = false;
   }
 }
+
 let templates = [];
 let availableEndpoints = [];
 let featureGraphics = {};
 let latestVideos = {};
 
-// Ensure (or recreate) the sentinel element used for infinite scroll
-function ensureFeaturesSentinel() {
-  const grid = document.getElementById("featuresGrid");
-  if (!grid || featuresFullyLoaded) return null;
-  let sentinel = document.getElementById("featuresScrollSentinel");
-  if (!sentinel) {
-    sentinel = document.createElement("div");
-    sentinel.id = "featuresScrollSentinel";
-    sentinel.className = "col-span-full h-1"; // tiny target at bottom
-    grid.appendChild(sentinel);
-  } else if (sentinel.parentElement !== grid) {
-    grid.appendChild(sentinel); // move to bottom if displaced
-  } else {
-    // already present at bottom — ensure it's last child
-    if (grid.lastElementChild !== sentinel) grid.appendChild(sentinel);
-  }
-  // (Re)observe with existing observer if available
-  if (
-    window._featuresObserver &&
-    typeof window._featuresObserver.observe === "function"
-  ) {
-    try {
-      window._featuresObserver.observe(sentinel);
-    } catch (_) {}
-  }
-  return sentinel;
-}
-
 // Display features
-function displayFeatures(append = false, startIndex = 0) {
+function displayFeatures() {
   const grid = document.getElementById("featuresGrid");
+
+  // Debug info
+  const graphicsCount = Object.keys(featureGraphics).length;
+  const videosCount = Object.keys(latestVideos).length;
+  console.log(
+    `displayFeatures: ${graphicsCount} graphics, ${videosCount} videos available`
+  );
+  if (graphicsCount > 0) {
+    console.log("Sample graphics:", Object.keys(featureGraphics).slice(0, 3));
+  }
+
   const searchTerm = document
     .getElementById("featureSearch")
     .value.toLowerCase();
@@ -498,27 +484,31 @@ function displayFeatures(append = false, startIndex = 0) {
       feature.endpoint.toLowerCase().includes(searchTerm) ||
       feature.prompt.toLowerCase().includes(searchTerm)
   );
-  // When appending, only render the slice of new items to avoid duplicating earlier ones
-  const sourceList = append
-    ? filteredFeatures.slice(startIndex)
-    : filteredFeatures;
-  if (append && sourceList.length === 0) return; // nothing new to add
-  const cardsHtml = sourceList
+
+  const cardsHtml = filteredFeatures
     .map((feature) => {
-      // Priority: 1. Manual feature graphics, 2. Latest generated video, 3. Fallback URL
+      // Priority: 1. Manual feature graphics, 2. Latest generated video, 3. No video
       const videoUrl =
-        featureGraphics[feature.endpoint] ||
-        latestVideos[feature.endpoint] ||
-        `https://res.cloudinary.com/do60wtwwc/video/upload/v1754319544/generated-videos/generated-videos/${feature.endpoint}.mp4#t=0.5`;
+        featureGraphics[feature.endpoint] || latestVideos[feature.endpoint];
+
+      const videoHtml = videoUrl
+        ? `<div class="video-preview">
+             <video controls preload="metadata" style="width: 100%;">
+               <source src="${videoUrl}" type="video/mp4">
+               Your browser does not support the video tag.
+             </video>
+           </div>`
+        : `<div class="video-preview">
+             <div class="bg-gray-100 rounded-lg p-8 text-center text-gray-500">
+               <i class="fas fa-video text-3xl mb-2"></i>
+               <div>No video generated yet</div>
+             </div>
+           </div>`;
+
       return `
         <div class="feature-card bg-white rounded-lg shadow p-4 flex flex-col gap-2 cursor-pointer" data-endpoint="${feature.endpoint}">
           <div class="feature-name font-semibold text-lg mb-2">${feature.endpoint}</div>
-          <div class="video-preview">
-            <video controls preload="metadata" style="width: 100%;">
-              <source src="${videoUrl}" type="video/mp4">
-              Your browser does not support the video tag.
-            </video>
-          </div>
+          ${videoHtml}
           <div class="text-gray-600 text-sm mt-1"></div>
           <div class="mt-2">
             <button class="view-feature-details px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700">View details</button>
@@ -527,32 +517,9 @@ function displayFeatures(append = false, startIndex = 0) {
           `;
     })
     .join("");
-  if (!append) {
-    grid.innerHTML = cardsHtml; // this removes previous sentinel
-  } else {
-    grid.insertAdjacentHTML("beforeend", cardsHtml);
-  }
-  // Show loading / end markers
-  const existingMarker = document.getElementById("featuresEndMarker");
-  if (existingMarker) existingMarker.remove();
 
-  if (featuresLoading) {
-    grid.insertAdjacentHTML(
-      "beforeend",
-      '<div id="featuresEndMarker" class="col-span-full text-center text-xs text-gray-400 mt-4 flex items-center justify-center gap-2"><svg class="animate-spin h-4 w-4" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"></circle><path d="M4 12a8 8 0 018-8" stroke="currentColor" stroke-width="4" fill="none"></path></svg>Loading more features...</div>'
-    );
-  } else if (featuresFullyLoaded) {
-    grid.insertAdjacentHTML(
-      "beforeend",
-      '<div id="featuresEndMarker" class="col-span-full text-center text-xs text-gray-400 mt-4">All features loaded</div>'
-    );
-  } else if (features.length < featureTotal) {
-    grid.insertAdjacentHTML(
-      "beforeend",
-      '<div id="featuresEndMarker" class="col-span-full text-center text-xs text-gray-400 mt-4">Scroll to load more...</div>'
-    );
-  }
-  ensureFeaturesSentinel();
+  grid.innerHTML = cardsHtml;
+
   grid.addEventListener("click", (e) => {
     const btn = e.target.closest(".view-feature-details");
     if (btn) {
@@ -565,113 +532,19 @@ function displayFeatures(append = false, startIndex = 0) {
   });
 }
 
-// Attempt to auto-load more if the page is still short or sentinel still within viewport
-function maybeAutoLoadMore() {
-  if (featuresLoading || featuresFullyLoaded) return;
-  const sentinel = document.getElementById("featuresScrollSentinel");
-  if (!sentinel) return;
-  const rect = sentinel.getBoundingClientRect();
-  // If sentinel is within or near viewport bottom, fetch next batch
-  if (rect.top <= window.innerHeight + 200) {
-    // Reduced threshold for earlier loading
-    loadFeaturesBatch();
-  }
-}
-
-// Load next batch of features
-async function loadFeaturesBatch() {
-  if (featuresLoading || featuresFullyLoaded) return;
-
-  // Throttle requests - don't load more than once every 300ms
-  const now = Date.now();
-  if (now - lastLoadTime < 300) return;
-  lastLoadTime = now;
-
-  featuresLoading = true;
-
-  // Show loading indicator immediately
-  const grid = document.getElementById("featuresGrid");
-  if (grid) {
-    const existingMarker = document.getElementById("featuresEndMarker");
-    if (existingMarker) existingMarker.remove();
-    grid.insertAdjacentHTML(
-      "beforeend",
-      '<div id="featuresEndMarker" class="col-span-full text-center text-xs text-gray-400 mt-4 flex items-center justify-center gap-2"><svg class="animate-spin h-4 w-4" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"></circle><path d="M4 12a8 8 0 018-8" stroke="currentColor" stroke-width="4" fill="none"></path></svg>Loading features...</div>'
-    );
-  }
-
-  try {
-    const params = new URLSearchParams({
-      offset: String(featureOffset),
-      limit: String(FEATURE_BATCH),
-    });
-    const searchEl = document.getElementById("featureSearch");
-    if (searchEl && searchEl.value.trim()) {
-      params.set("q", searchEl.value.trim());
-    }
-    const response = await fetch(`/api/features?${params.toString()}`);
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.message || "Failed");
-    const {
-      items = [],
-      total = 0,
-      offset = featureOffset,
-      limit = FEATURE_BATCH,
-    } = data;
-    featureTotal = total;
-    if (items.length === 0 && features.length === 0) {
-      const grid = document.getElementById("featuresGrid");
-      if (grid)
-        grid.innerHTML =
-          '<div class="text-sm text-gray-500">No features.</div>';
-      featuresFullyLoaded = true;
-      return;
-    }
-    const prevLength = features.length;
-    // Append new unique endpoints only (defensive dedupe)
-    const existing = new Set(features.map((f) => f.endpoint));
-    const uniqueNew = items.filter((f) => !existing.has(f.endpoint));
-    features = features.concat(uniqueNew);
-    featureOffset = offset + items.length; // advance by items length from server to keep paging consistent
-    if (featureOffset >= featureTotal) featuresFullyLoaded = true;
-    if (prevLength === 0) displayFeatures(false);
-    else displayFeatures(true, prevLength);
-    // After rendering, ensure sentinel exists and maybe trigger another load if page still short
-    setTimeout(() => {
-      ensureFeaturesSentinel();
-      maybeAutoLoadMore();
-    }, 0);
-    updateStats();
-  } catch (e) {
-    console.error("Error loading feature batch", e);
-  } finally {
-    featuresLoading = false;
-  }
-}
-
 // Full reload convenience used by legacy calls
 async function loadFeatures() {
-  // Reset pagination state then fetch first batch
-  featureOffset = 0;
-  featuresFullyLoaded = false;
-  featuresLoading = false;
   features = [];
-  const grid = document.getElementById("featuresGrid");
-  if (grid) grid.innerHTML = ""; // clear grid so displayFeatures can rebuild
-  await loadFeaturesBatch();
+  await loadAllFeatures();
 }
 
-// Search handling – restart paging
+// Search handling
 const featureSearchInput = document.getElementById("featureSearch");
 if (featureSearchInput) {
   featureSearchInput.addEventListener("input", () => {
     if (!featuresInitialRequested) return; // don't auto-load if tab never opened
-    // For server-side filtering we re-fetch from offset 0
-    features = [];
-    featureOffset = 0;
-    featureTotal = 0;
-    featuresFullyLoaded = false;
-    loadFeaturesBatch();
+    // For client-side filtering we just re-display
+    displayFeatures();
   });
 }
 
@@ -753,12 +626,17 @@ function showFeatureDetailPage(endpoint) {
     if (titleEl) titleEl.textContent = feature.endpoint;
     if (promptEl) promptEl.textContent = feature.prompt || "";
     const videoUrl =
-      featureGraphics[feature.endpoint] ||
-      latestVideos[feature.endpoint] ||
-      `https://res.cloudinary.com/do60wtwwc/video/upload/v1754319544/generated-videos/generated-videos/${feature.endpoint}.mp4#t=0.5`;
+      featureGraphics[feature.endpoint] || latestVideos[feature.endpoint];
     const videoEl = document.getElementById("featureDetailVideo");
     console.log("Video element:", videoEl, "Video URL:", videoUrl);
-    if (videoEl) videoEl.src = videoUrl;
+    if (videoEl) {
+      if (videoUrl) {
+        videoEl.src = videoUrl;
+        videoEl.style.display = "block";
+      } else {
+        videoEl.style.display = "none";
+      }
+    }
 
     // --- Feature video generation logic ---
     let uploadedImageUrl = null;
@@ -1202,44 +1080,46 @@ function showFeatureDetailPage(endpoint) {
   }
 }
 
-// Load persisted feature graphics from backend
+// Load persisted feature graphics and latest videos from backend
 async function loadFeatureGraphics() {
   try {
+    console.log("Loading feature graphics...");
     const res = await fetch("/api/feature-graphic");
     const data = await res.json();
-    featureGraphics = {};
-    if (Array.isArray(data)) {
-      data.forEach((g) => {
-        featureGraphics[g.endpoint] = g.graphicUrl;
-      });
-    }
-  } catch (e) {
-    // Non-fatal: just proceed without persisted graphics
-    featureGraphics = {};
-  }
-}
+    console.log("Feature graphics data received:", data.length, "items");
 
-// Load latest videos for all endpoints
-async function loadLatestVideos() {
-  try {
-    const res = await fetch("/api/videos/latest");
-    const data = await res.json();
+    featureGraphics = {};
     latestVideos = {};
     if (Array.isArray(data)) {
-      data.forEach((video) => {
-        latestVideos[video.endpoint] = video.url;
+      data.forEach((g) => {
+        // Store both as feature graphics and latest videos
+        // since this endpoint returns the latest video per endpoint
+        featureGraphics[g.endpoint] = g.graphicUrl;
+        latestVideos[g.endpoint] = g.graphicUrl;
       });
     }
+    console.log(
+      "Feature graphics loaded:",
+      Object.keys(featureGraphics).length,
+      "items"
+    );
+    console.log(
+      "Latest videos loaded:",
+      Object.keys(latestVideos).length,
+      "items"
+    );
   } catch (e) {
-    // Non-fatal: just proceed without latest videos
+    console.error("Error loading feature graphics:", e);
+    // Non-fatal: just proceed without persisted graphics
+    featureGraphics = {};
     latestVideos = {};
   }
 }
 
 // Refresh latest videos and update display immediately
 async function refreshLatestVideos() {
-  await loadLatestVideos();
-  // Force refresh the feature display to show new videos without resetting pagination
+  await loadFeatureGraphics(); // This now loads both graphics and latest videos
+  // Force refresh the feature display to show new videos
   if (features.length > 0) {
     displayFeatures();
   }
@@ -1256,9 +1136,9 @@ function refreshFeaturesDisplay() {
 function addNewFeatureToList(newFeature) {
   // Add to beginning of features array
   features.unshift(newFeature);
-  featureTotal += 1;
   // Refresh display
   displayFeatures();
+  updateStats();
 }
 
 // Close feature detail page and show filters tab
@@ -2594,9 +2474,10 @@ async function generateVideo(endpoint, event) {
 
 // Update stats
 function updateStats() {
-  // Example logic, replace with real values as needed
-  document.getElementById("totalFeatures").textContent = 592;
-  document.getElementById("activeFeatures").textContent = 592;
+  // Use actual feature count from loaded features
+  const totalFeatures = features.length;
+  document.getElementById("totalFeatures").textContent = totalFeatures;
+  document.getElementById("activeFeatures").textContent = totalFeatures;
   document.getElementById("totalTemplates").textContent = templates.length;
   document.getElementById("activeTemplates").textContent = templates.filter(
     (t) => t.active !== false
@@ -2628,7 +2509,16 @@ function openFeatureModal(endpoint) {
 
   document.getElementById("featureModalTitle").textContent = feature.endpoint;
   const videoPlayer = document.getElementById("featureModalVideo");
-  videoPlayer.src = `https://res.cloudinary.com/do60wtwwc/video/upload/v1754319544/generated-videos/generated-videos/${feature.endpoint}.mp4`;
+  const videoUrl =
+    featureGraphics[feature.endpoint] || latestVideos[feature.endpoint];
+
+  if (videoUrl) {
+    videoPlayer.src = videoUrl;
+    videoPlayer.style.display = "block";
+  } else {
+    videoPlayer.style.display = "none";
+  }
+
   document.getElementById("featureModalPrompt").value = feature.prompt;
   const endpointInput = document.getElementById("featureModalEndpointName");
   if (endpointInput) endpointInput.value = feature.endpoint;
@@ -3140,3 +3030,49 @@ function closeFeatureCrudModal() {
 // Make functions globally available
 window.openFeatureCrudModal = openFeatureCrudModal;
 window.closeFeatureCrudModal = closeFeatureCrudModal;
+
+// Add debugging functions for testing
+window.debugVideoData = function () {
+  console.log("=== VIDEO DATA DEBUG ===");
+  console.log("featureGraphics:", Object.keys(featureGraphics).length, "items");
+  console.log("latestVideos:", Object.keys(latestVideos).length, "items");
+  console.log("features:", features.length, "items");
+
+  if (Object.keys(featureGraphics).length > 0) {
+    console.log(
+      "Sample featureGraphics:",
+      Object.keys(featureGraphics).slice(0, 5)
+    );
+    console.log("Sample URLs:", Object.values(featureGraphics).slice(0, 2));
+  }
+
+  if (features.length > 0) {
+    console.log(
+      "Sample features:",
+      features.slice(0, 3).map((f) => f.endpoint)
+    );
+
+    // Check overlap
+    const featuresWithVideos = features.filter(
+      (f) => featureGraphics[f.endpoint] || latestVideos[f.endpoint]
+    );
+    console.log(
+      `Features with videos: ${featuresWithVideos.length}/${features.length}`
+    );
+
+    if (featuresWithVideos.length > 0) {
+      console.log(
+        "Sample features with videos:",
+        featuresWithVideos.slice(0, 3).map((f) => ({
+          endpoint: f.endpoint,
+          videoUrl: featureGraphics[f.endpoint] || latestVideos[f.endpoint],
+        }))
+      );
+    }
+  }
+};
+
+window.refreshDisplayTest = function () {
+  console.log("Refreshing display...");
+  displayFeatures();
+};

@@ -26,6 +26,26 @@ app.use(express.static("public")); // Serve static files from public directory
 const prisma = new PrismaClient();
 
 // Feature management routes
+// Get all features without pagination
+app.get("/api/features/all", (req: Request, res: Response): void => {
+  try {
+    const { q } = req.query as Record<string, string>;
+    let list = features;
+    if (q && q.trim()) {
+      const ql = q.toLowerCase();
+      list = list.filter(
+        (f) =>
+          f.endpoint.toLowerCase().includes(ql) ||
+          (f.prompt || "").toLowerCase().includes(ql)
+      );
+    }
+    res.json(list);
+  } catch (e) {
+    console.error("Error serving /api/features/all", e);
+    res.status(500).json({ message: "Failed to load features" });
+  }
+});
+
 // Paginated features list
 app.get("/api/features", (req: Request, res: Response): void => {
   try {
