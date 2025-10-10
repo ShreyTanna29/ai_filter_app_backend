@@ -370,6 +370,7 @@ async function initializeDashboard() {
 let features = [];
 let featuresLoading = false;
 let featuresInitialRequested = false;
+let savedScrollPosition = 0;
 
 async function ensureFeaturesLoaded() {
   if (!featuresInitialRequested) {
@@ -552,6 +553,12 @@ if (featureSearchInput) {
 function showFeatureDetailPage(endpoint) {
   console.log("showFeatureDetailPage called with endpoint:", endpoint);
   console.log("Current features array:", features);
+
+  // Save current scroll position before showing detail page
+  savedScrollPosition =
+    window.pageYOffset || document.documentElement.scrollTop;
+  console.log("Saved scroll position:", savedScrollPosition);
+
   try {
     const feature = features.find((f) => f.endpoint === endpoint);
     console.log("Found feature:", feature);
@@ -1195,6 +1202,15 @@ function closeFeatureDetailPage() {
   // Use the normal tab switching functionality to show filters tab
   // This ensures proper tab state management and allows users to switch to other tabs
   switchTab("filters");
+
+  // Restore the saved scroll position after a brief delay to ensure DOM is ready
+  setTimeout(() => {
+    if (savedScrollPosition > 0) {
+      console.log("Restoring scroll position:", savedScrollPosition);
+      window.scrollTo(0, savedScrollPosition);
+      savedScrollPosition = 0; // Reset for next time
+    }
+  }, 100);
 
   console.log("Main UI restored successfully");
 }
