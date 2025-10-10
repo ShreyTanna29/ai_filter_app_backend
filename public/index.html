@@ -340,6 +340,8 @@
                       <option value="minimax-i2v-01">MiniMax I2V 01</option>
                       <option value="minimax-i2v-live">MiniMax I2V Live</option>
                       <option value="minimax-i2v-director">MiniMax Director</option>
+                      <option value="bytedance-omnihuman">Bytedance | Omnihuman</option>
+                      <option value="bytedance-seeddance-v1-pro-image-to-video">Bytedance | Seeddance V1 Pro Image2Video</option>
                     </select>
                     <button id="stepGenerateBtn" class="mt-4 w-full px-6 py-3 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white rounded-xl font-semibold transition-all duration-300 hover:shadow-lg hover:scale-105 flex items-center justify-center gap-2">
                       <i class="fa fa-wand-magic-sparkles"></i> <span>Generate Video</span>
@@ -750,6 +752,20 @@
                       />
                     </div>
                   </label>
+                  <!-- Audio upload for Bytedance Omnihuman -->
+                  <div id="featureAudioUploadSection" style="display:none; margin-top: 24px;">
+                    <label for="featureAudioInput" class="upload-label cursor-pointer group">
+                      <div class="upload-area border-2 border-dashed border-blue-300 rounded-xl p-4 text-center transition-all duration-300 hover:border-blue-400 hover:bg-blue-50 group-hover:scale-[1.02]">
+                        <div class="w-8 h-8 mx-auto bg-blue-100 rounded-full flex items-center justify-center group-hover:bg-blue-200 transition-colors duration-300 mb-2">
+                          <i class="fas fa-microphone text-blue-600 text-sm"></i>
+                        </div>
+                        <div class="text-xs font-medium text-gray-600">Upload Audio (max 30s, mp3/wav)</div>
+                        <input type="file" id="featureAudioInput" accept="audio/*" style="display:none;" />
+                      </div>
+                    </label>
+                    <audio id="featureAudioPreview" style="display:none; margin-top:10px; width:100%;" controls></audio>
+                    <div id="featureAudioStatus" class="upload-status text-xs mt-2 text-center"></div>
+                  </div>
                   <div class="mt-4">
                     <img
                       id="featureImagePreview"
@@ -778,6 +794,8 @@
                   <option value="MiniMax I2V-01-Director">I2V-01-Director</option>
                   <option value="MiniMax I2V-01-live">I2V-01-live</option>
                   <option value="MiniMax I2V-01">I2V-01</option>
+                  <option value="bytedance-omnihuman">Bytedance | Omnihuman</option>
+                  <option value="bytedance-seeddance-v1-pro-image-to-video">Bytedance | Seeddance V1 Pro Image2Video</option>
                   <option value="pixverse-v4-transition">Pixverse V4 Transition</option>
                   <option value="pixverse-v4-image-to-video">Pixverse V4 Image2Video</option>
                      <option value="pixverse-v4.5-image-to-video">Pixverse V4.5 Image2Video</option>

@@ -1,4 +1,5 @@
 import { Router, Request, Response, NextFunction } from "express";
+import multer from "multer";
 import { features } from "../filters/features";
 import { PrismaClient } from "../generated/prisma";
 import { v2 as cloudinary, UploadApiResponse } from "cloudinary";
@@ -10,16 +11,11 @@ import http from "http";
 dotenv.config();
 
 // Configure Cloudinary
-if (
-  !process.env.CLOUDINARY_CLOUD_NAME ||
-  !process.env.CLOUDINARY_API_KEY ||
-  !process.env.CLOUDINARY_API_SECRET
-) {
+if (!process.env.CLOUDINARY_CLOUD_NAME || !process.env.CLOUDINARY_API_SECRET) {
   throw new Error("Missing required Cloudinary configuration");
 }
 
 cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
   api_key: process.env.CLOUDINARY_API_KEY,
   api_secret: process.env.CLOUDINARY_API_SECRET,
   secure: true,
@@ -122,27 +118,19 @@ interface VideoGenerationResponse {
   provider_code?: string | number;
 }
 
+// Multer setup for audio upload (memory storage)
+const upload = multer({ storage: multer.memoryStorage() });
+
 // Generate video from feature endpoint
-router.post<
-  { feature: string },
-  VideoGenerationResponse,
-  VideoGenerationRequest
->(
+router.post(
   "/:feature",
-  async (
-    req: Request<
-      { feature: string },
-      VideoGenerationResponse,
-      VideoGenerationRequest
-    >,
-    res: Response<VideoGenerationResponse>,
-    next: NextFunction
-  ): Promise<void> => {
+  upload.single("audio_file"),
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const { feature } = req.params;
-      const { model: userModel, prompt: promptOverride } = req.body as any;
-      const imageUrl =
-        (req.body as any).imageUrl || (req.body as any).image_url;
+      const userModel = req.body.model;
+      const promptOverride = req.body.prompt;
+      const imageUrl = req.body.imageUrl || req.body.image_url;
 
       if (!imageUrl) {
         res.status(400).json({
@@ -1807,6 +1795,272 @@ router.post<
           success: true,
           video: { url: veoUpload.secure_url },
           cloudinaryId: veoUpload.public_id,
+        });
+        return;
+      }
+
+      // Check for Bytedance | Omnihuman or Seeddance V1 Pro model
+      const isBytedanceOmnihuman = /bytedance-omnihuman/i.test(rawModel);
+      const isBytedanceSeeddance =
+        /bytedance-seeddance-v1-pro-image-to-video/i.test(rawModel);
+
+      if (isBytedanceOmnihuman || isBytedanceSeeddance) {
+        const bytedanceKey = process.env.EACHLABS_API_KEY;
+        if (!bytedanceKey) {
+          res
+            .status(500)
+            .json({ success: false, error: "EACHLABS_API_KEY not set" });
+          return;
+        }
+
+        // If audio file is present, upload to Cloudinary and get URL
+        let audioUrl: string | null = null;
+        if (req.file) {
+          // Only accept files up to ~1MB (30s mp3/wav)
+          if (req.file.size > 2 * 1024 * 1024) {
+            res.status(400).json({
+              success: false,
+              error: "Audio file too large (max 2MB)",
+            });
+            return;
+          }
+          // Upload to Cloudinary
+          const audioUpload: UploadApiResponse = await new Promise(
+            (resolve, reject) => {
+              const uploadStream = cloudinary.uploader.upload_stream(
+                {
+                  resource_type: "video",
+                  public_id: `${feature}_audio_${Date.now()}`,
+                  overwrite: true,
+                },
+                (error, result) => {
+                  if (error) reject(error);
+                  else if (result) resolve(result);
+                  else reject(new Error("No result from Cloudinary"));
+                }
+              );
+              uploadStream.end(req.file?.buffer);
+            }
+          );
+          audioUrl = audioUpload.secure_url;
+        }
+
+        // Build payload for Omnihuman or Seeddance
+        const bytedanceInput: any = {
+          image_url: imageCloudUrl,
+        };
+        if (audioUrl) {
+          bytedanceInput.audio_url = audioUrl;
+        }
+        let bytedancePayload;
+        if (isBytedanceOmnihuman) {
+          bytedancePayload = {
+            model: "bytedance-omnihuman",
+            version: "0.0.1",
+            input: bytedanceInput,
+            webhook_url: "",
+          };
+        } else {
+          // Seeddance V1 Pro
+          bytedancePayload = {
+            model: "seedance-v1-pro-image-to-video",
+            version: "0.0.1",
+            input: {
+              ...bytedanceInput,
+              camera_fixed: false,
+              duration: "5",
+              resolution: "720p",
+              // Optionally add prompt if present
+              ...(prompt ? { prompt } : {}),
+            },
+            webhook_url: "",
+          };
+        }
+
+        let taskId: string | undefined;
+        try {
+          const createResp = await axios.post(
+            "https://api.eachlabs.ai/v1/prediction/",
+            bytedancePayload,
+            {
+              headers: {
+                "X-API-Key": bytedanceKey,
+                "Content-Type": "application/json",
+              },
+              timeout: 45000,
+            }
+          );
+          const data = createResp.data || {};
+          console.log("Bytedance response:", data);
+
+          if (data.status !== "success") {
+            const provider_message =
+              data.message || data.error || data.status || "Unknown error";
+            res.status(502).json({
+              success: false,
+              error: `Bytedance creation failed: ${provider_message}`,
+              provider: "Bytedance",
+              provider_status: data.status,
+              provider_message,
+              details: safeJson(data),
+            });
+            return;
+          }
+
+          taskId =
+            data.predictionID || data.predictionId || data.id || data.task_id;
+          if (!taskId) {
+            res.status(502).json({
+              success: false,
+              error: "Bytedance response missing prediction id",
+              provider: "Bytedance",
+              details: safeJson(data),
+            });
+            return;
+          }
+        } catch (e: any) {
+          console.error("Bytedance create error:", e);
+          const provider_message =
+            e?.response?.data?.message ||
+            e?.response?.data?.error ||
+            e?.message ||
+            "Unknown error";
+          res.status(502).json({
+            success: false,
+            error: `Bytedance creation failed: ${provider_message}`,
+            provider: "Bytedance",
+            details: serializeError(e),
+          });
+          return;
+        }
+
+        // Poll for completion
+        let bytedanceVideoUrl: string | null = null;
+        for (let i = 0; i < 120; i++) {
+          // up to ~8 minutes (120 * 4s)
+          await new Promise((r) => setTimeout(r, 4000));
+          try {
+            const pollResp = await axios.get(
+              `https://api.eachlabs.ai/v1/prediction/${taskId}`,
+              {
+                headers: {
+                  "X-API-Key": bytedanceKey,
+                  "Content-Type": "application/json",
+                },
+                timeout: 20000,
+              }
+            );
+            const pollData = pollResp.data || {};
+            console.log(`Bytedance Omnihuman poll ${i + 1}:`, pollData);
+
+            if (
+              pollData.status === "succeeded" ||
+              pollData.status === "success"
+            ) {
+              bytedanceVideoUrl = pollData.output;
+              if (bytedanceVideoUrl) {
+                console.log(
+                  "Bytedance Omnihuman generation completed:",
+                  bytedanceVideoUrl
+                );
+                break;
+              }
+            }
+
+            if (pollData.status === "failed" || pollData.status === "error") {
+              const provider_message =
+                pollData.output || pollData.error || pollData.status;
+              res.status(500).json({
+                success: false,
+                error: `${provider_message}`,
+                provider: "Bytedance",
+                provider_status: pollData.status,
+                provider_message,
+                details: safeJson(pollData),
+              });
+              return;
+            }
+          } catch (e: any) {
+            console.warn(
+              "Bytedance Omnihuman poll error (continuing):",
+              e?.message || e
+            );
+            continue;
+          }
+        }
+
+        if (!bytedanceVideoUrl) {
+          res.status(504).json({
+            success: false,
+            error: "Bytedance Omnihuman generation timeout",
+            provider: "Bytedance",
+            provider_status: "timeout",
+            provider_message: "Generation did not complete in allotted time",
+          });
+          return;
+        }
+
+        // Download video from Bytedance URL
+        let bytedanceStream;
+        try {
+          bytedanceStream = await axios.get(bytedanceVideoUrl, {
+            responseType: "stream",
+            timeout: 600000,
+          });
+        } catch (e: any) {
+          console.error("Bytedance Omnihuman download error:", e);
+          res.status(500).json({
+            success: false,
+            error: "Failed to download Bytedance Omnihuman video",
+            provider: "Bytedance",
+            details: serializeError(e),
+          });
+          return;
+        }
+
+        // Upload to Cloudinary
+        const bytedanceUpload: UploadApiResponse = await new Promise(
+          (resolve, reject) => {
+            const uploadStream = cloudinary.uploader.upload_stream(
+              {
+                resource_type: "video",
+                public_id: `${feature}_${Date.now()}`,
+                overwrite: true,
+              },
+              (error, result) => {
+                if (error) {
+                  console.error("Cloudinary upload error:", error);
+                  reject(error);
+                } else if (result) {
+                  resolve(result);
+                } else {
+                  reject(new Error("No result from Cloudinary"));
+                }
+              }
+            );
+            bytedanceStream.data.pipe(uploadStream);
+          }
+        );
+
+        const finalBytedanceUrl = bytedanceUpload.secure_url;
+        console.log(
+          "Bytedance Omnihuman video uploaded to:",
+          finalBytedanceUrl
+        );
+
+        // Save to database
+        await prisma.generatedVideo.create({
+          data: {
+            feature,
+            url: finalBytedanceUrl,
+            createdAt: new Date(),
+          },
+        });
+
+        res.json({
+          success: true,
+          video: { url: finalBytedanceUrl },
+          provider: "Bytedance",
         });
         return;
       }

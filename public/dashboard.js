@@ -804,14 +804,22 @@ function showFeatureDetailPage(endpoint) {
     // Toggle display of last frame uploader based on model selection
     const featureModelSelect = document.getElementById("featureModelSelect");
     if (featureModelSelect && featureLastFrameWrapper) {
+      const featureAudioUploadSection = document.getElementById(
+        "featureAudioUploadSection"
+      );
+      const featureAudioInput = document.getElementById("featureAudioInput");
+      const featureAudioPreview = document.getElementById(
+        "featureAudioPreview"
+      );
+      const featureAudioStatus = document.getElementById("featureAudioStatus");
+      let uploadedAudioUrl = null;
+      let uploadedAudioFile = null;
       const toggleFeatureLastFrame = () => {
         const val = featureModelSelect.value || "";
         const isPixTrans = /pixverse-v4-transition/i.test(val);
         const isVidu = /vidu-q1-reference-to-video/i.test(val);
-        const isViduImage2Video =
-          /vidu-(1\.5|q1)-image-to-video|veo-2-image-to-video|veo-3-image-to-video/i.test(
-            val
-          );
+        // Only show audio input for Omnihuman, not Seeddance
+        const isBytedance = /bytedance-omnihuman/i.test(val);
         featureLastFrameWrapper.style.display = isPixTrans ? "flex" : "none";
         if (!isPixTrans) {
           featureLastFrameUrl = null;
@@ -829,9 +837,65 @@ function showFeatureDetailPage(endpoint) {
           if (featureRef2Preview) featureRef2Preview.style.display = "none";
           if (featureRef3Preview) featureRef3Preview.style.display = "none";
         }
+        // Toggle Bytedance audio upload
+        if (featureAudioUploadSection)
+          featureAudioUploadSection.style.display = isBytedance
+            ? "block"
+            : "none";
+        if (!isBytedance && featureAudioPreview) {
+          featureAudioPreview.style.display = "none";
+          featureAudioPreview.src = "";
+          uploadedAudioUrl = null;
+          uploadedAudioFile = null;
+        }
       };
       featureModelSelect.addEventListener("change", toggleFeatureLastFrame);
-      toggleFeatureLastFrame();
+      // Always run toggle on show
+      setTimeout(toggleFeatureLastFrame, 0);
+
+      // Audio file upload/validation
+      if (featureAudioInput) {
+        featureAudioInput.onchange = function (e) {
+          const file = featureAudioInput.files && featureAudioInput.files[0];
+          if (!file) return;
+          if (!/^audio\//.test(file.type)) {
+            featureAudioStatus.textContent =
+              "Please select a valid audio file.";
+            featureAudioStatus.className =
+              "upload-status error text-xs mt-2 text-center";
+            featureAudioInput.value = "";
+            return;
+          }
+          // Check duration (max 30s)
+          const audioUrl = URL.createObjectURL(file);
+          const audio = new Audio();
+          audio.src = audioUrl;
+          audio.onloadedmetadata = function () {
+            if (audio.duration > 30.5) {
+              featureAudioStatus.textContent =
+                "Audio must be 30 seconds or less.";
+              featureAudioStatus.className =
+                "upload-status error text-xs mt-2 text-center";
+              featureAudioInput.value = "";
+              featureAudioPreview.style.display = "none";
+              featureAudioPreview.src = "";
+              uploadedAudioUrl = null;
+              uploadedAudioFile = null;
+              return;
+            }
+            featureAudioPreview.src = audioUrl;
+            featureAudioPreview.style.display = "block";
+            featureAudioStatus.textContent = "Audio ready!";
+            featureAudioStatus.className =
+              "upload-status success text-xs mt-2 text-center";
+            uploadedAudioFile = file;
+            uploadedAudioUrl = audioUrl;
+          };
+        };
+      }
+      // Expose for use in generateVideo
+      window._featureAudioFile = () => uploadedAudioFile;
+      window._featureAudioUrl = () => uploadedAudioUrl;
     }
     function handleFeatureImageUpload() {
       const file = input.files && input.files[0];
@@ -887,34 +951,59 @@ function showFeatureDetailPage(endpoint) {
           const promptOverride = featurePromptEl
             ? featurePromptEl.textContent
             : undefined;
-          const response = await fetch(
-            `/api/generate-video/${encodeURIComponent(feature.endpoint)}`,
-            {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify(
-                (() => {
-                  const payload = {
-                    imageUrl: uploadedImageUrl,
-                    model: selectedModel,
-                    prompt: promptOverride,
-                  };
-                  if (
-                    /pixverse-v4-transition/i.test(selectedModel || "") &&
-                    featureLastFrameUrl
-                  ) {
-                    payload.lastFrameUrl = featureLastFrameUrl;
-                  }
-                  if (/vidu-q1-reference-to-video/i.test(selectedModel || "")) {
-                    if (featureRef2Url) payload.image_url2 = featureRef2Url;
-                    if (featureRef3Url) payload.image_url3 = featureRef3Url;
-                  }
-                  return payload;
-                })()
-              ),
-            }
-          );
-          const data = await response.json();
+          // Audio file logic for Bytedance Omnihuman
+          let audioFile = null;
+          if (window._featureAudioFile) {
+            audioFile = window._featureAudioFile();
+          }
+          let response, data;
+          if (/bytedance-omnihuman/i.test(selectedModel || "") && audioFile) {
+            // Use FormData for Bytedance Omnihuman/Seeddance with audio
+            const formData = new FormData();
+            formData.append("image_url", uploadedImageUrl);
+            formData.append("model", selectedModel);
+            if (promptOverride) formData.append("prompt", promptOverride);
+            formData.append("audio_file", audioFile);
+            response = await fetch(
+              `/api/generate-video/${encodeURIComponent(feature.endpoint)}`,
+              {
+                method: "POST",
+                body: formData,
+              }
+            );
+            data = await response.json();
+          } else {
+            response = await fetch(
+              `/api/generate-video/${encodeURIComponent(feature.endpoint)}`,
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(
+                  (() => {
+                    const payload = {
+                      imageUrl: uploadedImageUrl,
+                      model: selectedModel,
+                      prompt: promptOverride,
+                    };
+                    if (
+                      /pixverse-v4-transition/i.test(selectedModel || "") &&
+                      featureLastFrameUrl
+                    ) {
+                      payload.lastFrameUrl = featureLastFrameUrl;
+                    }
+                    if (
+                      /vidu-q1-reference-to-video/i.test(selectedModel || "")
+                    ) {
+                      if (featureRef2Url) payload.image_url2 = featureRef2Url;
+                      if (featureRef3Url) payload.image_url3 = featureRef3Url;
+                    }
+                    return payload;
+                  })()
+                ),
+              }
+            );
+            data = await response.json();
+          }
           if (response.ok && data && data.video && data.video.url) {
             const vEl = document.getElementById("featureDetailVideo");
             if (vEl) vEl.src = data.video.url;
@@ -2392,11 +2481,16 @@ async function generateVideo(endpoint, event) {
   let lastFrameUrl = null;
   let statusDiv = null;
   let generateButton = null;
+  let audioFile = null;
   // If called from endpoint modal, use uploaded image
   if (document.getElementById("endpointImagePreview")) {
     imageUrl = endpointUploadedImageUrl;
     statusDiv = document.getElementById("featureModalStatus");
     generateButton = document.getElementById("featureModalGenerate");
+    // Bytedance audio file (if present)
+    if (window._featureAudioFile) {
+      audioFile = window._featureAudioFile();
+    }
   }
   // fallback for legacy (should not be used)
   if (!imageUrl) {
@@ -2431,30 +2525,45 @@ async function generateVideo(endpoint, event) {
     // selectedModel already resolved above
     const promptInput = document.getElementById("stepDetailPromptInput");
     const promptOverride = promptInput ? promptInput.value : undefined;
-    const response = await fetch(`/api/generate-video/${endpoint}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(
-        (() => {
-          const payload = {
-            image_url: imageUrl,
-            model: selectedModel,
-            prompt: promptOverride,
-          };
-          if (
-            /pixverse-v4-transition/i.test(selectedModel || "") &&
-            lastFrameUrl
-          )
-            payload.last_frame_url = lastFrameUrl;
-          if (/vidu-q1-reference-to-video/i.test(selectedModel || "")) {
-            if (stepRef2) payload.image_url2 = stepRef2;
-            if (stepRef3) payload.image_url3 = stepRef3;
-          }
-          return payload;
-        })()
-      ),
-    });
-    const result = await response.json();
+    let response, result;
+    if (/bytedance-omnihuman/i.test(selectedModel || "") && audioFile) {
+      // Use FormData for Bytedance Omnihuman with audio
+      const formData = new FormData();
+      formData.append("image_url", imageUrl);
+      formData.append("model", selectedModel);
+      if (promptOverride) formData.append("prompt", promptOverride);
+      formData.append("audio_file", audioFile);
+      response = await fetch(`/api/generate-video/${endpoint}`, {
+        method: "POST",
+        body: formData,
+      });
+      result = await response.json();
+    } else {
+      response = await fetch(`/api/generate-video/${endpoint}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(
+          (() => {
+            const payload = {
+              image_url: imageUrl,
+              model: selectedModel,
+              prompt: promptOverride,
+            };
+            if (
+              /pixverse-v4-transition/i.test(selectedModel || "") &&
+              lastFrameUrl
+            )
+              payload.last_frame_url = lastFrameUrl;
+            if (/vidu-q1-reference-to-video/i.test(selectedModel || "")) {
+              if (stepRef2) payload.image_url2 = stepRef2;
+              if (stepRef3) payload.image_url3 = stepRef3;
+            }
+            return payload;
+          })()
+        ),
+      });
+      result = await response.json();
+    }
     if (result.video && result.video.url) {
       statusDiv.textContent = "Video generated successfully!";
       statusDiv.style.color = "green";
