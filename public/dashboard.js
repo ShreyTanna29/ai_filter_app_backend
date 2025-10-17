@@ -1981,50 +1981,25 @@ async function editTemplate(templateId) {
     (subcat.steps || []).forEach((step) => {
       const stepDiv = document.createElement("div");
       stepDiv.className = "flex gap-2 items-center";
-      // Endpoint select
-      const select = document.createElement("select");
-      select.className = "flex-1 border border-gray-300 rounded px-2 py-1";
-      select.required = true;
-      select.innerHTML =
-        `<option value="">Select endpoint...</option>` +
-        window.featureEndpointsFull
-          .map(
-            (f) =>
-              `<option value="${f.endpoint}" ${
-                step.endpoint === f.endpoint ? "selected" : ""
-              }>${f.name ? f.name : f.endpoint}</option>`
-          )
-          .join("");
-      select.value = step.endpoint;
-      stepDiv.appendChild(select);
+
+      // Create autocomplete endpoint input
+      const autocompleteWrapper = createEndpointAutocomplete(step.endpoint);
+      stepDiv.appendChild(autocompleteWrapper);
+
       // Remove button
       const removeStepBtn = document.createElement("button");
       removeStepBtn.type = "button";
       removeStepBtn.className =
         "text-red-500 hover:text-red-700 text-xs removeStepBtn";
       removeStepBtn.textContent = "Remove";
-      removeStepBtn.onclick = () => stepDiv.remove();
-      stepDiv.appendChild(removeStepBtn);
-      // Generated videos list for this step
-      const generatedWrap = document.createElement("div");
-      generatedWrap.className = "step-generated-videos w-full mt-2";
-      stepDiv.appendChild(generatedWrap);
-      stepsDiv.appendChild(stepDiv);
-      // Wire generated videos list
-      const onPick = (url) => {
-        // show a small inline preview on pick
-        let preview = stepDiv.querySelector(".step-picked-video");
-        if (!preview) {
-          preview = document.createElement("div");
-          preview.className = "step-picked-video w-full mt-2";
-          stepDiv.appendChild(preview);
+      removeStepBtn.onclick = () => {
+        if (confirm("Are you sure you want to remove this step?")) {
+          stepDiv.remove();
         }
-        preview.innerHTML = `<video src="${url}" controls style="width:100%;max-width:400px;"></video>`;
       };
-      const refresh = () =>
-        renderStepGeneratedVideos(generatedWrap, select.value, onPick);
-      select.addEventListener("change", refresh);
-      refresh();
+      stepDiv.appendChild(removeStepBtn);
+
+      stepsDiv.appendChild(stepDiv);
     });
     // Add Step button
     const addStepBtn = document.createElement("button");
@@ -2035,45 +2010,24 @@ async function editTemplate(templateId) {
     addStepBtn.onclick = function () {
       const stepDiv = document.createElement("div");
       stepDiv.className = "flex gap-2 items-center";
-      const select = document.createElement("select");
-      select.className = "flex-1 border border-gray-300 rounded px-2 py-1";
-      select.required = true;
-      select.innerHTML =
-        `<option value="">Select endpoint...</option>` +
-        window.featureEndpointsFull
-          .map(
-            (f) =>
-              `<option value="${f.endpoint}">${
-                f.name ? f.name : f.endpoint
-              }</option>`
-          )
-          .join("");
-      stepDiv.appendChild(select);
+
+      // Create autocomplete endpoint input
+      const autocompleteWrapper = createEndpointAutocomplete("");
+      stepDiv.appendChild(autocompleteWrapper);
+
       const removeStepBtn = document.createElement("button");
       removeStepBtn.type = "button";
       removeStepBtn.className =
         "text-red-500 hover:text-red-700 text-xs removeStepBtn";
       removeStepBtn.textContent = "Remove";
-      removeStepBtn.onclick = () => stepDiv.remove();
-      stepDiv.appendChild(removeStepBtn);
-      // Generated videos list
-      const generatedWrap = document.createElement("div");
-      generatedWrap.className = "step-generated-videos w-full mt-2";
-      stepDiv.appendChild(generatedWrap);
-      stepsDiv.appendChild(stepDiv);
-      const onPick = (url) => {
-        let preview = stepDiv.querySelector(".step-picked-video");
-        if (!preview) {
-          preview = document.createElement("div");
-          preview.className = "step-picked-video w-full mt-2";
-          stepDiv.appendChild(preview);
+      removeStepBtn.onclick = () => {
+        if (confirm("Are you sure you want to remove this step?")) {
+          stepDiv.remove();
         }
-        preview.innerHTML = `<video src="${url}" controls style="width:100%;max-width:400px;"></video>`;
       };
-      const refresh = () =>
-        renderStepGeneratedVideos(generatedWrap, select.value, onPick);
-      select.addEventListener("change", refresh);
-      refresh();
+      stepDiv.appendChild(removeStepBtn);
+
+      stepsDiv.appendChild(stepDiv);
     };
     subcatDiv.appendChild(addStepBtn);
     // Remove subcategory button
@@ -2081,7 +2035,15 @@ async function editTemplate(templateId) {
     removeSubcatBtn.type = "button";
     removeSubcatBtn.className = "ml-4 text-red-500 hover:text-red-700 text-xs";
     removeSubcatBtn.textContent = "Remove Subcategory";
-    removeSubcatBtn.onclick = () => subcatDiv.remove();
+    removeSubcatBtn.onclick = () => {
+      if (
+        confirm(
+          "Are you sure you want to remove this subcategory and all its steps?"
+        )
+      ) {
+        subcatDiv.remove();
+      }
+    };
     subcatDiv.appendChild(removeSubcatBtn);
     subcatsContainer.appendChild(subcatDiv);
   });
@@ -2203,7 +2165,6 @@ function addTemplateStep(selectedEndpoint = "", promptValue = "") {
     </div>
     <div class="step-status-message" style="font-size:13px;min-height:18px;margin-top:5px;"></div>
     <div class="step-video-preview" style="margin-top:10px;display:none;"></div>
-    <div class="step-generated-videos" style="margin-top:8px;"></div>
   </div>`;
 
   stepsContainer.insertAdjacentHTML("beforeend", stepHtml);
@@ -2214,21 +2175,8 @@ function addTemplateStep(selectedEndpoint = "", promptValue = "") {
   const generateBtn = newStep.querySelector(".step-generate-btn");
   const statusDiv = newStep.querySelector(".step-status-message");
   const videoPreviewDiv = newStep.querySelector(".step-video-preview");
-  const generatedListDiv = newStep.querySelector(".step-generated-videos");
 
   const getUploadedImageUrl = setupStepImageUpload(newStep);
-
-  const onSelectGenerated = (url) => {
-    if (!url) return;
-    videoPreviewDiv.style.display = "block";
-    videoPreviewDiv.innerHTML = `<video src="${url}" controls style="width:100%;max-width:400px;"></video>`;
-  };
-  const refreshGeneratedForSelect = () => {
-    const ep = endpointSelect.value;
-    renderStepGeneratedVideos(generatedListDiv, ep, onSelectGenerated);
-  };
-  endpointSelect.addEventListener("change", refreshGeneratedForSelect);
-  refreshGeneratedForSelect();
 
   generateBtn.onclick = async () => {
     const endpoint = endpointSelect.value;
@@ -2295,8 +2243,10 @@ function addTemplateStep(selectedEndpoint = "", promptValue = "") {
 }
 
 function removeStep(button) {
-  button.parentElement.remove();
-  updateStepNumbers();
+  if (confirm("Are you sure you want to remove this step?")) {
+    button.parentElement.remove();
+    updateStepNumbers();
+  }
 }
 
 function updateStepNumbers() {
@@ -2389,6 +2339,15 @@ async function saveTemplate() {
 }
 
 async function deleteTemplate(templateId) {
+  // Confirm before deleting
+  if (
+    !confirm(
+      "Are you sure you want to delete this template? This action cannot be undone."
+    )
+  ) {
+    return;
+  }
+
   // Find the delete button and show loading state
   const deleteBtn = document.querySelector(
     `button[onclick="deleteTemplate(${templateId})"]`
@@ -2887,6 +2846,138 @@ window.openCreateTemplateModal = function () {
 
 // --- DYNAMIC SUBCATEGORY AND STEP LOGIC ---
 
+// Helper function to create autocomplete endpoint input
+function createEndpointAutocomplete(initialValue = "") {
+  const wrapper = document.createElement("div");
+  wrapper.className = "relative flex-1";
+  wrapper.style.position = "relative";
+
+  const input = document.createElement("input");
+  input.type = "text";
+  input.className = "w-full border border-gray-300 rounded px-2 py-1 pr-8";
+  input.placeholder = "Type to search endpoints...";
+  input.value = initialValue;
+  input.required = true;
+  input.autocomplete = "off";
+
+  // Hidden input to store the selected endpoint value
+  const hiddenInput = document.createElement("input");
+  hiddenInput.type = "hidden";
+  hiddenInput.value = initialValue;
+  hiddenInput.className = "endpoint-value";
+
+  // Dropdown container
+  const dropdown = document.createElement("div");
+  dropdown.className =
+    "absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded shadow-lg max-h-60 overflow-y-auto hidden endpoint-autocomplete-dropdown";
+  dropdown.style.top = "100%";
+  dropdown.style.left = "0";
+
+  // Clear button
+  const clearBtn = document.createElement("button");
+  clearBtn.type = "button";
+  clearBtn.className =
+    "absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600";
+  clearBtn.innerHTML = '<i class="fas fa-times text-xs"></i>';
+  clearBtn.style.display = initialValue ? "block" : "none";
+  clearBtn.onclick = () => {
+    input.value = "";
+    hiddenInput.value = "";
+    clearBtn.style.display = "none";
+    dropdown.classList.add("hidden");
+    input.focus();
+  };
+
+  // Get endpoints
+  const getEndpoints = () => {
+    return Array.isArray(window.featureEndpointsFull) &&
+      window.featureEndpointsFull.length
+      ? window.featureEndpointsFull
+      : Array.isArray(availableEndpoints)
+      ? availableEndpoints
+      : [];
+  };
+
+  // Filter and display options
+  const updateDropdown = (searchTerm = "") => {
+    const endpoints = getEndpoints();
+    const filtered = endpoints.filter((f) => {
+      const name = f.name || f.endpoint;
+      const endpoint = f.endpoint;
+      return (
+        name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        endpoint.toLowerCase().includes(searchTerm.toLowerCase())
+      );
+    });
+
+    if (searchTerm === "" || filtered.length === 0) {
+      dropdown.classList.add("hidden");
+      return;
+    }
+
+    dropdown.innerHTML = filtered
+      .map((f) => {
+        const name = f.name || f.endpoint;
+        return `<div class="px-3 py-2 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0" data-endpoint="${f.endpoint}" data-name="${name}">
+        <div class="font-medium text-sm">${name}</div>
+        <div class="text-xs text-gray-500">${f.endpoint}</div>
+      </div>`;
+      })
+      .join("");
+
+    dropdown.classList.remove("hidden");
+
+    // Add click handlers to options
+    dropdown.querySelectorAll("div[data-endpoint]").forEach((option) => {
+      option.onclick = () => {
+        const endpoint = option.getAttribute("data-endpoint");
+        const name = option.getAttribute("data-name");
+        input.value = name;
+        hiddenInput.value = endpoint;
+        clearBtn.style.display = "block";
+        dropdown.classList.add("hidden");
+      };
+    });
+  };
+
+  // Input event handlers
+  input.addEventListener("input", (e) => {
+    hiddenInput.value = ""; // Clear hidden value when typing
+    updateDropdown(e.target.value);
+    clearBtn.style.display = e.target.value ? "block" : "none";
+  });
+
+  input.addEventListener("focus", () => {
+    updateDropdown(input.value);
+  });
+
+  // Close dropdown when clicking outside
+  document.addEventListener("click", (e) => {
+    if (!wrapper.contains(e.target)) {
+      dropdown.classList.add("hidden");
+    }
+  });
+
+  wrapper.appendChild(input);
+  wrapper.appendChild(hiddenInput);
+  wrapper.appendChild(clearBtn);
+  wrapper.appendChild(dropdown);
+
+  // Method to get the selected endpoint value
+  wrapper.getValue = () => hiddenInput.value;
+  wrapper.setValue = (endpoint) => {
+    const endpoints = getEndpoints();
+    const found = endpoints.find((f) => f.endpoint === endpoint);
+    if (found) {
+      input.value = found.name || found.endpoint;
+      hiddenInput.value = endpoint;
+      clearBtn.style.display = "block";
+    }
+  };
+
+  return wrapper;
+}
+
 function createSubcategoryElement(subcatName = "") {
   const subcatDiv = document.createElement("div");
   subcatDiv.className = "border rounded-lg p-4 mb-2 bg-gray-50";
@@ -2911,34 +3002,21 @@ function createSubcategoryElement(subcatName = "") {
   addStepBtn.onclick = function () {
     const stepDiv = document.createElement("div");
     stepDiv.className = "flex gap-2 items-center";
-    // Build endpoint select (features) only; prompt removed
-    const select = document.createElement("select");
-    select.className = "flex-1 border border-gray-300 rounded px-2 py-1";
-    select.required = true;
-    const endpoints =
-      Array.isArray(window.featureEndpointsFull) &&
-      window.featureEndpointsFull.length
-        ? window.featureEndpointsFull
-        : Array.isArray(availableEndpoints)
-        ? availableEndpoints
-        : [];
-    select.innerHTML =
-      `<option value="">Select endpoint...</option>` +
-      endpoints
-        .map(
-          (f) =>
-            `<option value="${f.endpoint}">${
-              f.name ? f.name : f.endpoint
-            }</option>`
-        )
-        .join("");
+
+    // Create autocomplete endpoint input
+    const autocompleteWrapper = createEndpointAutocomplete("");
+    stepDiv.appendChild(autocompleteWrapper);
+
     const removeBtn = document.createElement("button");
     removeBtn.type = "button";
     removeBtn.className =
       "text-red-500 hover:text-red-700 text-xs removeStepBtn";
     removeBtn.textContent = "Remove";
-    removeBtn.onclick = () => stepDiv.remove();
-    stepDiv.appendChild(select);
+    removeBtn.onclick = () => {
+      if (confirm("Are you sure you want to remove this step?")) {
+        stepDiv.remove();
+      }
+    };
     stepDiv.appendChild(removeBtn);
     stepsDiv.appendChild(stepDiv);
   };
@@ -2949,7 +3027,15 @@ function createSubcategoryElement(subcatName = "") {
   removeBtn.type = "button";
   removeBtn.className = "ml-4 text-red-500 hover:text-red-700 text-xs";
   removeBtn.textContent = "Remove Subcategory";
-  removeBtn.onclick = () => subcatDiv.remove();
+  removeBtn.onclick = () => {
+    if (
+      confirm(
+        "Are you sure you want to remove this subcategory and all its steps?"
+      )
+    ) {
+      subcatDiv.remove();
+    }
+  };
   subcatDiv.appendChild(removeBtn);
 
   return subcatDiv;
@@ -3003,8 +3089,10 @@ function setupSubcategoryUI() {
           "";
         const steps = [];
         subcatDiv.querySelectorAll("div.space-y-2 > div").forEach((stepDiv) => {
+          // Check for autocomplete hidden input first, fallback to select if exists
+          const hiddenInput = stepDiv.querySelector("input.endpoint-value");
           const select = stepDiv.querySelector("select");
-          const endpoint = select?.value || "";
+          const endpoint = hiddenInput?.value || select?.value || "";
           const prompt = ""; // backend will fill from features.ts
           if (endpoint) steps.push({ endpoint, prompt });
         });

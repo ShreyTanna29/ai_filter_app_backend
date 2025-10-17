@@ -96,6 +96,30 @@
         -webkit-text-fill-color: transparent;
         background-clip: text;
       }
+     
+       /* Autocomplete endpoint dropdown styling */
+       .endpoint-autocomplete-dropdown {
+         scrollbar-width: thin;
+         scrollbar-color: #cbd5e0 #f7fafc;
+       }
+     
+       .endpoint-autocomplete-dropdown::-webkit-scrollbar {
+         width: 8px;
+       }
+     
+       .endpoint-autocomplete-dropdown::-webkit-scrollbar-track {
+         background: #f7fafc;
+         border-radius: 4px;
+       }
+     
+       .endpoint-autocomplete-dropdown::-webkit-scrollbar-thumb {
+         background: #cbd5e0;
+         border-radius: 4px;
+       }
+     
+       .endpoint-autocomplete-dropdown::-webkit-scrollbar-thumb:hover {
+         background: #a0aec0;
+       }
     </style>
   </head>
   <body class="bg-gray-50 min-h-screen">
@@ -506,18 +530,78 @@
                   addStepBtn.onclick = function () {
                     const stepDiv = document.createElement('div');
                     stepDiv.className = 'flex gap-2 items-center';
-                    // Build endpoint select
-                    const select = document.createElement('select');
-                    select.className = 'flex-1 border border-gray-300 rounded px-2 py-1';
-                    select.required = true;
-                    select.innerHTML = `<option value="">Select endpoint...</option>` + featureEndpoints.map(e => `<option value="${e}">${e}</option>`).join('');
+                   
+                     // Create autocomplete input wrapper
+                     const wrapper = document.createElement('div');
+                     wrapper.className = 'relative flex-1';
+                     const input = document.createElement('input');
+                     input.type = 'text';
+                     input.className = 'w-full border border-gray-300 rounded px-2 py-1 pr-8';
+                     input.placeholder = 'Type to search endpoints...';
+                     input.required = true;
+                     input.autocomplete = 'off';
+                     const hiddenInput = document.createElement('input');
+                     hiddenInput.type = 'hidden';
+                     hiddenInput.className = 'endpoint-value';
+                     const dropdown = document.createElement('div');
+                    dropdown.className = 'absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded shadow-lg max-h-60 overflow-y-auto hidden endpoint-autocomplete-dropdown';
+                     dropdown.style.top = '100%';
+                     dropdown.style.left = '0';
+                     const clearBtn = document.createElement('button');
+                     clearBtn.type = 'button';
+                     clearBtn.className = 'absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600';
+                     clearBtn.innerHTML = '<i class="fas fa-times text-xs"></i>';
+                     clearBtn.style.display = 'none';
+                     clearBtn.onclick = () => {
+                       input.value = '';
+                       hiddenInput.value = '';
+                       clearBtn.style.display = 'none';
+                       dropdown.classList.add('hidden');
+                       input.focus();
+                     };
+                     const updateDropdown = (searchTerm = '') => {
+                       const filtered = featureEndpoints.filter(e => e.toLowerCase().includes(searchTerm.toLowerCase()));
+                       if (searchTerm === '' || filtered.length === 0) {
+                         dropdown.classList.add('hidden');
+                         return;
+                       }
+                       dropdown.innerHTML = filtered.map(e => `<div class="px-3 py-2 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0" data-endpoint="${e}"><div class="text-sm">${e}</div></div>`).join('');
+                       dropdown.classList.remove('hidden');
+                       dropdown.querySelectorAll('div[data-endpoint]').forEach(option => {
+                         option.onclick = () => {
+                           const endpoint = option.getAttribute('data-endpoint');
+                           input.value = endpoint;
+                           hiddenInput.value = endpoint;
+                           clearBtn.style.display = 'block';
+                           dropdown.classList.add('hidden');
+                         };
+                       });
+                     };
+                     input.addEventListener('input', (e) => {
+                       hiddenInput.value = '';
+                       updateDropdown(e.target.value);
+                       clearBtn.style.display = e.target.value ? 'block' : 'none';
+                     });
+                     input.addEventListener('focus', () => updateDropdown(input.value));
+                     document.addEventListener('click', (e) => {
+                       if (!wrapper.contains(e.target)) dropdown.classList.add('hidden');
+                     });
+                     wrapper.appendChild(input);
+                     wrapper.appendChild(hiddenInput);
+                     wrapper.appendChild(clearBtn);
+                     wrapper.appendChild(dropdown);
+                   
                     // Remove button
                     const removeBtn = document.createElement('button');
                     removeBtn.type = 'button';
                     removeBtn.className = 'text-red-500 hover:text-red-700 text-xs removeStepBtn';
                     removeBtn.textContent = 'Remove';
-                    removeBtn.onclick = () => stepDiv.remove();
-                    stepDiv.appendChild(select);
+                    removeBtn.onclick = () => {
+                      if (confirm('Are you sure you want to remove this step?')) {
+                        stepDiv.remove();
+                      }
+                    };
+                     stepDiv.appendChild(wrapper);
                     stepDiv.appendChild(removeBtn);
                     stepsDiv.appendChild(stepDiv);
                   };
@@ -527,7 +611,11 @@
                   removeBtn.type = 'button';
                   removeBtn.className = 'ml-4 text-red-500 hover:text-red-700 text-xs';
                   removeBtn.textContent = 'Remove Subcategory';
-                  removeBtn.onclick = () => subcatDiv.remove();
+                  removeBtn.onclick = () => {
+                    if (confirm('Are you sure you want to remove this subcategory and all its steps?')) {
+                      subcatDiv.remove();
+                    }
+                  };
                   subcatDiv.appendChild(removeBtn);
                   subcatsContainer.appendChild(subcatDiv);
                   document.getElementById('newSubcategoryInput').value = '';
