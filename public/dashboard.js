@@ -1477,15 +1477,11 @@ function showStepDetailPage(templateId, stepIndex, subcatIndex) {
   document
     .querySelectorAll(".tab-content, #featureDetailPage")
     .forEach((el) => el.classList.add("hidden"));
-  document.getElementById("stepDetailPage").classList.remove("hidden");
-  // Reset video gen UI
-  document.getElementById("stepImagePreview").style.display = "none";
-  document.getElementById("stepImagePreview").src = "";
-  document.getElementById("stepUploadStatus").textContent = "";
-  document.getElementById("stepGenStatus").textContent = "";
-  const legacyPreview = document.getElementById("stepVideoPreview");
-  if (legacyPreview) legacyPreview.style.display = "none";
-  window._stepUploadedImageUrl = null;
+
+  const stepDetailPage = document.getElementById("stepDetailPage");
+  stepDetailPage.classList.remove("hidden");
+  stepDetailPage.style.display = ""; // Reset any inline display style
+
   // Load existing generated videos for this step's endpoint
   const generatedListEl = document.getElementById("stepGeneratedList");
   if (generatedListEl && step.endpoint) {
@@ -1561,6 +1557,7 @@ function showStepDetailPage(templateId, stepIndex, subcatIndex) {
   // Store for save
   window._currentStepTemplateId = templateId;
   window._currentStepIndex = stepIndex;
+  window._currentStepSubcatIndex = subcatIndex;
 
   // Wire up Save / Cancel buttons
   const saveBtn = document.getElementById("stepDetailSaveBtn");
@@ -1829,6 +1826,7 @@ function closeStepDetailPage() {
   // Reset step detail state
   window._currentStepTemplateId = null;
   window._currentStepIndex = null;
+  window._currentStepSubcatIndex = null;
 
   console.log("Main UI restored successfully");
 }

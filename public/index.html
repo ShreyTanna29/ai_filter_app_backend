@@ -206,148 +206,19 @@
               <button onclick="closeStepDetailPage()" class="text-3xl text-gray-400 hover:text-gray-700">&times;</button>
             </div>
             <div class="max-w-4xl mx-auto">
-              <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
-                <div>
-                  <div class="mb-4">
-                    <label class="block text-sm font-semibold text-gray-700 mb-1">Endpoint</label>
-                    <input id="stepDetailEndpointInput" type="text" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400" placeholder="ai-sample-endpoint" />
-                  </div>
-                  <div class="mb-4">
-                    <label class="block text-sm font-semibold text-gray-700 mb-1">Prompt</label>
-                    <textarea id="stepDetailPromptInput" rows="7" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400" placeholder="Enter prompt for this step..."></textarea>
-                  </div>
-                  <div id="stepDetailStatus" class="text-sm text-red-500 mb-2"></div>
-                  <div class="flex justify-end gap-2">
-                    <button id="stepDetailCancelBtn" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300">Cancel</button>
-                    <button id="stepDetailSaveBtn" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Save</button>
-                  </div>
+              <div class="mb-6">
+                <div class="mb-4">
+                  <label class="block text-sm font-semibold text-gray-700 mb-1">Endpoint</label>
+                  <input id="stepDetailEndpointInput" type="text" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400" placeholder="ai-sample-endpoint" />
                 </div>
-                <div>
-                  <div class="mb-4">
-                    <div class="bg-gradient-to-br from-indigo-50 to-blue-50 rounded-2xl p-6 border border-indigo-100 shadow-sm">
-                      <h3 class="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
-                        <i class="fas fa-video text-indigo-600"></i>
-                        Generate Video for this Step
-                      </h3>
-                      <div id="stepImageUploadSection" class="image-upload-section">
-                        <label for="stepImageInput" class="upload-label cursor-pointer group">
-                          <div class="upload-area border-2 border-dashed border-indigo-300 rounded-xl p-8 text-center transition-all duration-300 hover:border-indigo-400 hover:bg-indigo-50 group-hover:scale-[1.02]">
-                            <div class="upload-icon mb-4">
-                              <div class="w-16 h-16 mx-auto bg-indigo-100 rounded-full flex items-center justify-center group-hover:bg-indigo-200 transition-colors duration-300">
-                                <i class="fa fa-cloud-upload text-2xl text-indigo-600"></i>
-                              </div>
-                            </div>
-                            <div class="upload-text">
-                              <p class="text-lg font-medium text-gray-700 mb-2">Drop your image here</p>
-                              <p class="text-sm text-gray-500 mb-4">or click to browse files</p>
-                              <div class="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium group-hover:bg-indigo-700 transition-colors duration-300">
-                                <i class="fas fa-plus"></i>
-                                Choose Image
-                              </div>
-                            </div>
-                            <input id="stepImageInput" type="file" accept="image/*" class="hidden" />
-                          </div>
-                        </label>
-                        <div class="mt-4">
-                          <img id="stepImagePreview" class="mx-auto rounded-xl shadow-lg border border-gray-200 hidden" style="max-height:200px;" />
-                          <div id="stepUploadStatus" class="text-sm mt-3 text-center text-gray-500"></div>
-                        </div>
-                      </div>
-                    </div>
-                    <div id="stepLastFrameWrapper" class="mt-4 hidden">
-                      <div class="bg-gradient-to-br from-orange-50 to-amber-50 rounded-xl p-4 border border-orange-100">
-                        <h4 class="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
-                          <i class="fas fa-image text-orange-600"></i>
-                          Last Frame (Pixverse Transition)
-                        </h4>
-                        <div class="flex items-center gap-3">
-                          <label for="stepLastFrameInput" class="upload-label cursor-pointer group">
-                            <div class="border-2 border-dashed border-orange-300 rounded-lg p-4 text-center transition-all duration-300 hover:border-orange-400 hover:bg-orange-50 group-hover:scale-[1.02] min-w-[120px]">
-                              <div class="w-8 h-8 mx-auto bg-orange-100 rounded-full flex items-center justify-center group-hover:bg-orange-200 transition-colors duration-300 mb-2">
-                                <i class="fas fa-plus text-orange-600 text-sm"></i>
-                              </div>
-                              <span class="text-xs font-medium text-gray-600">Add Image</span>
-                              <input id="stepLastFrameInput" type="file" accept="image/*" class="hidden" />
-                            </div>
-                          </label>
-                          <img id="stepLastFramePreview" class="rounded-lg shadow border border-gray-200 hidden" style="max-height:120px; max-width:160px;" />
-                        </div>
-                      </div>
-                    </div>
-                     <!-- Vidu Q1 extra reference images (hidden unless Vidu model selected) -->
-                     <div id="stepRef2Wrapper" class="mt-4 hidden">
-                       <div class="bg-gradient-to-br from-purple-50 to-pink-50 rounded-xl p-4 border border-purple-100">
-                         <h4 class="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
-                           <i class="fas fa-image text-purple-600"></i>
-                           Reference Image 2 (Vidu Q1)
-                         </h4>
-                         <div class="flex items-center gap-3">
-                           <label for="stepRef2Input" class="upload-label cursor-pointer group">
-                             <div class="border-2 border-dashed border-purple-300 rounded-lg p-4 text-center transition-all duration-300 hover:border-purple-400 hover:bg-purple-50 group-hover:scale-[1.02] min-w-[120px]">
-                               <div class="w-8 h-8 mx-auto bg-purple-100 rounded-full flex items-center justify-center group-hover:bg-purple-200 transition-colors duration-300 mb-2">
-                                 <i class="fas fa-plus text-purple-600 text-sm"></i>
-                               </div>
-                               <span class="text-xs font-medium text-gray-600">Add Image</span>
-                               <input id="stepRef2Input" type="file" accept="image/*" class="hidden" />
-                             </div>
-                           </label>
-                           <img id="stepRef2Preview" class="rounded-lg shadow border border-gray-200 hidden" style="max-height:120px; max-width:160px;" />
-                         </div>
-                       </div>
-                     </div>
-                     <div id="stepRef3Wrapper" class="mt-4 hidden">
-                       <div class="bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl p-4 border border-green-100">
-                         <h4 class="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
-                           <i class="fas fa-image text-green-600"></i>
-                           Reference Image 3 (Vidu Q1)
-                         </h4>
-                         <div class="flex items-center gap-3">
-                           <label for="stepRef3Input" class="upload-label cursor-pointer group">
-                             <div class="border-2 border-dashed border-green-300 rounded-lg p-4 text-center transition-all duration-300 hover:border-green-400 hover:bg-green-50 group-hover:scale-[1.02] min-w-[120px]">
-                               <div class="w-8 h-8 mx-auto bg-green-100 rounded-full flex items-center justify-center group-hover:bg-green-200 transition-colors duration-300 mb-2">
-                                 <i class="fas fa-plus text-green-600 text-sm"></i>
-                               </div>
-                               <span class="text-xs font-medium text-gray-600">Add Image</span>
-                               <input id="stepRef3Input" type="file" accept="image/*" class="hidden" />
-                             </div>
-                           </label>
-                           <img id="stepRef3Preview" class="rounded-lg shadow border border-gray-200 hidden" style="max-height:120px; max-width:160px;" />
-                         </div>
-                       </div>
-                     </div>
-                    <select id="stepModelSelect" class="mt-4 w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400">
-                      <option value="ray-2">Ray 2</option>
-                      <option value="ray-2-flash">Ray 2 Flash</option>
-                      <option value="ray-1.6">Ray 1.6</option>
-                      <option value="vidu-q1-reference-to-video">Vidu Q1 Reference2Video</option>
-                      <option value="vidu-1.5-image-to-video">Vidu 1.5 Image2Video</option>
-                      <option value="vidu-2.0-image-to-video">Vidu 2.0 Image2Video</option>
-                      <option value="vidu-q1-image-to-video">Vidu Q1 Image2Video</option>
-                      <option value="veo-2-image-to-video">Veo 2 Image2Video</option>
-                      <option value="veo-3-image-to-video">Veo 3 Image2Video</option>
-                      <option value="pixverse-v4-image-to-video">Pixverse V4 (I2V)</option>
-                      <option value="pixverse-v4-transition">Pixverse V4 Transition</option>
-                      <option value="pixverse-v4.5-image-to-video">Pixverse V4.5 (I2V)</option>
-                      <option value="pixverse-v5-image-to-video">Pixverse V5 (I2V)</option>
-                      <option value="kling-v1-pro">Kling V1 Pro</option>
-                      <option value="kling-v1-standard">Kling V1 Standard</option>
-                      <option value="kling-1.5-pro">Kling 1.5 Pro</option>
-                      <option value="kling-v1.6-pro">Kling V1.6 Pro</option>
-                      <option value="kling-1.6-standard">Kling 1.6 Standard</option>
-                      <option value="kling-v2-master">Kling V2 Master</option>
-                      <option value="kling-v2.1-standard">Kling V2.1 Standard</option>
-                      <option value="kling-v2.1-pro">Kling V2.1 Pro</option>
-                      <option value="minimax-i2v-01">MiniMax I2V 01</option>
-                      <option value="minimax-i2v-live">MiniMax I2V Live</option>
-                      <option value="minimax-i2v-director">MiniMax Director</option>
-                      <option value="bytedance-omnihuman">Bytedance | Omnihuman</option>
-                      <option value="bytedance-seeddance-v1-pro-image-to-video">Bytedance | Seeddance V1 Pro Image2Video</option>
-                    </select>
-                    <button id="stepGenerateBtn" class="mt-4 w-full px-6 py-3 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white rounded-xl font-semibold transition-all duration-300 hover:shadow-lg hover:scale-105 flex items-center justify-center gap-2">
-                      <i class="fa fa-wand-magic-sparkles"></i> <span>Generate Video</span>
-                    </button>
-                    <div id="stepGenStatus" class="text-sm mt-2"></div>
-                  </div>
+                <div class="mb-4">
+                  <label class="block text-sm font-semibold text-gray-700 mb-1">Prompt</label>
+                  <textarea id="stepDetailPromptInput" rows="7" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400" placeholder="Enter prompt for this step..."></textarea>
+                </div>
+                <div id="stepDetailStatus" class="text-sm text-red-500 mb-2"></div>
+                <div class="flex justify-end gap-2">
+                  <button id="stepDetailCancelBtn" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300">Cancel</button>
+                  <button id="stepDetailSaveBtn" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Save</button>
                 </div>
               </div>
               <!-- Existing videos now full-width at bottom -->
