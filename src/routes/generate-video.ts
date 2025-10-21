@@ -1,6 +1,5 @@
 import { Router, Request, Response, NextFunction } from "express";
 import multer from "multer";
-import { features } from "../filters/features";
 import { PrismaClient } from "../generated/prisma";
 import { v2 as cloudinary, UploadApiResponse } from "cloudinary";
 import dotenv from "dotenv";
@@ -237,7 +236,9 @@ router.post(
       }
 
       // Step 2: Get the prompt for the selected feature (allow client override)
-      const featureObj = features.find((f) => f.endpoint === feature);
+      const featureObj = await prisma.features.findUnique({
+        where: { endpoint: feature },
+      });
       const prompt =
         typeof promptOverride === "string" && promptOverride.trim().length > 0
           ? promptOverride

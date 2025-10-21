@@ -418,11 +418,13 @@ async function loadAllFeatures() {
       const fallbackData = await fallbackResponse.json();
       if (!fallbackResponse.ok)
         throw new Error(fallbackData.message || "Failed");
-      features = fallbackData.items || [];
+      features = fallbackData.features || fallbackData.items || [];
     } else {
       const data = await response.json();
       if (!response.ok) throw new Error(data.message || "Failed");
-      features = Array.isArray(data) ? data : data.items || [];
+      // Handle new API response format: { success: true, features: [...] }
+      features =
+        data.features || (Array.isArray(data) ? data : data.items || []);
     }
 
     if (features.length === 0) {
@@ -632,18 +634,43 @@ function showFeatureDetailPage(endpoint) {
     console.log("Prompt element:", promptEl);
     if (titleEl) titleEl.textContent = feature.endpoint;
     if (promptEl) promptEl.textContent = feature.prompt || "";
-    const videoUrl =
-      featureGraphics[feature.endpoint] || latestVideos[feature.endpoint];
-    const videoEl = document.getElementById("featureDetailVideo");
-    console.log("Video element:", videoEl, "Video URL:", videoUrl);
-    if (videoEl) {
-      if (videoUrl) {
-        videoEl.src = videoUrl;
-        videoEl.style.display = "block";
-      } else {
-        videoEl.style.display = "none";
+    // Helper to update the video in the modal
+    async function updateFeatureDetailVideo() {
+      const videoEl = document.getElementById("featureDetailVideo");
+      let videoUrl =
+        featureGraphics[feature.endpoint] || latestVideos[feature.endpoint];
+      if (!videoUrl) {
+        // Try to fetch latest video from backend if not present
+        try {
+          const res = await fetch(
+            `/api/generate-video/videos/${feature.endpoint}`
+          );
+          const videos = await res.json();
+          if (Array.isArray(videos) && videos.length > 0) {
+            videoUrl =
+              videos[0].cloudinaryUrl ||
+              videos[0].url ||
+              videos[0].videoUrl ||
+              videos[0].video_url ||
+              "";
+            // Also update latestVideos cache
+            latestVideos[feature.endpoint] = videoUrl;
+          }
+        } catch (e) {
+          videoUrl = "";
+        }
+      }
+      if (videoEl) {
+        if (videoUrl) {
+          videoEl.src = videoUrl;
+          videoEl.style.display = "block";
+        } else {
+          videoEl.style.display = "none";
+        }
       }
     }
+    // Initial call
+    updateFeatureDetailVideo();
 
     // --- Feature video generation logic ---
     let uploadedImageUrl = null;
@@ -1013,6 +1040,8 @@ function showFeatureDetailPage(endpoint) {
             }
             // Refresh latest videos to update feature cards without full reload
             await refreshLatestVideos();
+            // Always fetch and show the latest video for this endpoint
+            await updateFeatureDetailVideo();
           } else {
             throw new Error((data && data.error) || "Failed to generate video");
           }
@@ -1949,8 +1978,9 @@ async function editTemplate(templateId) {
   // Ensure endpoints are loaded
   if (!window.featureEndpointsFull || !window.featureEndpointsFull.length) {
     try {
-      const res = await fetch("/api/features");
-      window.featureEndpointsFull = await res.json();
+      const res = await fetch("/api/features/all");
+      const data = await res.json();
+      window.featureEndpointsFull = data.features || [];
     } catch {
       window.featureEndpointsFull = [];
     }
@@ -3182,7 +3212,8 @@ function openFeatureCrudModal() {
         });
 
         if (response.ok) {
-          const newFeature = await response.json();
+          const result = await response.json();
+          const newFeature = result.feature || result; // Handle { success: true, feature: {...} } format
           closeFeatureCrudModal();
           // Add the new feature to the list efficiently instead of full reload
           if (newFeature && newFeature.endpoint) {

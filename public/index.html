@@ -494,9 +494,9 @@
                 let featureEndpoints = [];
                 async function fetchFeatureEndpoints() {
                   try {
-                    const res = await fetch('/api/features');
+                    const res = await fetch('/api/features/all');
                     const data = await res.json();
-                    featureEndpoints = Array.isArray(data) ? data.map(f => f.endpoint) : [];
+                    featureEndpoints = data.features ? data.features.map(f => f.endpoint) : [];
                   } catch { featureEndpoints = []; }
                 }
                 fetchFeatureEndpoints();

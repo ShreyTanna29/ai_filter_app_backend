@@ -1,6 +1,5 @@
 import { Router, Request, Response } from "express";
 import { PrismaClient } from "../generated/prisma";
-import { features } from "../filters/features";
 import axios from "axios";
 
 // Cloudinary config (assume env vars set)
@@ -104,22 +103,29 @@ router.post(
           description,
           category: { connect: { id: mainCategory.id } },
           subcategories: {
-            create: subcategories.map((subcat: any) => ({
-              name: subcat.name,
-              category: { connect: { id: mainCategory.id } },
-              steps: {
-                create: (subcat.steps || []).map((step: any, idx: number) => {
-                  const feat = features.find(
-                    (f) => f.endpoint === step.endpoint
-                  );
-                  return {
-                    endpoint: step.endpoint,
-                    prompt: feat?.prompt || "",
-                    order: idx,
-                  };
-                }),
-              },
-            })),
+            create: await Promise.all(
+              subcategories.map(async (subcat: any) => {
+                const steps = await Promise.all(
+                  (subcat.steps || []).map(async (step: any, idx: number) => {
+                    const feat = await prisma.features.findUnique({
+                      where: { endpoint: step.endpoint },
+                    });
+                    return {
+                      endpoint: step.endpoint,
+                      prompt: feat?.prompt || "",
+                      order: idx,
+                    };
+                  })
+                );
+                return {
+                  name: subcat.name,
+                  category: { connect: { id: mainCategory.id } },
+                  steps: {
+                    create: steps,
+                  },
+                };
+              })
+            ),
           },
         },
         include: {
@@ -162,7 +168,10 @@ router.get(
   "/templates/endpoints",
   async (req: Request, res: Response): Promise<void> => {
     try {
-      res.json(features);
+      const allFeatures = await prisma.features.findMany({
+        orderBy: { endpoint: "asc" },
+      });
+      res.json(allFeatures);
     } catch (error) {
       console.error("Error fetching endpoints:", error);
       res.status(500).json({ error: "Failed to fetch endpoints" });
@@ -217,22 +226,29 @@ router.put(
           description,
           category: { connect: { id: mainCategoryId } },
           subcategories: {
-            create: subcategories.map((subcat: any) => ({
-              name: subcat.name,
-              category: { connect: { id: mainCategoryId } },
-              steps: {
-                create: (subcat.steps || []).map((step: any, idx: number) => {
-                  const feat = features.find(
-                    (f) => f.endpoint === step.endpoint
-                  );
-                  return {
-                    endpoint: step.endpoint,
-                    prompt: feat?.prompt || "",
-                    order: idx,
-                  };
-                }),
-              },
-            })),
+            create: await Promise.all(
+              subcategories.map(async (subcat: any) => {
+                const steps = await Promise.all(
+                  (subcat.steps || []).map(async (step: any, idx: number) => {
+                    const feat = await prisma.features.findUnique({
+                      where: { endpoint: step.endpoint },
+                    });
+                    return {
+                      endpoint: step.endpoint,
+                      prompt: feat?.prompt || "",
+                      order: idx,
+                    };
+                  })
+                );
+                return {
+                  name: subcat.name,
+                  category: { connect: { id: mainCategoryId } },
+                  steps: {
+                    create: steps,
+                  },
+                };
+              })
+            ),
           },
         },
         include: {
@@ -353,7 +369,9 @@ router.post(
       for (const subcategory of template.subcategories) {
         for (const step of subcategory.steps) {
           // Find the feature to get the default prompt
-          const feature = features.find((f) => f.endpoint === step.endpoint);
+          const feature = await prisma.features.findUnique({
+            where: { endpoint: step.endpoint },
+          });
           const prompt = step.prompt || feature?.prompt || "";
 
           // Call the video generation API for this step using axios

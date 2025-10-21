@@ -3,9 +3,6 @@ import cors from "cors";
 import dotenv from "dotenv";
 import { PrismaClient } from "./generated/prisma";
 import facetrixfiltersRouter from "./routes/filter_endpoints";
-import { features } from "./filters/features";
-import fs from "fs";
-import path from "path";
 import templatesRouter from "./routes/templates";
 import cloudinaryRouter from "./routes/cloudinary";
 import videoGenerationRouter from "./routes/generate-video";
@@ -27,187 +24,241 @@ const prisma = new PrismaClient();
 
 // Feature management routes
 // Get all features without pagination
-app.get("/api/features/all", (req: Request, res: Response): void => {
+app.get("/api/features/all", async (req, res) => {
   try {
-    const { q } = req.query as Record<string, string>;
-    let list = features;
-    if (q && q.trim()) {
-      const ql = q.toLowerCase();
-      list = list.filter(
-        (f) =>
-          f.endpoint.toLowerCase().includes(ql) ||
-          (f.prompt || "").toLowerCase().includes(ql)
-      );
-    }
-    res.json(list);
-  } catch (e) {
-    console.error("Error serving /api/features/all", e);
-    res.status(500).json({ message: "Failed to load features" });
+    const { search } = req.query;
+
+    const whereClause =
+      search && typeof search === "string"
+        ? {
+            OR: [
+              { endpoint: { contains: search, mode: "insensitive" as const } },
+              { prompt: { contains: search, mode: "insensitive" as const } },
+            ],
+          }
+        : {};
+
+    const list = await prisma.features.findMany({
+      where: whereClause,
+      orderBy: { createdAt: "asc" },
+    });
+
+    res.json({
+      success: true,
+      features: list,
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
   }
 });
 
 // Paginated features list
-app.get("/api/features", (req: Request, res: Response): void => {
+app.get("/api/features", async (req, res) => {
   try {
-    const {
-      offset = "0",
-      limit = "20",
-      q,
-    } = req.query as Record<string, string>;
-    let list = features;
-    if (q && q.trim()) {
-      const ql = q.toLowerCase();
-      list = list.filter(
-        (f) =>
-          f.endpoint.toLowerCase().includes(ql) ||
-          (f.prompt || "").toLowerCase().includes(ql)
-      );
-    }
-    const total = list.length;
-    const off = Math.max(0, parseInt(offset) || 0);
-    const limRaw = parseInt(limit) || 20;
-    const lim = Math.min(Math.max(limRaw, 1), 100); // clamp 1..100
-    const items = list.slice(off, off + lim);
-    res.json({ items, total, offset: off, limit: lim });
-  } catch (e) {
-    console.error("Error serving /api/features", e);
-    res.status(500).json({ message: "Failed to load features" });
+    const { page = 1, limit = 10, search } = req.query;
+    const pageNumber = parseInt(page as string);
+    const limitNumber = parseInt(limit as string);
+    const skip = (pageNumber - 1) * limitNumber;
+
+    const whereClause =
+      search && typeof search === "string"
+        ? {
+            OR: [
+              { endpoint: { contains: search, mode: "insensitive" as const } },
+              { prompt: { contains: search, mode: "insensitive" as const } },
+            ],
+          }
+        : {};
+
+    const [list, total] = await Promise.all([
+      prisma.features.findMany({
+        where: whereClause,
+        skip,
+        take: limitNumber,
+        orderBy: { createdAt: "asc" },
+      }),
+      prisma.features.count({ where: whereClause }),
+    ]);
+
+    res.json({
+      success: true,
+      features: list,
+      pagination: {
+        page: pageNumber,
+        limit: limitNumber,
+        total,
+        totalPages: Math.ceil(total / limitNumber),
+      },
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
   }
 });
 
-app.put("/api/features/:endpoint", (req: Request, res: Response): void => {
+// Update a feature's prompt
+app.put("/api/features/:endpoint", async (req, res): Promise<any> => {
   const { endpoint } = req.params;
   const { prompt } = req.body;
 
   if (!prompt) {
-    res.status(400).json({ message: "Prompt is required" });
-    return;
+    return res.status(400).json({
+      success: false,
+      message: "Prompt is required",
+    });
   }
-
-  // Find the feature in the array
-  const featureIndex = features.findIndex((f) => f.endpoint === endpoint);
-
-  if (featureIndex === -1) {
-    res.status(404).json({ message: "Feature not found" });
-    return;
-  }
-
-  // Update the prompt
-  features[featureIndex].prompt = prompt;
-
-  // Write the updated features back to the file
-  const featuresPath = path.join(__dirname, "filters", "features.ts");
-  const featuresContent = `export const features = ${JSON.stringify(
-    features,
-    null,
-    2
-  )};`;
 
   try {
-    fs.writeFileSync(featuresPath, featuresContent);
-    res.json({
-      message: "Feature updated successfully",
-      feature: features[featureIndex],
+    const feature = await prisma.features.update({
+      where: { endpoint },
+      data: { prompt },
     });
-  } catch (error) {
-    console.error("Error writing features file:", error);
-    res.status(500).json({ message: "Failed to update feature" });
+
+    res.json({
+      success: true,
+      message: "Feature updated successfully",
+      feature,
+    });
+  } catch (error: any) {
+    console.error(error);
+    if (error.code === "P2025") {
+      return res.status(404).json({
+        success: false,
+        message: "Feature not found",
+      });
+    }
+    res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
   }
 });
 
 // Create a new feature
-app.post("/api/features", (req: Request, res: Response): void => {
+app.post("/api/features", async (req, res): Promise<any> => {
   const { endpoint, prompt } = req.body;
 
   if (!endpoint || !prompt) {
-    res.status(400).json({ message: "Endpoint and prompt are required" });
-    return;
+    return res.status(400).json({
+      success: false,
+      message: "Endpoint and prompt are required",
+    });
   }
-
-  // Check if feature already exists
-  const existingFeature = features.find((f) => f.endpoint === endpoint);
-  if (existingFeature) {
-    res
-      .status(409)
-      .json({ message: "Feature with this endpoint already exists" });
-    return;
-  }
-
-  // Add new feature
-  const newFeature = { endpoint: endpoint.trim(), prompt: prompt.trim() };
-  features.push(newFeature);
-
-  // Write the updated features back to the file
-  const featuresPath = path.join(__dirname, "filters", "features.ts");
-  const featuresContent = `export const features = ${JSON.stringify(
-    features,
-    null,
-    2
-  )};`;
 
   try {
-    fs.writeFileSync(featuresPath, featuresContent);
-    res.status(201).json({
-      message: "Feature created successfully",
-      feature: newFeature,
+    const feature = await prisma.features.create({
+      data: {
+        endpoint,
+        prompt,
+        isActive: true,
+      },
     });
-  } catch (error) {
-    console.error("Error writing features file:", error);
-    res.status(500).json({ message: "Failed to create feature" });
+
+    res.status(201).json({
+      success: true,
+      message: "Feature created successfully",
+      feature,
+    });
+  } catch (error: any) {
+    console.error(error);
+    if (error.code === "P2002") {
+      return res.status(400).json({
+        success: false,
+        message: "Feature with this endpoint already exists",
+      });
+    }
+    res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
   }
 });
 
 // Rename a feature endpoint
-app.put(
-  "/api/features/:endpoint/rename",
-  (req: Request, res: Response): void => {
-    const { endpoint } = req.params;
-    const { newEndpoint } = req.body as { newEndpoint?: string };
+app.put("/api/features/:endpoint/rename", async (req, res): Promise<any> => {
+  const { endpoint } = req.params;
+  const { newEndpoint } = req.body;
 
-    if (
-      !newEndpoint ||
-      typeof newEndpoint !== "string" ||
-      !newEndpoint.trim()
-    ) {
-      res.status(400).json({ message: "newEndpoint is required" });
-      return;
-    }
-
-    // Validate uniqueness
-    if (features.some((f) => f.endpoint === newEndpoint)) {
-      res
-        .status(409)
-        .json({ message: "An endpoint with this name already exists" });
-      return;
-    }
-
-    const featureIndex = features.findIndex((f) => f.endpoint === endpoint);
-    if (featureIndex === -1) {
-      res.status(404).json({ message: "Feature not found" });
-      return;
-    }
-
-    features[featureIndex].endpoint = newEndpoint;
-
-    // Persist to file
-    const featuresPath = path.join(__dirname, "filters", "features.ts");
-    const featuresContent = `export const features = ${JSON.stringify(
-      features,
-      null,
-      2
-    )};`;
-    try {
-      fs.writeFileSync(featuresPath, featuresContent);
-      res.json({
-        message: "Endpoint renamed",
-        feature: features[featureIndex],
-      });
-    } catch (e) {
-      console.error("Error writing features file:", e);
-      res.status(500).json({ message: "Failed to rename endpoint" });
-    }
+  if (!newEndpoint) {
+    return res.status(400).json({
+      success: false,
+      message: "New endpoint is required",
+    });
   }
-);
+
+  try {
+    // Check if new endpoint already exists
+    const existingFeature = await prisma.features.findUnique({
+      where: { endpoint: newEndpoint },
+    });
+
+    if (existingFeature) {
+      return res.status(400).json({
+        success: false,
+        message: "Feature with this endpoint already exists",
+      });
+    }
+
+    // Update the endpoint
+    const feature = await prisma.features.update({
+      where: { endpoint },
+      data: { endpoint: newEndpoint },
+    });
+
+    res.json({
+      success: true,
+      message: "Feature renamed successfully",
+      feature,
+    });
+  } catch (error: any) {
+    console.error(error);
+    if (error.code === "P2025") {
+      return res.status(404).json({
+        success: false,
+        message: "Feature not found",
+      });
+    }
+    res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  }
+});
+
+// Delete a feature
+app.delete("/api/features/:endpoint", async (req, res): Promise<any> => {
+  const { endpoint } = req.params;
+
+  try {
+    await prisma.features.delete({
+      where: { endpoint },
+    });
+
+    res.json({
+      success: true,
+      message: "Feature deleted successfully",
+    });
+  } catch (error: any) {
+    console.error(error);
+    if (error.code === "P2025") {
+      return res.status(404).json({
+        success: false,
+        message: "Feature not found",
+      });
+    }
+    res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  }
+});
 
 app.use("/api", facetrixfiltersRouter);
 app.use("/api", templatesRouter);

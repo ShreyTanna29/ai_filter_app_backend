@@ -1,19 +1,14 @@
 import { Router, Request, Response } from "express";
 import axios from "axios";
-import { features } from "../filters/features";
 import type { RequestHandler } from "express";
 import cloudinary from "cloudinary";
+import { PrismaClient } from "../generated/prisma";
 
 const router = Router();
+const prisma = new PrismaClient();
 
-// Check for duplicate endpoints
-const endpointSet = new Set<string>();
-for (const feature of features) {
-  if (endpointSet.has(feature.endpoint)) {
-    throw new Error(`Duplicate endpoint found: ${feature.endpoint}`);
-  }
-  endpointSet.add(feature.endpoint);
-}
+// Duplicate endpoint validation is now handled by the database unique constraint
+// on the endpoint column in the Features table
 
 // Alibaba Cloud Model Studio configuration
 const ALIBABA_API_BASE = "https://dashscope-intl.aliyuncs.com/api/v1";
@@ -192,7 +187,9 @@ async function alibabaImageToVideo(
 router.post("/:endpoint", async (req: Request, res: Response, next) => {
   try {
     const requested = req.params.endpoint;
-    const feature = features.find((f) => f.endpoint === requested);
+    const feature = await prisma.features.findUnique({
+      where: { endpoint: requested },
+    });
     if (!feature) {
       return next(); // not a known feature endpoint; allow other routes to handle
     }
