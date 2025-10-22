@@ -1,5 +1,5 @@
 import { Router, Request, Response } from "express";
-import { PrismaClient } from "../generated/prisma";
+import prisma from "../lib/prisma";
 import axios from "axios";
 
 // Cloudinary config (assume env vars set)
@@ -71,10 +71,9 @@ function unregisterTemplateEndpoint(template: any) {
     delete templateRouteMap[endpoint];
   }
 }
-const prisma = new PrismaClient();
 
 // Helper to get or create a main category for a template
-async function getOrCreateMainCategory(prisma: any, name: string) {
+async function getOrCreateMainCategory(name: string) {
   let category = await prisma.category.findFirst({ where: { name } });
   if (!category) {
     category = await prisma.category.create({ data: { name } });
@@ -95,7 +94,7 @@ router.post(
         return;
       }
       // Get or create main category
-      const mainCategory = await getOrCreateMainCategory(prisma, name);
+      const mainCategory = await getOrCreateMainCategory(name);
       // Create the template
       const template = await prisma.template.create({
         data: {

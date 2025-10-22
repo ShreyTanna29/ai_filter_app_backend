@@ -1,6 +1,6 @@
 import { Router, Request, Response, NextFunction } from "express";
 import multer from "multer";
-import { PrismaClient } from "../generated/prisma";
+import prisma from "../lib/prisma";
 import { v2 as cloudinary, UploadApiResponse } from "cloudinary";
 import dotenv from "dotenv";
 import axios, { AxiosResponse } from "axios";
@@ -21,7 +21,6 @@ cloudinary.config({
 });
 
 const router = Router();
-const prisma = new PrismaClient();
 
 // --- Helper serialization utilities to avoid circular JSON issues in error responses ---
 const safeJson = (value: any, depth = 3): any => {

@@ -1,9 +1,8 @@
 import { Router, Request, Response } from "express";
 import bcrypt from "bcryptjs";
-import { PrismaClient } from "../generated/prisma";
+import prisma from "../lib/prisma";
 
 const router = Router();
-const prisma = new PrismaClient();
 
 // Login endpoint with database authentication
 router.post("/login", async (req: Request, res: Response): Promise<void> => {

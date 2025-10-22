@@ -1,8 +1,7 @@
 import { Router, Request, Response } from "express";
-import { PrismaClient } from "../generated/prisma";
+import prisma from "../lib/prisma";
 
 const router = Router();
-const prisma = new PrismaClient();
 
 // Get all categories with subcategories and templates
 router.get("/", async (req: Request, res: Response) => {

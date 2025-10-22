@@ -1,7 +1,7 @@
 import express, { Request, Response, NextFunction } from "express";
 import cors from "cors";
 import dotenv from "dotenv";
-import { PrismaClient } from "./generated/prisma";
+import prisma from "./lib/prisma";
 import facetrixfiltersRouter from "./routes/filter_endpoints";
 import templatesRouter from "./routes/templates";
 import cloudinaryRouter from "./routes/cloudinary";
@@ -19,8 +19,6 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 app.use(express.static("public")); // Serve static files from public directory
-
-const prisma = new PrismaClient();
 
 // Feature management routes
 // Get all features without pagination

@@ -2,10 +2,9 @@ import { Router, Request, Response } from "express";
 import axios from "axios";
 import type { RequestHandler } from "express";
 import cloudinary from "cloudinary";
-import { PrismaClient } from "../generated/prisma";
+import prisma from "../lib/prisma";
 
 const router = Router();
-const prisma = new PrismaClient();
 
 // Duplicate endpoint validation is now handled by the database unique constraint
 // on the endpoint column in the Features table
@@ -202,8 +201,6 @@ router.post("/:endpoint", async (req: Request, res: Response, next) => {
 // Endpoint to get all generated videos for a feature
 router.get("/videos/:endpoint", async (req: Request, res: Response) => {
   try {
-    const { PrismaClient } = require("../generated/prisma/client");
-    const prisma = new PrismaClient();
     const videos: any[] = await prisma.generatedVideo.findMany({
       where: { feature: req.params.endpoint },
       orderBy: { createdAt: "desc" },
@@ -223,8 +220,6 @@ router.delete("/videos/:id", async (req: Request, res: Response) => {
       res.status(400).json({ error: "Invalid id" });
       return;
     }
-    const { PrismaClient } = require("../generated/prisma/client");
-    const prisma = new PrismaClient();
     const video = await prisma.generatedVideo.findUnique({ where: { id } });
     if (!video) {
       res.status(404).json({ error: "Video not found" });
@@ -257,8 +252,6 @@ router.delete("/videos/:id", async (req: Request, res: Response) => {
 // Use GeneratedVideo instead of FeatureGraphic: return latest video per endpoint
 router.get("/feature-graphic", async (req: Request, res: Response) => {
   try {
-    const { PrismaClient } = require("../generated/prisma/client");
-    const prisma = new PrismaClient();
     // Get recent videos
     const all: any[] = await prisma.generatedVideo.findMany({
       orderBy: { createdAt: "desc" },
@@ -289,8 +282,6 @@ router.post(
         res.status(400).json({ error: "Missing video url" });
         return;
       }
-      const { PrismaClient } = require("../generated/prisma/client");
-      const prisma = new PrismaClient();
       const exists = await prisma.generatedVideo.findFirst({
         where: { feature: endpoint, url },
       });
