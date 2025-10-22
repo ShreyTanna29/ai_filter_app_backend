@@ -45,6 +45,42 @@ function showStepVideoModal(videoUrl) {
 }
 // Ensure the add feature modal is hidden on page load
 
+// --- Fullscreen Loader ---
+function showFullscreenLoader() {
+  let loader = document.getElementById("fullscreenLoader");
+  if (!loader) {
+    loader = document.createElement("div");
+    loader.id = "fullscreenLoader";
+    loader.style.position = "fixed";
+    loader.style.top = 0;
+    loader.style.left = 0;
+    loader.style.width = "100vw";
+    loader.style.height = "100vh";
+    loader.style.background = "rgba(255,255,255,0.95)";
+    loader.style.display = "flex";
+    loader.style.flexDirection = "column";
+    loader.style.justifyContent = "center";
+    loader.style.alignItems = "center";
+    loader.style.zIndex = 99999;
+    loader.innerHTML = `
+      <div style="display:flex;flex-direction:column;align-items:center;gap:24px;">
+        <svg class="animate-spin" style="height:64px;width:64px;color:#2563eb;" viewBox="0 0 50 50">
+          <circle cx="25" cy="25" r="20" fill="none" stroke="#2563eb" stroke-width="6" stroke-linecap="round" stroke-dasharray="31.4 31.4"/>
+        </svg>
+        <div style="font-size:2rem;font-weight:bold;color:#2563eb;letter-spacing:1px;">Loading Dashboard...</div>
+        <div style="color:#555;font-size:1.1rem;">Please wait while we load features and graphics.</div>
+      </div>
+    `;
+    document.body.appendChild(loader);
+  }
+  loader.style.display = "flex";
+}
+
+function hideFullscreenLoader() {
+  const loader = document.getElementById("fullscreenLoader");
+  if (loader) loader.style.display = "none";
+}
+
 window.addEventListener("DOMContentLoaded", function () {
   // Auth modal logic (must be defined before any call)
   window.showSignInModal = function () {
@@ -391,15 +427,17 @@ async function initializeDashboard() {
   console.log("Starting data loading sequence...");
 
   try {
+    // Show loader before starting
+    showFullscreenLoader();
+
     // Load templates and endpoints (non-blocking)
     loadTemplates();
     loadAvailableEndpoints();
 
-    // Load graphics first, then features to ensure videos are available when features display
-    console.log("Loading feature graphics...");
-    await loadFeatureGraphics(); // This now loads both graphics and latest videos
-    loadAllFeatures();
-    console.log("Feature graphics loaded, now loading features...");
+    await loadFeatureGraphics();
+    await loadAllFeatures();
+
+    console.log("Feature graphics and features loaded");
 
     // Update stats with initial values
     updateStats();
@@ -407,6 +445,9 @@ async function initializeDashboard() {
     console.log("Dashboard initialization complete");
   } catch (error) {
     console.error("Error during dashboard initialization:", error);
+  } finally {
+    // Always hide loader after both finish (success or error)
+    hideFullscreenLoader();
   }
 }
 
