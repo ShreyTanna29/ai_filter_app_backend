@@ -375,7 +375,12 @@ router.post(
             return;
           }
         } catch (err) {
-          console.error("Pixverse create error (single attempt):", err);
+          const pixErr = err as any;
+          console.error("Pixverse create error (single attempt):", {
+            error: pixErr,
+            payload: createPayload,
+            serverResponse: pixErr?.response?.data,
+          });
           const e = err as any;
           let provider_message =
             e?.response?.data?.message ||
@@ -645,7 +650,12 @@ router.post(
             return;
           }
         } catch (err) {
-          console.error("Vidu Q1 create error:", err);
+          const viduQ1Err = err as any;
+          console.error("Vidu Q1 create error:", {
+            error: viduQ1Err,
+            payload: createPayload,
+            serverResponse: viduQ1Err?.response?.data,
+          });
           res.status(502).json({
             success: false,
             error: "Failed to create Vidu Q1 prediction",
@@ -848,7 +858,12 @@ router.post(
             return;
           }
         } catch (err) {
-          console.error("Vidu 1.5 create error:", err);
+          const vidu15Err = err as any;
+          console.error("Vidu 1.5 create error:", {
+            error: vidu15Err,
+            payload: createPayload,
+            serverResponse: vidu15Err?.response?.data,
+          });
           res.status(502).json({
             success: false,
             error: "Failed to create Vidu 1.5 prediction",
@@ -1050,7 +1065,12 @@ router.post(
             return;
           }
         } catch (err) {
-          console.error("Vidu Q1 I2V create error:", err);
+          const viduQ1I2VErr = err as any;
+          console.error("Vidu Q1 I2V create error:", {
+            error: viduQ1I2VErr,
+            payload: createPayload,
+            serverResponse: viduQ1I2VErr?.response?.data,
+          });
           res.status(502).json({
             success: false,
             error: "Failed to create Vidu Q1 I2V prediction",
@@ -1253,7 +1273,12 @@ router.post(
             return;
           }
         } catch (err) {
-          console.error("Vidu 2.0 create error:", err);
+          const vidu20Err = err as any;
+          console.error("Vidu 2.0 create error:", {
+            error: vidu20Err,
+            payload: createPayload,
+            serverResponse: vidu20Err?.response?.data,
+          });
           res.status(502).json({
             success: false,
             error: "Failed to create Vidu 2.0 prediction",
@@ -1460,7 +1485,12 @@ router.post(
             return;
           }
         } catch (err) {
-          console.error("Veo 2 Image to Video create error:", err);
+          const veo2Err = err as any;
+          console.error("Veo 2 Image to Video create error:", {
+            error: veo2Err,
+            payload: createPayload,
+            serverResponse: veo2Err?.response?.data,
+          });
           res.status(502).json({
             success: false,
             error: "Failed to create Veo 2 Image to Video prediction",
@@ -1667,7 +1697,12 @@ router.post(
             return;
           }
         } catch (err) {
-          console.error("Veo 3 Image to Video create error:", err);
+          const veo3Err = err as any;
+          console.error("Veo 3 Image to Video create error:", {
+            error: veo3Err,
+            payload: createPayload,
+            serverResponse: veo3Err?.response?.data,
+          });
           res.status(502).json({
             success: false,
             error: "Failed to create Veo 3 Image to Video prediction",
@@ -1919,7 +1954,7 @@ router.post(
             return;
           }
         } catch (e: any) {
-          console.error("Bytedance create error:", e);
+          // already using e as any here, so no change needed
           const provider_message =
             e?.response?.data?.message ||
             e?.response?.data?.error ||
@@ -2124,7 +2159,7 @@ router.post(
             return;
           }
         } catch (e: any) {
-          console.error("MiniMax create error:", e);
+          // already using e as any here, so no change needed
           const respData = e?.response?.data;
           const base = respData?.base_resp || {};
           const provider_code = base?.status_code;
@@ -2406,17 +2441,25 @@ router.post(
             await new Promise((r) => setTimeout(r, backoff));
             continue;
           }
-          console.error("Luma create generation error:", serializeError(e));
+          console.error("Luma create generation error:", {
+            error: serializeError(e),
+            payload: lumaPayload,
+            serverResponse: e?.response?.data,
+          });
           const respData = (e as any)?.response?.data;
-          const provider_message =
-            respData?.message || respData?.error || (e as any)?.message;
+          // Prefer detail/message/error from server response for user-facing error
+          const userMessage =
+            respData?.detail ||
+            respData?.message ||
+            respData?.error ||
+            (e as any)?.message;
           res.status(503).json({
             success: false,
-            error: provider_message
-              ? `Luma creation failed: ${provider_message}`
+            error: userMessage
+              ? `${userMessage}`
               : "Luma API unreachable or timed out",
             provider: "Luma",
-            provider_message,
+            provider_message: userMessage,
             details: serializeError(e),
           });
           return;
