@@ -1,3 +1,38 @@
+// --- Scroll position preservation for template page ---
+let savedTemplateScrollPosition = 0;
+// --- Video Modal for Step Details ---
+if (!document.getElementById("step-video-modal")) {
+  const modal = document.createElement("div");
+  modal.id = "step-video-modal";
+  modal.style.position = "fixed";
+  modal.style.top = "0";
+  modal.style.left = "0";
+  modal.style.width = "100vw";
+  modal.style.height = "100vh";
+  modal.style.background = "rgba(0,0,0,0.7)";
+  modal.style.display = "none";
+  modal.style.justifyContent = "center";
+  modal.style.alignItems = "center";
+  modal.style.zIndex = "9999";
+  modal.innerHTML = `
+    <div id="step-video-modal-content" style="background:#fff; padding:0; border-radius:8px; max-width:90vw; max-height:90vh; display:flex; flex-direction:column; align-items:center;">
+      <button id="step-video-modal-close" style="align-self:flex-end; margin:8px 8px 0 0; font-size:1.5rem; background:none; border:none; cursor:pointer;">&times;</button>
+      <video id="step-video-modal-player" controls style="max-width:80vw; max-height:70vh; border-radius:8px;"></video>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  document.getElementById("step-video-modal-close").onclick = function () {
+    modal.style.display = "none";
+    document.getElementById("step-video-modal-player").src = "";
+  };
+}
+
+function showStepVideoModal(videoUrl) {
+  const modal = document.getElementById("step-video-modal");
+  const player = document.getElementById("step-video-modal-player");
+  player.src = videoUrl;
+  modal.style.display = "flex";
+}
 // Ensure the add feature modal is hidden on page load
 
 window.addEventListener("DOMContentLoaded", function () {
@@ -1488,6 +1523,8 @@ function displayTemplates() {
 
 // Show step detail page for editing
 function showStepDetailPage(templateId, stepIndex, subcatIndex) {
+  // Save scroll position of the page before opening step details
+  savedTemplateScrollPosition = window.scrollY || window.pageYOffset || 0;
   const template = templates.find((t) => t.id === templateId);
   if (!template) return;
   let step = Array.isArray(template.steps)
@@ -1527,26 +1564,21 @@ function showStepDetailPage(templateId, stepIndex, subcatIndex) {
         const html = videos
           .map(
             (v) =>
-              `<div class="relative rounded-lg overflow-hidden border border-gray-200 hover:border-blue-400 hover:shadow group" data-url="${v.url}" data-id="${v.id}">
-       <video src="${v.url}" class="w-full transition-opacity duration-300 cursor-pointer step-detail-video"  controls preload="metadata" style="object-fit:cover"></video>
+              `<div class="relative rounded-lg overflow-hidden border border-gray-200 hover:border-blue-400 hover:shadow group step-detail-thumb" data-url="${v.url}" data-id="${v.id}" style="width:120px;height:213px;display:inline-block;vertical-align:top;background:#000;cursor:pointer;">
+       <video src="${v.url}" class="w-full h-full object-cover" preload="metadata" style="width:100%;height:100%;object-fit:cover;pointer-events:none;"></video>
        <button class="absolute top-1 right-1 bg-red-600/80 text-white text-[10px] px-1.5 py-0.5 rounded opacity-0 group-hover:opacity-100 transition delete-step-video-btn" title="Delete video"><svg xmlns='http://www.w3.org/2000/svg' width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' class='pointer-events-none'><path d='M3 6h18'/><path d='M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2'/><path d='M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6'/><path d='M10 11v6'/><path d='M14 11v6'/></svg></button>
      </div>`
           )
           .join("");
         generatedListEl.innerHTML = html;
-        // Selection highlight
-        generatedListEl
-          .querySelectorAll("video.step-detail-video")
-          .forEach((vid) => {
-            vid.addEventListener("click", (e) => {
-              e.preventDefault();
-              generatedListEl
-                .querySelectorAll("div[data-id]")
-                .forEach((n) => n.classList.remove("ring", "ring-blue-400"));
-              const parent = vid.closest("div[data-id]");
-              if (parent) parent.classList.add("ring", "ring-blue-400");
-            });
+        // Click to open modal
+        generatedListEl.querySelectorAll(".step-detail-thumb").forEach((el) => {
+          el.addEventListener("click", (e) => {
+            if (e.target.classList.contains("delete-step-video-btn")) return;
+            const url = el.getAttribute("data-url");
+            if (url) showStepVideoModal(url);
           });
+        });
         // Deletion
         generatedListEl
           .querySelectorAll(".delete-step-video-btn")
@@ -1851,6 +1883,11 @@ function closeStepDetailPage() {
   // Use the normal tab switching functionality to show templates tab
   // This ensures proper tab state management and allows users to switch to other tabs
   switchTab("templates");
+
+  // Restore the saved scroll position for the template page after a brief delay to ensure DOM is ready
+  setTimeout(() => {
+    window.scrollTo(0, savedTemplateScrollPosition);
+  }, 100);
 
   // Reset step detail state
   window._currentStepTemplateId = null;
