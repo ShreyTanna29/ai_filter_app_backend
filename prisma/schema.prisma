@@ -58,7 +58,7 @@ model GeneratedVideo {
   url       String // Cloudinary URL
   createdAt DateTime @default(now())
 
-  @@index([feature])
+  @@index([feature, createdAt])
 }
 
 model Category {

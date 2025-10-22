@@ -252,25 +252,35 @@ router.delete("/videos/:id", async (req: Request, res: Response) => {
 // Use GeneratedVideo instead of FeatureGraphic: return latest video per endpoint
 router.get("/feature-graphic", async (req: Request, res: Response) => {
   try {
-    // Get recent videos
-    const all: any[] = await prisma.generatedVideo.findMany({
-      orderBy: { createdAt: "desc" },
+    const latestVideos = await prisma.generatedVideo.findMany({
+      // 1. Get only one row for each unique 'feature'
+      distinct: ["feature"],
+
+      // 2. Define the order to pick the "first" one
+      orderBy: [
+        { feature: "asc" }, // Order by the distinct column first
+        { createdAt: "desc" }, // Then, order by date to get the newest
+      ],
+
+      // 3. Only select the fields you actually need
+      select: {
+        feature: true,
+        url: true,
+      },
     });
-    const seen = new Set<string>();
-    const result: Array<{ endpoint: string; graphicUrl: string }> = [];
-    for (const v of all) {
-      const endpoint = (v.feature ?? v.featureId) as string;
-      if (!endpoint || seen.has(endpoint)) continue;
-      seen.add(endpoint);
-      if (v.url) result.push({ endpoint, graphicUrl: v.url });
-    }
+
+    // The database has already done all the work!
+    const result = latestVideos.map((v) => ({
+      endpoint: v.feature,
+      graphicUrl: v.url,
+    }));
+
     res.json(result);
   } catch (error) {
     console.error("Error computing feature graphics:", error);
     res.status(500).json({ error: "Failed to get feature graphics" });
   }
 });
-
 // Set the selected video as the feature's graphic (persist in FeatureGraphic table)
 router.post(
   "/feature-graphic/:endpoint",
