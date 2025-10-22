@@ -395,16 +395,11 @@ async function initializeDashboard() {
     loadTemplates();
     loadAvailableEndpoints();
 
-    loadAllFeatures();
-
     // Load graphics first, then features to ensure videos are available when features display
     console.log("Loading feature graphics...");
     await loadFeatureGraphics(); // This now loads both graphics and latest videos
+    loadAllFeatures();
     console.log("Feature graphics loaded, now loading features...");
-
-    // Load features for dashboard stats
-    await ensureFeaturesLoaded();
-    console.log("Features loaded and displayed");
 
     // Update stats with initial values
     updateStats();
