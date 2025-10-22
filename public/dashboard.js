@@ -649,6 +649,14 @@ function showFeatureDetailPage(endpoint) {
       return;
     }
 
+    // Set endpoint name and prompt in the detail page
+    const endpointNameEl = document.getElementById("featureModalTitle");
+    if (endpointNameEl) endpointNameEl.textContent = feature.endpoint || "";
+    const endpointDetailNameEl = document.getElementById("featureDetailName");
+    if (endpointDetailNameEl)
+      endpointDetailNameEl.textContent = feature.endpoint || "";
+    // Already declared above if present, do not redeclare
+
     // Force show the page with multiple approaches
     page.classList.remove("hidden");
     page.style.display = "block";
@@ -664,9 +672,100 @@ function showFeatureDetailPage(endpoint) {
     // Also ensure parent containers are visible
     let parent = page.parentElement;
     while (parent && parent !== document.body) {
+      console.log(
+        "Checking parent:",
+        parent.tagName,
+        parent.id,
+        parent.className
+      );
       parent.style.display = "";
       parent.classList.remove("hidden");
       parent = parent.parentElement;
+    }
+
+    console.log("Page should now be visible");
+    console.log("Page computed style:", window.getComputedStyle(page).display);
+    console.log("Page classes:", page.className);
+    console.log("Page visibility:", window.getComputedStyle(page).visibility);
+    console.log("Page position in viewport:", page.getBoundingClientRect());
+
+    // Fill content safely
+    const titleEl = document.getElementById("featureDetailTitle");
+    const promptEl = document.getElementById("featureDetailPrompt");
+    console.log("Title element:", titleEl);
+    console.log("Prompt element:", promptEl);
+    if (titleEl) titleEl.textContent = feature.endpoint;
+    if (promptEl) promptEl.textContent = feature.prompt || "";
+    // Helper to update the video in the modal
+    async function updateFeatureDetailVideo() {
+      const videoEl = document.getElementById("featureDetailVideo");
+      let videoUrl =
+        featureGraphics[feature.endpoint] || latestVideos[feature.endpoint];
+      if (!videoUrl) {
+        // Try to fetch latest video from backend if not present
+        try {
+          const res = await fetch(
+            `/api/generate-video/videos/${feature.endpoint}`
+          );
+          const videos = await res.json();
+          if (Array.isArray(videos) && videos.length > 0) {
+            videoUrl =
+              videos[0].cloudinaryUrl ||
+              videos[0].url ||
+              videos[0].videoUrl ||
+              videos[0].video_url ||
+              "";
+            // Also update latestVideos cache
+            latestVideos[feature.endpoint] = videoUrl;
+          }
+        } catch (e) {
+          videoUrl = "";
+        }
+      }
+      if (videoEl) {
+        if (videoUrl) {
+          videoEl.src = videoUrl;
+          videoEl.style.display = "block";
+        } else {
+          videoEl.style.display = "none";
+        }
+      }
+    }
+    // Initial call
+    updateFeatureDetailVideo();
+
+    // --- Feature video generation logic ---
+    let uploadedImageUrl = null;
+    const uploadSection = document.getElementById("featureImageUploadSection");
+    const input = document.getElementById("featureImageInput");
+    const preview = document.getElementById("featureImagePreview");
+    const uploadStatus = document.getElementById("featureUploadStatus");
+    const genBtn = document.getElementById("featureGenerateVideoBtn");
+    const genStatus = document.getElementById("featureGenStatus");
+    const featureLastFrameWrapper = document.getElementById(
+      "featureLastFrameWrapper"
+    );
+    // Vidu Q1 extra reference wrappers
+    const featureRef2Wrapper = document.getElementById("featureRef2Wrapper");
+    const featureRef3Wrapper = document.getElementById("featureRef3Wrapper");
+    const featureRef2Input = document.getElementById("featureRef2Input");
+    const featureRef3Input = document.getElementById("featureRef3Input");
+    const featureRef2Preview = document.getElementById("featureRef2Preview");
+    const featureRef3Preview = document.getElementById("featureRef3Preview");
+    const featureLastFrameInput = document.getElementById(
+      "featureLastFrameInput"
+    );
+    const featureLastFramePreview = document.getElementById(
+      "featureLastFramePreview"
+    );
+    let featureLastFrameUrl = null;
+    let featureRef2Url = null;
+    let featureRef3Url = null;
+
+    // Reset UI
+    if (preview) {
+      preview.style.display = "none";
+      preview.src = "";
     }
     if (uploadStatus) uploadStatus.textContent = "";
     if (genStatus) genStatus.textContent = "";
@@ -674,7 +773,62 @@ function showFeatureDetailPage(endpoint) {
 
     // Drag & drop wiring
     if (uploadSection && input) {
-      // Add dragover event logic here if needed
+      uploadSection.addEventListener("dragover", (e) => {
+        e.preventDefault();
+        uploadSection.classList.add("dragover");
+      });
+      uploadSection.addEventListener("dragleave", () =>
+        uploadSection.classList.remove("dragover")
+      );
+      uploadSection.addEventListener("drop", (e) => {
+        e.preventDefault();
+        uploadSection.classList.remove("dragover");
+        const files = e.dataTransfer.files;
+        if (files.length > 0 && files[0].type.startsWith("image/")) {
+          input.files = files;
+          handleFeatureImageUpload();
+        }
+      });
+      // Remove the onclick handler since the label already handles clicks properly
+      // uploadSection.onclick = (e) => {
+      //   if (e.target.tagName !== "INPUT") input.click();
+      // };
+    }
+    if (input) {
+      input.onchange = handleFeatureImageUpload;
+    }
+    // Pixverse last frame upload
+    if (featureLastFrameInput) {
+      featureLastFrameInput.onchange = () => {
+        const file =
+          featureLastFrameInput.files && featureLastFrameInput.files[0];
+        if (!file) return;
+        const formData = new FormData();
+        formData.append("image", file);
+        if (uploadStatus) uploadStatus.textContent = "Uploading last frame...";
+        fetch("/api/cloudinary/upload", { method: "POST", body: formData })
+          .then((r) => r.json())
+          .then((r) => {
+            if (r && r.success && r.url) {
+              featureLastFrameUrl = r.url;
+              if (featureLastFramePreview) {
+                featureLastFramePreview.src = r.url;
+                featureLastFramePreview.style.display = "block";
+              }
+              if (uploadStatus)
+                uploadStatus.textContent = "Last frame uploaded!";
+            } else {
+              if (uploadStatus)
+                uploadStatus.textContent = "Last frame upload failed.";
+            }
+            featureLastFrameInput.value = "";
+          })
+          .catch(() => {
+            if (uploadStatus)
+              uploadStatus.textContent = "Last frame upload failed.";
+            featureLastFrameInput.value = "";
+          });
+      };
     }
     // Vidu Q1 ref2 upload
     if (featureRef2Input) {
@@ -868,7 +1022,7 @@ function showFeatureDetailPage(endpoint) {
         });
     }
 
-    if (genBtn) {
+    if (typeof genBtn !== "undefined" && genBtn) {
       genBtn.onclick = async function () {
         if (!uploadedImageUrl) {
           if (genStatus)
@@ -963,6 +1117,7 @@ function showFeatureDetailPage(endpoint) {
     }
     // Inline edit for feature name (guarded)
     const editNameBtn = document.getElementById("editFeatureNameBtn");
+
     if (editNameBtn && titleEl) {
       editNameBtn.onclick = function () {
         const input = document.createElement("input");
