@@ -57,6 +57,8 @@ model GeneratedVideo {
   feature   String
   url       String // Cloudinary URL
   createdAt DateTime @default(now())
+
+  @@index([feature])
 }
 
 model Category {
@@ -78,6 +80,9 @@ model Subcategory {
   steps      TemplateStep[]
   createdAt  DateTime       @default(now())
   updatedAt  DateTime       @updatedAt
+
+  @@index([categoryId])
+  @@index([templateId])
 }
 
 model Template {
@@ -90,6 +95,8 @@ model Template {
   createdAt     DateTime            @default(now())
   updatedAt     DateTime            @updatedAt
   stepVideos    TemplateStepVideo[]
+
+  @@index([categoryId])
 }
 
 model TemplateStep {
@@ -101,6 +108,8 @@ model TemplateStep {
   order         Int // Order of execution
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
+
+  @@index([subcategoryId, order])
 }
 
 model TemplateStepVideo {
@@ -121,4 +130,6 @@ model Features {
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([endpoint, createdAt])
 }

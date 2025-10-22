@@ -490,17 +490,6 @@
                 </div>
                 <div id="subcategoryError" class="text-red-500 text-xs mt-1"></div>
                 <script>
-                // Fetch features for endpoint select
-                let featureEndpoints = [];
-                async function fetchFeatureEndpoints() {
-                  try {
-                    const res = await fetch('/api/features/all');
-                    const data = await res.json();
-                    featureEndpoints = data.features ? data.features.map(f => f.endpoint) : [];
-                  } catch { featureEndpoints = []; }
-                }
-                fetchFeatureEndpoints();
-
                 function addSubcategoryFromModal() {
                   const name = document.getElementById('newSubcategoryInput').value.trim();
                   const subcatError = document.getElementById('subcategoryError');

@@ -24,20 +24,7 @@ app.use(express.static("public")); // Serve static files from public directory
 // Get all features without pagination
 app.get("/api/features/all", async (req, res) => {
   try {
-    const { search } = req.query;
-
-    const whereClause =
-      search && typeof search === "string"
-        ? {
-            OR: [
-              { endpoint: { contains: search, mode: "insensitive" as const } },
-              { prompt: { contains: search, mode: "insensitive" as const } },
-            ],
-          }
-        : {};
-
     const list = await prisma.features.findMany({
-      where: whereClause,
       orderBy: { createdAt: "asc" },
     });
 

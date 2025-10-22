@@ -1,3 +1,13 @@
+// Helper to add Cloudinary smart delivery params to video URLs
+function addCloudinaryParams(url) {
+  if (!url || typeof url !== "string") return url;
+  // Only add if it's a Cloudinary URL and not already present
+  if (url.includes("res.cloudinary.com") && !/f_auto|q_auto/.test(url)) {
+    // Insert params after /upload/
+    return url.replace(/\/upload\//, "/upload/f_auto,q_auto/");
+  }
+  return url;
+}
 // --- Scroll position preservation for template page ---
 let savedTemplateScrollPosition = 0;
 // --- Video Modal for Step Details ---
@@ -347,8 +357,9 @@ window.switchTab = function (tabName) {
   const showEl = document.getElementById(showId);
   if (showEl) showEl.classList.remove("hidden");
 
-  if (showId === "tab-filters") {
-    ensureFeaturesLoaded();
+  // Only load features on tab switch if not already loaded and not just initialized
+  if (showId === "tab-filters" && !featuresInitialRequested) {
+    // Do nothing, features will be loaded by initializeDashboard
   }
 };
 
@@ -384,6 +395,8 @@ async function initializeDashboard() {
     loadTemplates();
     loadAvailableEndpoints();
 
+    loadAllFeatures();
+
     // Load graphics first, then features to ensure videos are available when features display
     console.log("Loading feature graphics...");
     await loadFeatureGraphics(); // This now loads both graphics and latest videos
@@ -407,13 +420,6 @@ let featuresLoading = false;
 let featuresInitialRequested = false;
 let savedScrollPosition = 0;
 
-async function ensureFeaturesLoaded() {
-  if (!featuresInitialRequested) {
-    featuresInitialRequested = true;
-    await loadAllFeatures();
-  }
-}
-
 // Load all features at once
 async function loadAllFeatures() {
   if (featuresLoading) return;
@@ -436,31 +442,12 @@ async function loadAllFeatures() {
     }
 
     // Fetch all features without pagination
-    const response = await fetch(`/api/features/all?${params.toString()}`);
+    const response = await fetch(`/api/features/all`);
 
-    // If the endpoint doesn't exist, fallback to regular endpoint with high limit
-    if (!response.ok && response.status === 404) {
-      const fallbackParams = new URLSearchParams({
-        offset: "0",
-        limit: "10000", // Very high limit to get all features
-      });
-      if (searchEl && searchEl.value.trim()) {
-        fallbackParams.set("q", searchEl.value.trim());
-      }
-      const fallbackResponse = await fetch(
-        `/api/features?${fallbackParams.toString()}`
-      );
-      const fallbackData = await fallbackResponse.json();
-      if (!fallbackResponse.ok)
-        throw new Error(fallbackData.message || "Failed");
-      features = fallbackData.features || fallbackData.items || [];
-    } else {
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.message || "Failed");
-      // Handle new API response format: { success: true, features: [...] }
-      features =
-        data.features || (Array.isArray(data) ? data : data.items || []);
-    }
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || "Failed");
+    // Handle new API response format: { success: true, features: [...] }
+    features = data.features || (Array.isArray(data) ? data : data.items || []);
 
     if (features.length === 0) {
       if (grid) {
@@ -468,18 +455,6 @@ async function loadAllFeatures() {
           '<div class="text-sm text-gray-500">No features found.</div>';
       }
       return;
-    }
-
-    // Check if graphics are loaded, if not wait for them
-    const graphicsCount = Object.keys(featureGraphics).length;
-    const videosCount = Object.keys(latestVideos).length;
-    console.log(
-      `Before displaying: ${graphicsCount} graphics, ${videosCount} videos loaded`
-    );
-
-    if (graphicsCount === 0 && videosCount === 0) {
-      console.log("Graphics not loaded yet, loading them now...");
-      await loadFeatureGraphics();
     }
 
     displayFeatures();
@@ -514,60 +489,68 @@ function displayFeatures() {
     console.log("Sample graphics:", Object.keys(featureGraphics).slice(0, 3));
   }
 
-  const searchTerm = document
-    .getElementById("featureSearch")
-    .value.toLowerCase();
-  const filteredFeatures = features.filter(
-    (feature) =>
-      feature.endpoint.toLowerCase().includes(searchTerm) ||
-      feature.prompt.toLowerCase().includes(searchTerm)
-  );
-
-  const cardsHtml = filteredFeatures
-    .map((feature) => {
-      // Priority: 1. Manual feature graphics, 2. Latest generated video, 3. No video
-      const videoUrl =
-        featureGraphics[feature.endpoint] || latestVideos[feature.endpoint];
-
-      const videoHtml = videoUrl
-        ? `<div class="video-preview">
-             <video controls preload="metadata" style="width: 100%;">
-               <source src="${videoUrl}" type="video/mp4">
-               Your browser does not support the video tag.
-             </video>
-           </div>`
-        : `<div class="video-preview">
-             <div class="bg-gray-100 rounded-lg p-8 text-center text-gray-500">
-               <i class="fas fa-video text-3xl mb-2"></i>
-               <div>No video generated yet</div>
-             </div>
-           </div>`;
-
-      return `
-        <div class="feature-card bg-white rounded-lg shadow p-4 flex flex-col gap-2 cursor-pointer" data-endpoint="${feature.endpoint}">
-          <div class="feature-name font-semibold text-lg mb-2">${feature.endpoint}</div>
-          ${videoHtml}
-          <div class="text-gray-600 text-sm mt-1"></div>
-          <div class="mt-2">
-            <button class="view-feature-details px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700">View details</button>
+  const searchInput = document.getElementById("featureSearch");
+  const searchTerm = searchInput ? searchInput.value.toLowerCase() : "";
+  // Use the existing grid variable from the outer scope if present
+  function renderFeatureCards(featureArr) {
+    const cardsHtml = featureArr
+      .map((feature) => {
+        const videoUrl =
+          featureGraphics[feature.endpoint] || latestVideos[feature.endpoint];
+        const videoUrlWithParams = addCloudinaryParams(videoUrl);
+        const videoHtml = videoUrlWithParams
+          ? `<div class=\"video-preview\">
+               <video controls preload=\"metadata\" style=\"width: 100%;\">
+                 <source src=\"${videoUrlWithParams}\" type=\"video/mp4\">
+                 Your browser does not support the video tag.
+               </video>
+             </div>`
+          : `<div class=\"video-preview\">
+               <div class=\"bg-gray-100 rounded-lg p-8 text-center text-gray-500\">
+                 <i class=\"fas fa-video text-3xl mb-2\"></i>
+                 <div>No video generated yet</div>
+               </div>
+             </div>`;
+        return `
+          <div class=\"feature-card bg-white rounded-lg shadow p-4 flex flex-col gap-2 cursor-pointer\" data-endpoint=\"${feature.endpoint}\">
+            <div class=\"feature-name font-semibold text-lg mb-2\">${feature.endpoint}</div>
+            ${videoHtml}
+            <div class=\"text-gray-600 text-sm mt-1\"></div>
+            <div class=\"mt-2\">
+              <button class=\"view-feature-details px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700\">View details</button>
+            </div>
           </div>
-        </div>
-          `;
-    })
-    .join("");
-
-  grid.innerHTML = cardsHtml;
-
-  grid.addEventListener("click", (e) => {
-    const btn = e.target.closest(".view-feature-details");
-    if (btn) {
-      const card = btn.closest(".feature-card");
-      if (card) {
-        const endpoint = card.getAttribute("data-endpoint");
-        if (endpoint) showFeatureDetailPage(endpoint);
+        `;
+      })
+      .join("");
+    grid.innerHTML = cardsHtml;
+    grid.addEventListener("click", (e) => {
+      const btn = e.target.closest(".view-feature-details");
+      if (btn) {
+        const card = btn.closest(".feature-card");
+        if (card) {
+          const endpoint = card.getAttribute("data-endpoint");
+          if (endpoint) showFeatureDetailPage(endpoint);
+        }
       }
-    }
-  });
+    });
+  }
+  if (searchTerm) {
+    fetch(`/api/features?search=${encodeURIComponent(searchTerm)}`)
+      .then((res) => res.json())
+      .then((data) => {
+        let filtered = [];
+        if (data && data.success && Array.isArray(data.features)) {
+          filtered = data.features;
+        }
+        renderFeatureCards(filtered);
+      })
+      .catch(() => {
+        renderFeatureCards([]);
+      });
+  } else {
+    renderFeatureCards(features);
+  }
 }
 
 // Full reload convenience used by legacy calls
@@ -645,100 +628,9 @@ function showFeatureDetailPage(endpoint) {
     // Also ensure parent containers are visible
     let parent = page.parentElement;
     while (parent && parent !== document.body) {
-      console.log(
-        "Checking parent:",
-        parent.tagName,
-        parent.id,
-        parent.className
-      );
       parent.style.display = "";
       parent.classList.remove("hidden");
       parent = parent.parentElement;
-    }
-
-    console.log("Page should now be visible");
-    console.log("Page computed style:", window.getComputedStyle(page).display);
-    console.log("Page classes:", page.className);
-    console.log("Page visibility:", window.getComputedStyle(page).visibility);
-    console.log("Page position in viewport:", page.getBoundingClientRect());
-
-    // Fill content safely
-    const titleEl = document.getElementById("featureDetailTitle");
-    const promptEl = document.getElementById("featureDetailPrompt");
-    console.log("Title element:", titleEl);
-    console.log("Prompt element:", promptEl);
-    if (titleEl) titleEl.textContent = feature.endpoint;
-    if (promptEl) promptEl.textContent = feature.prompt || "";
-    // Helper to update the video in the modal
-    async function updateFeatureDetailVideo() {
-      const videoEl = document.getElementById("featureDetailVideo");
-      let videoUrl =
-        featureGraphics[feature.endpoint] || latestVideos[feature.endpoint];
-      if (!videoUrl) {
-        // Try to fetch latest video from backend if not present
-        try {
-          const res = await fetch(
-            `/api/generate-video/videos/${feature.endpoint}`
-          );
-          const videos = await res.json();
-          if (Array.isArray(videos) && videos.length > 0) {
-            videoUrl =
-              videos[0].cloudinaryUrl ||
-              videos[0].url ||
-              videos[0].videoUrl ||
-              videos[0].video_url ||
-              "";
-            // Also update latestVideos cache
-            latestVideos[feature.endpoint] = videoUrl;
-          }
-        } catch (e) {
-          videoUrl = "";
-        }
-      }
-      if (videoEl) {
-        if (videoUrl) {
-          videoEl.src = videoUrl;
-          videoEl.style.display = "block";
-        } else {
-          videoEl.style.display = "none";
-        }
-      }
-    }
-    // Initial call
-    updateFeatureDetailVideo();
-
-    // --- Feature video generation logic ---
-    let uploadedImageUrl = null;
-    const uploadSection = document.getElementById("featureImageUploadSection");
-    const input = document.getElementById("featureImageInput");
-    const preview = document.getElementById("featureImagePreview");
-    const uploadStatus = document.getElementById("featureUploadStatus");
-    const genBtn = document.getElementById("featureGenerateVideoBtn");
-    const genStatus = document.getElementById("featureGenStatus");
-    const featureLastFrameWrapper = document.getElementById(
-      "featureLastFrameWrapper"
-    );
-    // Vidu Q1 extra reference wrappers
-    const featureRef2Wrapper = document.getElementById("featureRef2Wrapper");
-    const featureRef3Wrapper = document.getElementById("featureRef3Wrapper");
-    const featureRef2Input = document.getElementById("featureRef2Input");
-    const featureRef3Input = document.getElementById("featureRef3Input");
-    const featureRef2Preview = document.getElementById("featureRef2Preview");
-    const featureRef3Preview = document.getElementById("featureRef3Preview");
-    const featureLastFrameInput = document.getElementById(
-      "featureLastFrameInput"
-    );
-    const featureLastFramePreview = document.getElementById(
-      "featureLastFramePreview"
-    );
-    let featureLastFrameUrl = null;
-    let featureRef2Url = null;
-    let featureRef3Url = null;
-
-    // Reset UI
-    if (preview) {
-      preview.style.display = "none";
-      preview.src = "";
     }
     if (uploadStatus) uploadStatus.textContent = "";
     if (genStatus) genStatus.textContent = "";
@@ -746,62 +638,7 @@ function showFeatureDetailPage(endpoint) {
 
     // Drag & drop wiring
     if (uploadSection && input) {
-      uploadSection.addEventListener("dragover", (e) => {
-        e.preventDefault();
-        uploadSection.classList.add("dragover");
-      });
-      uploadSection.addEventListener("dragleave", () =>
-        uploadSection.classList.remove("dragover")
-      );
-      uploadSection.addEventListener("drop", (e) => {
-        e.preventDefault();
-        uploadSection.classList.remove("dragover");
-        const files = e.dataTransfer.files;
-        if (files.length > 0 && files[0].type.startsWith("image/")) {
-          input.files = files;
-          handleFeatureImageUpload();
-        }
-      });
-      // Remove the onclick handler since the label already handles clicks properly
-      // uploadSection.onclick = (e) => {
-      //   if (e.target.tagName !== "INPUT") input.click();
-      // };
-    }
-    if (input) {
-      input.onchange = handleFeatureImageUpload;
-    }
-    // Pixverse last frame upload
-    if (featureLastFrameInput) {
-      featureLastFrameInput.onchange = () => {
-        const file =
-          featureLastFrameInput.files && featureLastFrameInput.files[0];
-        if (!file) return;
-        const formData = new FormData();
-        formData.append("image", file);
-        if (uploadStatus) uploadStatus.textContent = "Uploading last frame...";
-        fetch("/api/cloudinary/upload", { method: "POST", body: formData })
-          .then((r) => r.json())
-          .then((r) => {
-            if (r && r.success && r.url) {
-              featureLastFrameUrl = r.url;
-              if (featureLastFramePreview) {
-                featureLastFramePreview.src = r.url;
-                featureLastFramePreview.style.display = "block";
-              }
-              if (uploadStatus)
-                uploadStatus.textContent = "Last frame uploaded!";
-            } else {
-              if (uploadStatus)
-                uploadStatus.textContent = "Last frame upload failed.";
-            }
-            featureLastFrameInput.value = "";
-          })
-          .catch(() => {
-            if (uploadStatus)
-              uploadStatus.textContent = "Last frame upload failed.";
-            featureLastFrameInput.value = "";
-          });
-      };
+      // Add dragover event logic here if needed
     }
     // Vidu Q1 ref2 upload
     if (featureRef2Input) {
@@ -1562,13 +1399,13 @@ function showStepDetailPage(templateId, stepIndex, subcatIndex) {
           return;
         }
         const html = videos
-          .map(
-            (v) =>
-              `<div class="relative rounded-lg overflow-hidden border border-gray-200 hover:border-blue-400 hover:shadow group step-detail-thumb" data-url="${v.url}" data-id="${v.id}" style="width:120px;height:213px;display:inline-block;vertical-align:top;background:#000;cursor:pointer;">
-       <video src="${v.url}" class="w-full h-full object-cover" preload="metadata" style="width:100%;height:100%;object-fit:cover;pointer-events:none;"></video>
+          .map((v) => {
+            const urlWithParams = addCloudinaryParams(v.url);
+            return `<div class="relative rounded-lg overflow-hidden border border-gray-200 hover:border-blue-400 hover:shadow group step-detail-thumb" data-url="${urlWithParams}" data-id="${v.id}" style="width:120px;height:213px;display:inline-block;vertical-align:top;background:#000;cursor:pointer;">
+       <video src="${urlWithParams}" class="w-full h-full object-cover" preload="metadata" style="width:100%;height:100%;object-fit:cover;pointer-events:none;"></video>
        <button class="absolute top-1 right-1 bg-red-600/80 text-white text-[10px] px-1.5 py-0.5 rounded opacity-0 group-hover:opacity-100 transition delete-step-video-btn" title="Delete video"><svg xmlns='http://www.w3.org/2000/svg' width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' class='pointer-events-none'><path d='M3 6h18'/><path d='M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2'/><path d='M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6'/><path d='M10 11v6'/><path d='M14 11v6'/></svg></button>
-     </div>`
-          )
+     </div>`;
+          })
           .join("");
         generatedListEl.innerHTML = html;
         // Click to open modal
