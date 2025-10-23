@@ -1098,7 +1098,10 @@ function showFeatureDetailPage(endpoint) {
 
             // Update the video element immediately with the generated video
             const vEl = document.getElementById("featureDetailVideo");
-            if (vEl) vEl.src = videoUrl;
+            if (vEl) {
+              vEl.src = videoUrl;
+              vEl.style.display = "block"; // Ensure video is visible
+            }
 
             if (genStatus) {
               genStatus.textContent = "Video generated!";
@@ -1391,14 +1394,42 @@ function closeFeatureDetailPage() {
   // This ensures proper tab state management and allows users to switch to other tabs
   switchTab("filters");
 
-  // Restore the saved scroll position after a brief delay to ensure DOM is ready
-  setTimeout(() => {
-    if (savedScrollPosition > 0) {
-      console.log("Restoring scroll position:", savedScrollPosition);
-      window.scrollTo(0, savedScrollPosition);
-      savedScrollPosition = 0; // Reset for next time
-    }
-  }, 100);
+  // Restore the saved scroll position with multiple attempts to handle DOM updates
+  // This ensures scroll restoration works even after long sessions when DOM might be heavy
+  const scrollTarget = savedScrollPosition;
+  if (scrollTarget > 0) {
+    console.log("Restoring scroll position:", scrollTarget);
+
+    // Multiple restoration attempts with increasing delays to handle DOM rendering
+    const attemptScrollRestore = (attempt = 0) => {
+      if (attempt > 5) {
+        console.log("Scroll restoration completed after", attempt, "attempts");
+        savedScrollPosition = 0; // Reset for next time
+        return;
+      }
+
+      requestAnimationFrame(() => {
+        window.scrollTo(0, scrollTarget);
+
+        // Check if scroll was successful, retry if needed
+        const currentScroll =
+          window.pageYOffset || document.documentElement.scrollTop;
+        if (Math.abs(currentScroll - scrollTarget) > 10) {
+          // Scroll didn't reach target, try again with longer delay
+          setTimeout(
+            () => attemptScrollRestore(attempt + 1),
+            100 + attempt * 50
+          );
+        } else {
+          console.log("Scroll restored successfully to:", currentScroll);
+          savedScrollPosition = 0; // Reset for next time
+        }
+      });
+    };
+
+    // Start first attempt after brief delay for DOM to settle
+    setTimeout(() => attemptScrollRestore(0), 50);
+  }
 
   console.log("Main UI restored successfully");
 }
