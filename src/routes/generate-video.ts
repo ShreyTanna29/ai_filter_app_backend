@@ -1015,7 +1015,7 @@ router.post(
         };
 
         const createPayload = {
-          model: "vidu-q1-image-to-video",
+          model: "vidu-q-1-image-to-video",
           version: viduVersion,
           input,
           webhook_url: process.env.VIDU_Q1_I2V_WEBHOOK_URL || "",
@@ -1025,11 +1025,11 @@ router.post(
         let predictionId: string;
         try {
           createResp = await axios.post(
-            "https://api.eachlabs.ai/v1/predictions",
+            "https://api.eachlabs.ai/v1/prediction/",
             createPayload,
             {
               headers: {
-                Authorization: `Bearer ${eachLabsKey}`,
+                "x-api-key": eachLabsKey,
                 "Content-Type": "application/json",
               },
               timeout: 30000,
@@ -1053,7 +1053,7 @@ router.post(
             });
             return;
           }
-          predictionId = (prediction as any)?.id;
+          predictionId = (prediction as any)?.predictionID;
           if (!predictionId) {
             res.status(502).json({
               success: false,
@@ -1084,9 +1084,9 @@ router.post(
           await new Promise((r) => setTimeout(r, 1000));
           try {
             const result = await axios.get(
-              `https://api.eachlabs.ai/v1/predictions/${predictionId}`,
+              `https://api.eachlabs.ai/v1/prediction/${predictionId}`,
               {
-                headers: { Authorization: `Bearer ${eachLabsKey}` },
+                headers: { "x-api-key": eachLabsKey },
                 timeout: 10000,
               }
             );
@@ -1471,7 +1471,7 @@ router.post(
             });
             return;
           }
-          predictionId = (prediction as any)?.id;
+          predictionId = (prediction as any)?.predictionID;
           if (!predictionId) {
             res.status(502).json({
               success: false,
@@ -1502,9 +1502,9 @@ router.post(
           await new Promise((r) => setTimeout(r, 1000));
           try {
             const pollResp = await axios.get(
-              `https://api.eachlabs.ai/v1/predictions/${predictionId}`,
+              `https://api.eachlabs.ai/v1/prediction/${predictionId}`,
               {
-                headers: { Authorization: `Bearer ${eachLabsKey}` },
+                headers: { "x-api-key": eachLabsKey },
                 timeout: 20000,
               }
             );
@@ -1631,15 +1631,13 @@ router.post(
         }
 
         const veoVersion = process.env.VEO_3_VERSION || "0.0.1";
-        const duration = Number(process.env.VEO_3_DURATION || 5);
-        const aspect = process.env.VEO_3_ASPECT_RATIO || "16:9";
-        const resolution = process.env.VEO_3_RESOLUTION || "1080p";
+        const duration = Number(process.env.VEO_3_DURATION || 8);
+        const resolution = process.env.VEO_3_RESOLUTION || "720p";
 
         const input = {
           image_url: imageCloudUrl,
           prompt: prompt,
           duration: duration,
-          aspect_ratio: aspect,
           resolution: resolution,
         };
 
@@ -1654,11 +1652,11 @@ router.post(
         let predictionId: string;
         try {
           createResp = await axios.post(
-            "https://api.eachlabs.ai/v1/predictions",
+            "https://api.eachlabs.ai/v1/prediction/",
             createPayload,
             {
               headers: {
-                Authorization: `Bearer ${eachLabsKey}`,
+                "x-api-key": eachLabsKey,
                 "Content-Type": "application/json",
               },
               timeout: 30000,
@@ -1683,7 +1681,7 @@ router.post(
             });
             return;
           }
-          predictionId = (prediction as any)?.id;
+          predictionId = (prediction as any)?.predictionID;
           if (!predictionId) {
             res.status(502).json({
               success: false,
@@ -1714,9 +1712,9 @@ router.post(
           await new Promise((r) => setTimeout(r, 1000));
           try {
             const pollResp = await axios.get(
-              `https://api.eachlabs.ai/v1/predictions/${predictionId}`,
+              `https://api.eachlabs.ai/v1/prediction/${predictionId}`,
               {
-                headers: { Authorization: `Bearer ${eachLabsKey}` },
+                headers: { "x-api-key": eachLabsKey },
                 timeout: 20000,
               }
             );
@@ -1836,6 +1834,14 @@ router.post(
         /bytedance-seeddance-v1-pro-image-to-video/i.test(rawModel);
 
       if (isBytedanceOmnihuman || isBytedanceSeeddance) {
+        console.log(
+          "[Bytedance] Starting video generation for model:",
+          isBytedanceOmnihuman
+            ? "bytedance-omnihuman"
+            : "seedance-v1-pro-image-to-video"
+        );
+        console.log("[Bytedance] Feature endpoint:", feature);
+        console.log("[Bytedance] Image URL:", imageCloudUrl);
         const bytedanceKey = process.env.EACHLABS_API_KEY;
         if (!bytedanceKey) {
           res
@@ -1847,6 +1853,9 @@ router.post(
         // If audio file is present, upload to Cloudinary and get URL
         let audioUrl: string | null = null;
         if (req.file) {
+          console.log(
+            "[Bytedance] Audio file detected, uploading to Cloudinary..."
+          );
           // Only accept files up to ~1MB (30s mp3/wav)
           if (req.file.size > 2 * 1024 * 1024) {
             res.status(400).json({
@@ -1901,12 +1910,15 @@ router.post(
               camera_fixed: false,
               duration: "5",
               resolution: "720p",
-              // Optionally add prompt if present
               ...(prompt ? { prompt } : {}),
             },
             webhook_url: "",
           };
         }
+        console.log(
+          "[Bytedance] Payload:",
+          JSON.stringify(bytedancePayload, null, 2)
+        );
 
         let taskId: string | undefined;
         try {
@@ -1922,11 +1934,19 @@ router.post(
             }
           );
           const data = createResp.data || {};
-          console.log("Bytedance response:", data);
+          console.log(
+            "[Bytedance] Creation response:",
+            JSON.stringify(data, null, 2)
+          );
 
           if (data.status !== "success") {
             const provider_message =
               data.message || data.error || data.status || "Unknown error";
+            console.error(
+              "[Bytedance] Creation failed:",
+              provider_message,
+              data
+            );
             res.status(502).json({
               success: false,
               error: `Bytedance creation failed: ${provider_message}`,
@@ -1941,6 +1961,7 @@ router.post(
           taskId =
             data.predictionID || data.predictionId || data.id || data.task_id;
           if (!taskId) {
+            console.error("[Bytedance] No prediction id in response:", data);
             res.status(502).json({
               success: false,
               error: "Bytedance response missing prediction id",
@@ -1950,7 +1971,7 @@ router.post(
             return;
           }
         } catch (e: any) {
-          // already using e as any here, so no change needed
+          console.error("[Bytedance] Creation error:", serializeError(e));
           const provider_message =
             e?.response?.data?.message ||
             e?.response?.data?.error ||
@@ -1982,7 +2003,10 @@ router.post(
               }
             );
             const pollData = pollResp.data || {};
-            console.log(`Bytedance Omnihuman poll ${i + 1}:`, pollData);
+            console.log(
+              `[Bytedance] Poll #${i + 1}:`,
+              JSON.stringify(pollData, null, 2)
+            );
 
             if (
               pollData.status === "succeeded" ||
@@ -1991,7 +2015,7 @@ router.post(
               bytedanceVideoUrl = pollData.output;
               if (bytedanceVideoUrl) {
                 console.log(
-                  "Bytedance Omnihuman generation completed:",
+                  "[Bytedance] Generation completed. Video URL:",
                   bytedanceVideoUrl
                 );
                 break;
@@ -2001,6 +2025,11 @@ router.post(
             if (pollData.status === "failed" || pollData.status === "error") {
               const provider_message =
                 pollData.output || pollData.error || pollData.status;
+              console.error(
+                `[Bytedance] Generation failed:`,
+                provider_message,
+                pollData
+              );
               res.status(500).json({
                 success: false,
                 error: `${provider_message}`,
@@ -2013,7 +2042,7 @@ router.post(
             }
           } catch (e: any) {
             console.warn(
-              "Bytedance Omnihuman poll error (continuing):",
+              `[Bytedance] Poll error (continuing):`,
               e?.message || e
             );
             continue;
@@ -2021,6 +2050,9 @@ router.post(
         }
 
         if (!bytedanceVideoUrl) {
+          console.error(
+            "[Bytedance] Generation timeout: No video URL after polling"
+          );
           res.status(504).json({
             success: false,
             error: "Bytedance Omnihuman generation timeout",
@@ -2039,7 +2071,7 @@ router.post(
             timeout: 600000,
           });
         } catch (e: any) {
-          console.error("Bytedance Omnihuman download error:", e);
+          console.error("[Bytedance] Download error:", serializeError(e));
           res.status(500).json({
             success: false,
             error: "Failed to download Bytedance Omnihuman video",
@@ -2060,7 +2092,10 @@ router.post(
               },
               (error, result) => {
                 if (error) {
-                  console.error("Cloudinary upload error:", error);
+                  console.error(
+                    "[Bytedance] Cloudinary upload error:",
+                    serializeError(error)
+                  );
                   reject(error);
                 } else if (result) {
                   resolve(result);
@@ -2075,7 +2110,7 @@ router.post(
 
         const finalBytedanceUrl = bytedanceUpload.secure_url;
         console.log(
-          "Bytedance Omnihuman video uploaded to:",
+          "[Bytedance] Video uploaded to Cloudinary:",
           finalBytedanceUrl
         );
 
@@ -2109,11 +2144,24 @@ router.post(
         }
         // Build payload per docs
         const duration = Number(process.env.MINIMAX_DURATION || 6); // MiniMax supports 6 or 10 for some models
+
+        // Map frontend model names to correct MiniMax API model names
+        let minimaxModel = rawModel;
+        if (/MiniMax-Hailuo-02/i.test(rawModel)) {
+          minimaxModel = "MiniMax-Hailuo-02";
+        } else if (/I2V-01-Director/i.test(rawModel)) {
+          minimaxModel = "I2V-01-Director";
+        } else if (/I2V-01-live/i.test(rawModel)) {
+          minimaxModel = "I2V-01-live";
+        } else if (/I2V-01/i.test(rawModel)) {
+          minimaxModel = "I2V-01";
+        }
+
         const resolution =
           process.env.MINIMAX_RESOLUTION ||
-          (rawModel === "MiniMax-Hailuo-02" ? "768P" : "720P");
+          (minimaxModel === "MiniMax-Hailuo-02" ? "768P" : "720P");
         const mmPayload: any = {
-          model: rawModel,
+          model: minimaxModel,
           prompt: prompt, // MiniMax requires prompt
           duration,
           resolution,
