@@ -786,45 +786,42 @@ router.post(
       // Eachlabs Vidu 1.5 Image to Video branch
       const isVidu15Image2Video = /vidu-1\.5-image-to-video/i.test(rawModel);
       if (isVidu15Image2Video) {
-        const eachLabsKey =
-          process.env.PIXVERSE_API_KEY || process.env.EACHLABS_API_KEY;
+        const eachLabsKey = process.env.EACHLABS_API_KEY;
         if (!eachLabsKey) {
           res.status(500).json({
             success: false,
-            error: "EACHLABS / PIXVERSE API key not set",
+            error: "EACHLABS API key not set",
           });
           return;
         }
 
-        const viduVersion = process.env.VIDU_15_VERSION || "0.0.1";
-        const duration = Number(process.env.VIDU_15_DURATION || 5);
-        const aspect = process.env.VIDU_15_ASPECT_RATIO || "16:9";
-        const resolution = process.env.VIDU_15_RESOLUTION || "1080p";
+        const viduVersion = "0.0.1";
+        const duration = 4;
+
+        const resolution = "720p";
 
         const input = {
           image_url: imageCloudUrl,
           prompt: prompt,
           duration: duration,
-          aspect_ratio: aspect,
           resolution: resolution,
         };
 
         const createPayload = {
-          model: "vidu-1.5-image-to-video",
+          model: "vidu-1-5-image-to-video",
           version: viduVersion,
           input,
-          webhook_url: process.env.VIDU_15_WEBHOOK_URL || "",
         };
 
         let createResp: any;
         let predictionId: string;
         try {
           createResp = await axios.post(
-            "https://api.eachlabs.ai/v1/predictions",
+            "https://api.eachlabs.ai/v1/prediction/",
             createPayload,
             {
               headers: {
-                Authorization: `Bearer ${eachLabsKey}`,
+                "X-API-Key": eachLabsKey,
                 "Content-Type": "application/json",
               },
               timeout: 30000,
@@ -848,7 +845,7 @@ router.post(
             });
             return;
           }
-          predictionId = (prediction as any)?.id;
+          predictionId = (prediction as any)?.predictionID;
           if (!predictionId) {
             res.status(502).json({
               success: false,
@@ -866,7 +863,7 @@ router.post(
           });
           res.status(502).json({
             success: false,
-            error: "Failed to create Vidu 1.5 prediction",
+            error: vidu15Err?.response?.data.details,
             details: serializeError(err),
           });
           return;
@@ -878,16 +875,14 @@ router.post(
           // up to ~5 min
           await new Promise((r) => setTimeout(r, 1000));
           try {
-            const result = await axios.get(
-              `https://api.eachlabs.ai/v1/predictions/${predictionId}`,
-              {
-                headers: { Authorization: `Bearer ${eachLabsKey}` },
-                timeout: 10000,
-              }
+            const pollResp = await axios.get(
+              `https://api.eachlabs.ai/v1/prediction/${predictionId}`,
+              { headers: { "X-API-Key": eachLabsKey }, timeout: 20000 }
             );
-            const lower = String(result.data.status || "").toLowerCase();
+            const result = pollResp.data || {};
+            const lower = String(result.status || "").toLowerCase();
             if (lower === "success" || lower === "completed") {
-              const rawOut = result.data.output;
+              const rawOut = result.output;
               if (typeof rawOut === "string") viduVideoUrl = rawOut;
               else if (rawOut) {
                 const out: any = rawOut;
@@ -895,35 +890,38 @@ router.post(
                   out.video_url ||
                   out.video ||
                   (Array.isArray(out) ? out[0]?.video_url || out[0] : null) ||
+                  result.video_url ||
+                  result.video ||
                   out.url ||
-                  result.data.url ||
+                  result.url ||
                   null;
               } else {
                 viduVideoUrl =
-                  result.data.video_url ||
-                  result.data.video ||
-                  result.data.url ||
-                  null;
+                  result.video_url || result.video || result.url || null;
               }
               break;
-            } else if (lower === "failed" || lower === "error") {
+            } else if (
+              ["error", "failed", "canceled", "cancelled"].includes(lower)
+            ) {
               const provider_message =
-                result.data.error || result.data.message || "Unknown error";
+                (result as any)?.error ||
+                (result as any)?.message ||
+                (result as any)?.status;
               res.status(500).json({
                 success: false,
                 error: provider_message
-                  ? `Vidu 1.5 prediction failed: ${provider_message}`
-                  : "Vidu 1.5 prediction failed",
-                provider: "Vidu15",
-                provider_status: (result.data as any)?.status,
+                  ? `Vidu Q1 prediction failed: ${provider_message}`
+                  : "Vidu Q1 prediction failed",
+                provider: "ViduQ1",
+                provider_status: (result as any)?.status,
                 provider_message,
-                details: safeJson(result.data),
+                details: safeJson(result),
               });
               return;
             }
           } catch (e) {
             console.warn(
-              "Vidu 1.5 poll error (continuing)",
+              "Vidu Q1 poll error (continuing)",
               (e as any)?.message || e
             );
             continue;
@@ -932,8 +930,8 @@ router.post(
         if (!viduVideoUrl) {
           res.status(504).json({
             success: false,
-            error: "Vidu 1.5 prediction timeout",
-            provider: "Vidu15",
+            error: "Vidu Q1 prediction timeout",
+            provider: "ViduQ1",
             provider_status: "timeout",
             provider_message: "Prediction did not complete in allotted time",
           });
@@ -1211,20 +1209,18 @@ router.post(
         }
 
         const viduVersion = process.env.VIDU_20_VERSION || "0.0.1";
-        const duration = Number(process.env.VIDU_20_DURATION || 5);
-        const aspect = process.env.VIDU_20_ASPECT_RATIO || "16:9";
-        const resolution = process.env.VIDU_20_RESOLUTION || "1080p";
+        const duration = Number(process.env.VIDU_20_DURATION || 4);
+        const resolution = "720p";
 
         const input = {
           image_url: imageCloudUrl,
           prompt: prompt,
           duration: duration,
-          aspect_ratio: aspect,
           resolution: resolution,
         };
 
         const createPayload = {
-          model: "vidu-2.0-image-to-video",
+          model: "vidu-2-0-image-to-video",
           version: viduVersion,
           input,
           webhook_url: process.env.VIDU_20_WEBHOOK_URL || "",
@@ -1234,11 +1230,11 @@ router.post(
         let predictionId: string;
         try {
           createResp = await axios.post(
-            "https://api.eachlabs.ai/v1/predictions",
+            "https://api.eachlabs.ai/v1/prediction/",
             createPayload,
             {
               headers: {
-                Authorization: `Bearer ${eachLabsKey}`,
+                "x-api-key": eachLabsKey,
                 "Content-Type": "application/json",
               },
               timeout: 30000,
@@ -1263,7 +1259,7 @@ router.post(
             });
             return;
           }
-          predictionId = (prediction as any)?.id;
+          predictionId = (prediction as any)?.predictionID;
           if (!predictionId) {
             res.status(502).json({
               success: false,
@@ -1294,9 +1290,9 @@ router.post(
           await new Promise((r) => setTimeout(r, 1000));
           try {
             const pollResp = await axios.get(
-              `https://api.eachlabs.ai/v1/predictions/${predictionId}`,
+              `https://api.eachlabs.ai/v1/prediction/${predictionId}`,
               {
-                headers: { Authorization: `Bearer ${eachLabsKey}` },
+                headers: { "x-api-key": eachLabsKey },
                 timeout: 20000,
               }
             );

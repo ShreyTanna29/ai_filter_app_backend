@@ -1094,16 +1094,23 @@ function showFeatureDetailPage(endpoint) {
             data = await response.json();
           }
           if (response.ok && data && data.video && data.video.url) {
+            const videoUrl = data.video.url;
+
+            // Update the video element immediately with the generated video
             const vEl = document.getElementById("featureDetailVideo");
-            if (vEl) vEl.src = data.video.url;
+            if (vEl) vEl.src = videoUrl;
+
             if (genStatus) {
               genStatus.textContent = "Video generated!";
               genStatus.style.color = "green";
             }
-            // Refresh latest videos to update feature cards without full reload
-            await refreshLatestVideos();
-            // Always fetch and show the latest video for this endpoint
-            await updateFeatureDetailVideo();
+
+            // Update local cache for this specific endpoint only
+            latestVideos[feature.endpoint] = videoUrl;
+            featureGraphics[feature.endpoint] = videoUrl;
+
+            // Refresh the feature list display to show the new video thumbnail
+            displayFeatures();
           } else {
             throw new Error((data && data.error) || "Failed to generate video");
           }
