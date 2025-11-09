@@ -63,7 +63,9 @@ router.post("/login", async (req: Request, res: Response): Promise<void> => {
 // Signup endpoint with database storage
 router.post("/signup", async (req: Request, res: Response): Promise<void> => {
   try {
-    const { email, password, role = "user" } = req.body;
+    const { email, password } = req.body;
+    // Force all new signups to have 'user' role by default (admins must be created separately in DB)
+    const role = "user";
 
     if (!email || !password) {
       res.status(400).json({ message: "Email and password are required" });
@@ -92,7 +94,7 @@ router.post("/signup", async (req: Request, res: Response): Promise<void> => {
     const saltRounds = 12;
     const hashedPassword = await bcrypt.hash(password, saltRounds);
 
-    // Create new user in database
+    // Create new user in database with 'user' role
     const newUser = await prisma.user.create({
       data: {
         email: email.toLowerCase(),
@@ -101,7 +103,12 @@ router.post("/signup", async (req: Request, res: Response): Promise<void> => {
       },
     });
 
-    console.log("User created successfully:", newUser.email);
+    console.log(
+      "User created successfully:",
+      newUser.email,
+      "with role:",
+      newUser.role
+    );
 
     res.status(201).json({
       message: "User registered successfully",

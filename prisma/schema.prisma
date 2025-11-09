@@ -133,3 +133,23 @@ model Features {
 
   @@index([endpoint, createdAt])
 }
+
+model Photo_Features {
+  id        Int      @id @default(autoincrement())
+  endpoint  String   @unique
+  prompt    String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([endpoint, createdAt])
+}
+
+model Generated_Photo {
+  id        Int      @id @default(autoincrement())
+  feature   String
+  url       String // Cloudinary URL
+  createdAt DateTime @default(now())
+
+  @@index([feature, createdAt])
+}

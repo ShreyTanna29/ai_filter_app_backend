@@ -313,4 +313,45 @@ router.post(
   }
 );
 
+router.get("/photo-graphic", async (req: Request, res: Response) => {
+  try {
+    const latestPhotos = await prisma.generated_Photo.findMany({
+      distinct: ["feature"],
+      orderBy: [{ feature: "asc" }, { createdAt: "desc" }],
+      select: {
+        feature: true,
+        url: true,
+        createdAt: true,
+      },
+    });
+
+    const result = latestPhotos.map((photo) => ({
+      endpoint: photo.feature,
+      graphicUrl: photo.url,
+      createdAt: photo.createdAt,
+    }));
+
+    res.json(result);
+  } catch (error) {
+    console.error("Error computing photo graphics:", error);
+    res.status(500).json({ error: "Failed to get photo graphics" });
+  }
+});
+
+router.get("/photo-graphic/:endpoint", async (req: Request, res: Response) => {
+  try {
+    const { endpoint } = req.params;
+    const photos = await prisma.generated_Photo.findMany({
+      where: { feature: endpoint },
+      orderBy: { createdAt: "desc" },
+      take: 18,
+    });
+
+    res.json(photos);
+  } catch (error) {
+    console.error("Error fetching generated photos:", error);
+    res.status(500).json({ error: "Failed to fetch generated photos" });
+  }
+});
+
 export default router;

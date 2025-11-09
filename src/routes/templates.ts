@@ -1,6 +1,7 @@
 import { Router, Request, Response } from "express";
 import prisma from "../lib/prisma";
 import axios from "axios";
+import { requireAdmin } from "../middleware/roles";
 
 // Cloudinary config (assume env vars set)
 
@@ -81,9 +82,10 @@ async function getOrCreateMainCategory(name: string) {
   return category;
 }
 
-// Create a new template
+// Create a new template (admin only)
 router.post(
   "/templates",
+  requireAdmin,
   async (req: Request, res: Response): Promise<void> => {
     try {
       const { name, description, subcategories } = req.body;
@@ -178,9 +180,10 @@ router.get(
   }
 );
 
-// Update a template
+// Update a template (admin only)
 router.put(
   "/templates/:id",
+  requireAdmin,
   async (req: Request, res: Response): Promise<void> => {
     try {
       const { id } = req.params;
@@ -271,9 +274,10 @@ router.put(
   }
 );
 
-// Delete a template
+// Delete a template (admin only)
 router.delete(
   "/templates/:id",
+  requireAdmin,
   async (req: Request, res: Response): Promise<void> => {
     try {
       const { id } = req.params;
@@ -421,35 +425,40 @@ router.post(
 
 // Upload and persist a template step video
 
-router.post("/templates/:templateId/step-video", function (req, res) {
-  (async () => {
-    try {
-      const { templateId } = req.params;
-      let { stepIndex, endpoint, videoUrl } = req.body;
-      if (typeof stepIndex === "string") stepIndex = parseInt(stepIndex);
-      if (typeof stepIndex !== "number" || isNaN(stepIndex)) {
-        return res.status(400).json({ error: "stepIndex required" });
+// Upload and persist a template step video (admin only)
+router.post(
+  "/templates/:templateId/step-video",
+  requireAdmin,
+  function (req, res) {
+    (async () => {
+      try {
+        const { templateId } = req.params;
+        let { stepIndex, endpoint, videoUrl } = req.body;
+        if (typeof stepIndex === "string") stepIndex = parseInt(stepIndex);
+        if (typeof stepIndex !== "number" || isNaN(stepIndex)) {
+          return res.status(400).json({ error: "stepIndex required" });
+        }
+        if (!endpoint || !videoUrl) {
+          return res
+            .status(400)
+            .json({ error: "endpoint and videoUrl required" });
+        }
+        // Save to DB
+        const saved = await prisma.templateStepVideo.create({
+          data: {
+            templateId: parseInt(templateId),
+            stepIndex,
+            endpoint,
+            videoUrl,
+          },
+        });
+        res.json(saved);
+      } catch (e) {
+        res.status(500).json({ error: "Failed to save step video" });
       }
-      if (!endpoint || !videoUrl) {
-        return res
-          .status(400)
-          .json({ error: "endpoint and videoUrl required" });
-      }
-      // Save to DB
-      const saved = await prisma.templateStepVideo.create({
-        data: {
-          templateId: parseInt(templateId),
-          stepIndex,
-          endpoint,
-          videoUrl,
-        },
-      });
-      res.json(saved);
-    } catch (e) {
-      res.status(500).json({ error: "Failed to save step video" });
-    }
-  })();
-});
+    })();
+  }
+);
 
 // Get all step videos for a template
 
@@ -470,8 +479,10 @@ router.get("/templates/:templateId/step-videos", function (req, res) {
 
 // Delete a single step video (and from Cloudinary)
 
+// Delete a single step video (admin only)
 router.delete(
   "/templates/:templateId/step-video/:stepIndex",
+  requireAdmin,
   function (req, res) {
     (async () => {
       try {
