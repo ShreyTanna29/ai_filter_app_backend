@@ -6,6 +6,7 @@ import dotenv from "dotenv";
 import axios, { AxiosResponse } from "axios";
 import https from "https";
 import http from "http";
+import { randomUUID } from "crypto";
 
 dotenv.config();
 
@@ -253,6 +254,221 @@ router.post(
         /pixverse-v4(?:\.5)?-image-to-video|pixverse-v5-image-to-video|kling-v1-pro-image-to-video|kling-v1-standard-image-to-video|kling-1\.5-pro-image-to-video|kling-v1\.6-pro-image-to-video|kling-1\.6-standard-image-to-video|kling-v2-master-image-to-video|kling-v2\.1-standard-image-to-video|kling-v2\.1-pro-image-to-video/i.test(
           rawModel
         );
+      // Runware Veo 3 Fast (native audio) direct support
+      const isRunwareVeo3Fast = /veo3@fast/i.test(rawModel);
+      if (isRunwareVeo3Fast) {
+        // Expect a Runware-uploaded image URL (already cloudinary if earlier logic succeeded)
+        try {
+          // Upload images to Runware to obtain imageUUIDs (more reliable than using plain URLs)
+          const runwareHeaders = {
+            Authorization: `Bearer ${
+              process.env.RUNWARE_API_KEY || process.env.RUNWARE_KEY
+            }`,
+            "Content-Type": "application/json",
+          };
+          const uploadToRunware = async (
+            img: string
+          ): Promise<string | undefined> => {
+            try {
+              const uploadPayload = [
+                { taskType: "imageUpload", taskUUID: randomUUID(), image: img },
+              ];
+              const r = await axios.post(
+                "https://api.runware.ai/v1",
+                uploadPayload,
+                {
+                  headers: runwareHeaders,
+                  timeout: 180000,
+                  maxBodyLength: Infinity,
+                  maxContentLength: Infinity,
+                }
+              );
+              const d = r.data;
+              const obj = Array.isArray(d?.data) ? d.data[0] : d?.data;
+              return obj?.imageUUID || obj?.imageUuid;
+            } catch (e) {
+              console.warn(
+                "Runware imageUpload failed:",
+                (e as any)?.response?.data || (e as any)?.message || e
+              );
+              return undefined;
+            }
+          };
+
+          // Build frameImages array as objects with UUIDs per Runware spec
+          const frameImages: any[] = [];
+          if (imageCloudUrl) {
+            const firstUUID = await uploadToRunware(imageCloudUrl);
+            if (!firstUUID) {
+              throw new Error(
+                "Runware imageUpload did not return imageUUID for the first frame"
+              );
+            }
+            frameImages.push({ inputImage: firstUUID, frame: "first" });
+          }
+          if (lastFrameCloudUrl) {
+            const lastUUID = await uploadToRunware(lastFrameCloudUrl);
+            if (!lastUUID) {
+              throw new Error(
+                "Runware imageUpload did not return imageUUID for the last frame"
+              );
+            }
+            frameImages.push({ inputImage: lastUUID, frame: "last" });
+          }
+
+          const task = {
+            taskType: "videoInference",
+            taskUUID: randomUUID(),
+            model: "google:3@1", // Runware model AIR ID for Veo 3 Fast (with audio)
+            // Use user prompt override or feature prompt
+            positivePrompt: prompt || "",
+            width: 1280,
+            height: 720,
+            duration: 8,
+            deliveryMethod: "async", // video generation requires async; we'll poll for completion
+            providerSettings: {
+              google: { generateAudio: true },
+            },
+            // Frame images: first and optional last as objects
+            frameImages,
+          } as any;
+
+          const payload = [task];
+          const runwareResp = await axios.post(
+            "https://api.runware.ai/v1",
+            payload,
+            {
+              headers: runwareHeaders,
+              timeout: 180000,
+            }
+          );
+          const data = runwareResp.data;
+          const ackItem = Array.isArray(data?.data)
+            ? data.data.find((d: any) => d?.taskType === "videoInference") ||
+              data.data[0]
+            : data?.data;
+          let videoUrl =
+            ackItem?.videoURL ||
+            ackItem?.url ||
+            ackItem?.video ||
+            (Array.isArray(ackItem?.videos) ? ackItem.videos[0] : null);
+
+          // If URL not directly available (async mode), poll getResponse using taskUUID
+          let taskUUID = ackItem?.taskUUID;
+          if (!videoUrl && taskUUID) {
+            const maxAttempts = 80; // ~4 minutes at 3s interval
+            const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
+            for (let attempt = 0; attempt < maxAttempts; attempt++) {
+              await delay(3000);
+              const pollPayload = [
+                { taskType: "getResponse", taskUUID: taskUUID },
+              ];
+              let pollResp: any;
+              try {
+                pollResp = await axios.post(
+                  "https://api.runware.ai/v1",
+                  pollPayload,
+                  { headers: runwareHeaders, timeout: 60000 }
+                );
+              } catch (e) {
+                // transient errors: continue polling
+                continue;
+              }
+              const pd = pollResp.data;
+              const item = Array.isArray(pd?.data)
+                ? pd.data.find(
+                    (d: any) => d?.taskUUID === taskUUID || d?.videoURL
+                  ) || pd.data[0]
+                : pd?.data;
+              const status = item?.status || item?.taskStatus;
+              if (status === "success" || item?.videoURL || item?.url) {
+                videoUrl =
+                  item?.videoURL ||
+                  item?.url ||
+                  item?.video ||
+                  (Array.isArray(item?.videos) ? item.videos[0] : null);
+                if (videoUrl) break;
+              }
+              if (status === "error" || status === "failed") {
+                // surface provider error
+                res.status(502).json({
+                  success: false,
+                  error: "Runware Veo3@fast returned error during polling",
+                  details: pd,
+                });
+                return;
+              }
+            }
+          }
+          if (!videoUrl) {
+            res.status(502).json({
+              success: false,
+              error:
+                "Runware Veo3@fast did not return video URL (timeout or missing)",
+              details: data,
+            });
+            return;
+          }
+          // Download & re-upload to Cloudinary (normalize hosting)
+          let rwStream;
+          try {
+            rwStream = await axios.get(videoUrl, {
+              responseType: "stream",
+              timeout: 600000,
+            });
+          } catch (e) {
+            res.status(500).json({
+              success: false,
+              error: "Failed to download Runware Veo3@fast video",
+              details: serializeError(e),
+            });
+            return;
+          }
+          let uploadResult: UploadApiResponse;
+          try {
+            uploadResult = await new Promise((resolve, reject) => {
+              const up = cloudinary.uploader.upload_stream(
+                {
+                  resource_type: "video",
+                  folder: "generated-videos",
+                  public_id: `${feature}-veo3fast-${Date.now()}`,
+                  chunk_size: 6000000,
+                },
+                (error, result) => {
+                  if (error) return reject(error);
+                  resolve(result as UploadApiResponse);
+                }
+              );
+              rwStream.data.pipe(up);
+            });
+          } catch (e) {
+            res.status(500).json({
+              success: false,
+              error: "Failed to upload Veo3@fast video to Cloudinary",
+              details: serializeError(e),
+            });
+            return;
+          }
+          await prisma.generatedVideo.create({
+            data: { feature, url: uploadResult.secure_url },
+          });
+          res.status(200).json({
+            success: true,
+            video: { url: uploadResult.secure_url },
+            cloudinaryId: uploadResult.public_id,
+          });
+          return;
+        } catch (err: any) {
+          console.error("Runware Veo3@fast error:", err?.response?.data || err);
+          res.status(500).json({
+            success: false,
+            error: "Runware Veo3@fast generation failed",
+            details: serializeError(err),
+          });
+          return;
+        }
+      }
+
       if (isPixverseTransition || isPixverseImage2Video) {
         // Helper: ensure Cloudinary image URLs transformed to 512x512 (fill & crop center)
         const force512 = (url: string | undefined): string | undefined => {
