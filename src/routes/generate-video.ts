@@ -7,6 +7,7 @@ import axios, { AxiosResponse } from "axios";
 import https from "https";
 import http from "http";
 import { randomUUID } from "crypto";
+import { log } from "console";
 
 dotenv.config();
 
@@ -90,6 +91,25 @@ function summarizeCloudinaryError(err: any): string | undefined {
   return msg.length > 180 ? msg.slice(0, 177) + "..." : msg;
 }
 
+// Extract structured Runware error details for UI surfacing
+function extractRunwareError(raw: any) {
+  try {
+    const body = typeof raw === "string" ? JSON.parse(raw) : raw;
+    const firstErr = Array.isArray(body?.errors) ? body.errors[0] : undefined;
+    if (!firstErr) return undefined;
+    return {
+      code: firstErr.code,
+      message: firstErr.message,
+      responseContent: firstErr.responseContent,
+      documentation: firstErr.documentation,
+      taskUUID: firstErr.taskUUID,
+      taskType: firstErr.taskType,
+    };
+  } catch {
+    return undefined;
+  }
+}
+
 // Define interfaces for better type safety
 interface VideoGenerationRequest {
   imageUrl?: string; // primary key
@@ -150,10 +170,7 @@ router.post(
             !process.env.CLOUDINARY_UPLOAD_URL ||
             !process.env.CLOUDINARY_UPLOAD_PRESET
           ) {
-            // No unsigned upload config; fallback to using the given URL if public
-            if (isLikelyPublic) {
-              imageCloudUrl = imageUrl;
-            } else {
+            if (!isLikelyPublic) {
               throw new Error(
                 "Missing CLOUDINARY_UPLOAD_URL/UPLOAD_PRESET and image is not public"
               );
@@ -181,8 +198,7 @@ router.post(
             e?.response?.data || e?.message || e
           );
           if (isLikelyPublic) {
-            // fallback to original if public
-            imageCloudUrl = imageUrl;
+            imageCloudUrl = imageUrl; // fallback
           } else {
             res.status(503).json({
               success: false,
@@ -256,9 +272,1702 @@ router.post(
         );
       // Runware Veo 3 Fast (native audio) direct support
       const isRunwareVeo3Fast = /veo3@fast/i.test(rawModel);
+      const isRunwareVeo31Fast = /veo\s*3\.1.*fast|google:3@3/i.test(rawModel);
+      const isRunwareVeo31 = /veo\s*3\.1(?!.*fast)|google:3@2/i.test(rawModel);
+      const isRunwareSeedanceProFast =
+        /seedance[\s-]*1\.0[\s-]*pro[\s-]*fast|seedance[\s-]*pro[\s-]*fast|bytedance:2@2/i.test(
+          rawModel
+        );
+      const isRunwareLTX2Pro = /ltx[\s-]*2.*pro|lightricks:2@0/i.test(rawModel);
+      const isRunwareLTX2Fast = /ltx[\s-]*2.*fast|lightricks:2@1/i.test(
+        rawModel
+      );
+      const isRunwareViduQ2Turbo = /vidu[\s-]*q?2.*turbo|vidu:3@2/i.test(
+        rawModel
+      );
+      const isRunwareViduQ2Pro = /vidu[\s-]*q?2.*pro|vidu:3@1/i.test(rawModel);
+      if (isRunwareSeedanceProFast) {
+        try {
+          console.log("[Seedance] Start generation", {
+            feature,
+            rawModel,
+            imageCloudUrlInitial: imageCloudUrl?.slice(0, 120),
+          });
+
+          const runwareHeaders = {
+            Authorization: `Bearer ${
+              process.env.RUNWARE_API_KEY || process.env.RUNWARE_KEY
+            }`,
+            "Content-Type": "application/json",
+          };
+
+          // 1) Upload first frame image to get imageUUID
+          const uploadPayload = [
+            {
+              taskType: "imageUpload",
+              taskUUID: randomUUID(),
+              image: imageCloudUrl,
+            },
+          ];
+          let firstUUID: string | undefined;
+          try {
+            const up = await axios.post(
+              "https://api.runware.ai/v1",
+              uploadPayload,
+              { headers: runwareHeaders, timeout: 180000 }
+            );
+            const d = up.data;
+            const obj = Array.isArray(d?.data) ? d.data[0] : d?.data;
+            firstUUID = obj?.imageUUID || obj?.imageUuid;
+            console.log("[Seedance] imageUpload success", { firstUUID });
+          } catch (e: any) {
+            console.error(
+              "Runware Seedance imageUpload failed:",
+              e?.response?.data || e?.message || e
+            );
+            res.status(400).json({
+              success: false,
+              error: "Failed to upload image to Runware (Seedance)",
+              details: serializeError(e),
+            });
+            return;
+          }
+          if (!firstUUID) {
+            res.status(400).json({
+              success: false,
+              error: "Runware imageUpload did not return imageUUID",
+            });
+            return;
+          }
+
+          // 2) Create videoInference task
+          const taskUUIDCreated = randomUUID();
+          const task: any = {
+            taskType: "videoInference",
+            taskUUID: taskUUIDCreated,
+            model: "bytedance:2@2",
+            positivePrompt: prompt || "",
+            width: 864,
+            height: 480,
+            duration: 5,
+            deliveryMethod: "async",
+            frameImages: [{ inputImage: firstUUID, frame: "first" }],
+            providerSettings: { bytedance: { cameraFixed: false } },
+          };
+          console.log("[Seedance] Created task", {
+            taskUUID: taskUUIDCreated,
+            width: 864,
+            height: 480,
+            duration: 5,
+          });
+
+          const createResp = await axios.post(
+            "https://api.runware.ai/v1",
+            [task],
+            { headers: runwareHeaders, timeout: 180000 }
+          );
+          const createData = createResp.data;
+          const ackItem = Array.isArray(createData?.data)
+            ? createData.data.find(
+                (d: any) => d?.taskType === "videoInference"
+              ) || createData.data[0]
+            : createData?.data;
+          let videoUrl =
+            ackItem?.videoURL ||
+            ackItem?.url ||
+            ackItem?.video ||
+            (Array.isArray(ackItem?.videos) ? ackItem.videos[0] : null);
+          let pollTaskUUID: string = ackItem?.taskUUID || taskUUIDCreated;
+          console.log("[Seedance] Ack response", {
+            ackTaskUUID: ackItem?.taskUUID,
+            createdTaskUUID: taskUUIDCreated,
+            chosenPollTaskUUID: pollTaskUUID,
+            immediateVideo: !!videoUrl,
+            status: ackItem?.status || ackItem?.taskStatus,
+          });
+
+          // 3) Poll if no immediate URL
+          if (!videoUrl && pollTaskUUID) {
+            const maxAttempts = 100; // ~5 min
+            const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
+            let consecutive400 = 0;
+            let switchedToCreated = false;
+            for (let attempt = 0; attempt < maxAttempts; attempt++) {
+              await delay(3000);
+              const pollPayload = [
+                { taskType: "getResponse", taskUUID: pollTaskUUID },
+              ];
+              console.log("[Seedance] Poll attempt", {
+                attempt,
+                pollPayload: pollPayload[0],
+              });
+              try {
+                const poll = await axios.post(
+                  "https://api.runware.ai/v1",
+                  pollPayload,
+                  { headers: runwareHeaders, timeout: 60000 }
+                );
+                const pd = poll.data;
+                const item = Array.isArray(pd?.data)
+                  ? pd.data.find(
+                      (d: any) => d?.taskUUID === pollTaskUUID || d?.videoURL
+                    ) || pd.data[0]
+                  : pd?.data;
+                const status = item?.status || item?.taskStatus;
+                if (status)
+                  console.log("[Seedance] Poll status", { attempt, status });
+                if (status === "success" || item?.videoURL || item?.url) {
+                  videoUrl =
+                    item?.videoURL ||
+                    item?.url ||
+                    item?.video ||
+                    (Array.isArray(item?.videos) ? item.videos[0] : null);
+                  if (videoUrl) break;
+                }
+                if (status === "error" || status === "failed") {
+                  res.status(502).json({
+                    success: false,
+                    error: "Runware Seedance generation failed during polling",
+                    details: pd,
+                  });
+                  return;
+                }
+                consecutive400 = 0; // reset on successful poll
+              } catch (e: any) {
+                const statusCode = e?.response?.status;
+                const body = e?.response?.data;
+                console.log("[Seedance] Poll error", {
+                  attempt,
+                  statusCode,
+                  body:
+                    typeof body === "object"
+                      ? JSON.stringify(body).slice(0, 500)
+                      : body,
+                });
+                if (statusCode === 400) {
+                  consecutive400++;
+                  // If repeated 400 and ack UUID differs, try switching to created taskUUID once
+                  if (
+                    !switchedToCreated &&
+                    pollTaskUUID !== taskUUIDCreated &&
+                    consecutive400 >= 2
+                  ) {
+                    console.log(
+                      "[Seedance] Switching to created taskUUID due to repeated 400",
+                      { from: pollTaskUUID, to: taskUUIDCreated }
+                    );
+                    pollTaskUUID = taskUUIDCreated;
+                    switchedToCreated = true;
+                    consecutive400 = 0;
+                  }
+                  if (consecutive400 >= 5) {
+                    res.status(502).json({
+                      success: false,
+                      error:
+                        "Runware Seedance polling returned repeated 400 errors",
+                      details: body || serializeError(e),
+                    });
+                    return;
+                  }
+                }
+                continue;
+              }
+            }
+          }
+
+          if (!videoUrl) {
+            console.log(
+              "[Seedance] Timeout - no video URL returned after polling"
+            );
+            res.status(502).json({
+              success: false,
+              error:
+                "Runware Seedance 1.0 Pro Fast did not return a video URL (timeout or missing)",
+              details: createData,
+            });
+            return;
+          }
+
+          // 4) Download and upload to Cloudinary
+          let rwStream;
+          try {
+            rwStream = await axios.get(videoUrl, {
+              responseType: "stream",
+              timeout: 600000,
+            });
+            console.log("[Seedance] Download started");
+          } catch (e) {
+            console.log("[Seedance] Download error", {
+              error: serializeError(e),
+            });
+            res.status(500).json({
+              success: false,
+              error: "Failed to download Seedance video",
+              details: serializeError(e),
+            });
+            return;
+          }
+          let uploadResult: UploadApiResponse;
+          try {
+            uploadResult = await new Promise((resolve, reject) => {
+              const up = cloudinary.uploader.upload_stream(
+                {
+                  resource_type: "video",
+                  folder: "generated-videos",
+                  public_id: `${feature}-seedance-pro-fast-${Date.now()}`,
+                  chunk_size: 6000000,
+                },
+                (error, result) => {
+                  if (error) return reject(error);
+                  resolve(result as UploadApiResponse);
+                }
+              );
+              rwStream.data.pipe(up);
+            });
+            console.log("[Seedance] Cloudinary upload success", {
+              public_id: uploadResult.public_id,
+              bytes: uploadResult.bytes,
+            });
+          } catch (e) {
+            console.log("[Seedance] Cloudinary upload error", {
+              error: serializeError(e),
+            });
+            res.status(500).json({
+              success: false,
+              error: "Failed to upload Seedance video to Cloudinary",
+              details: serializeError(e),
+            });
+            return;
+          }
+          await prisma.generatedVideo.create({
+            data: { feature, url: uploadResult.secure_url },
+          });
+          console.log("[Seedance] DB insert", { url: uploadResult.secure_url });
+          res.status(200).json({
+            success: true,
+            video: { url: uploadResult.secure_url },
+            cloudinaryId: uploadResult.public_id,
+          });
+          return;
+        } catch (err: any) {
+          console.error(
+            "Runware Seedance 1.0 Pro Fast error:",
+            err?.response?.data || err
+          );
+          res.status(500).json({
+            success: false,
+            error: "Seedance 1.0 Pro Fast generation failed",
+            details: serializeError(err),
+          });
+          return;
+        }
+      }
+
+      // Runware LTX-2 Pro (Lightricks) Image-to-Video
+      if (isRunwareLTX2Pro) {
+        try {
+          console.log("[LTX2] Start generation", {
+            feature,
+            rawModel,
+            imageCloudUrlInitial: imageCloudUrl?.slice(0, 120),
+          });
+
+          const runwareHeaders = {
+            Authorization: `Bearer ${
+              process.env.RUNWARE_API_KEY || process.env.RUNWARE_KEY
+            }`,
+            "Content-Type": "application/json",
+          };
+
+          // 1) Upload first frame to get imageUUID
+          const uploadPayload = [
+            {
+              taskType: "imageUpload",
+              taskUUID: randomUUID(),
+              image: imageCloudUrl,
+            },
+          ];
+          let firstUUID: string | undefined;
+          try {
+            const up = await axios.post(
+              "https://api.runware.ai/v1",
+              uploadPayload,
+              {
+                headers: runwareHeaders,
+                timeout: 180000,
+              }
+            );
+            const d = up.data;
+            const obj = Array.isArray(d?.data) ? d.data[0] : d?.data;
+            firstUUID = obj?.imageUUID || obj?.imageUuid;
+            console.log("[LTX2] imageUpload success", { firstUUID });
+          } catch (e: any) {
+            console.error(
+              "[LTX2] imageUpload failed:",
+              e?.response?.data || e?.message || e
+            );
+            res.status(400).json({
+              success: false,
+              error: "Failed to upload image to Runware (LTX-2)",
+              details: serializeError(e),
+            });
+            return;
+          }
+          if (!firstUUID) {
+            res.status(400).json({
+              success: false,
+              error: "Runware imageUpload did not return imageUUID",
+            });
+            return;
+          }
+
+          // Defaults per docs: 1080p, 6/8/10 sec; enable audio
+          const width = Number(process.env.LTX2_WIDTH || 1920);
+          const height = Number(process.env.LTX2_HEIGHT || 1080);
+          const duration = Number(process.env.LTX2_DURATION || 8);
+          const generateAudio =
+            String(process.env.LTX2_AUDIO || "true") === "true";
+
+          // 2) Create videoInference task
+          const createdTaskUUID = randomUUID();
+          const task: any = {
+            taskType: "videoInference",
+            taskUUID: createdTaskUUID,
+            model: "lightricks:2@0",
+            positivePrompt: prompt || "",
+            duration,
+            width,
+            height,
+            frameImages: [{ inputImage: firstUUID, frame: "first" }],
+            providerSettings: { lightricks: { generateAudio } },
+          };
+          console.log("[LTX2] Created task", {
+            taskUUID: createdTaskUUID,
+            width,
+            height,
+            duration,
+            generateAudio,
+          });
+
+          const createResp = await axios.post(
+            "https://api.runware.ai/v1",
+            [task],
+            {
+              headers: runwareHeaders,
+              timeout: 180000,
+            }
+          );
+          const data = createResp.data;
+          const ackItem = Array.isArray(data?.data)
+            ? data.data.find((d: any) => d?.taskType === "videoInference") ||
+              data.data[0]
+            : data?.data;
+          let videoUrl =
+            ackItem?.videoURL ||
+            ackItem?.url ||
+            ackItem?.video ||
+            (Array.isArray(ackItem?.videos) ? ackItem.videos[0] : null);
+          let pollTaskUUID: string = ackItem?.taskUUID || createdTaskUUID;
+          console.log("[LTX2] Ack response", {
+            ackTaskUUID: ackItem?.taskUUID,
+            createdTaskUUID,
+            chosenPollTaskUUID: pollTaskUUID,
+            immediateVideo: !!videoUrl,
+            status: ackItem?.status || ackItem?.taskStatus,
+          });
+
+          // 3) Poll for completion if needed
+          if (!videoUrl && pollTaskUUID) {
+            const maxAttempts = 100;
+            const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
+            let consecutive400 = 0;
+            let switched = false;
+            for (let attempt = 0; attempt < maxAttempts; attempt++) {
+              await delay(3000);
+              const pollPayload = [
+                { taskType: "getResponse", taskUUID: pollTaskUUID },
+              ];
+              console.log("[LTX2] Poll attempt", {
+                attempt,
+                pollPayload: pollPayload[0],
+              });
+              try {
+                const poll = await axios.post(
+                  "https://api.runware.ai/v1",
+                  pollPayload,
+                  {
+                    headers: runwareHeaders,
+                    timeout: 60000,
+                  }
+                );
+                const pd = poll.data;
+                const item = Array.isArray(pd?.data)
+                  ? pd.data.find(
+                      (d: any) => d?.taskUUID === pollTaskUUID || d?.videoURL
+                    ) || pd.data[0]
+                  : pd?.data;
+                const status = item?.status || item?.taskStatus;
+                if (status)
+                  console.log("[LTX2] Poll status", { attempt, status });
+                if (status === "success" || item?.videoURL || item?.url) {
+                  videoUrl =
+                    item?.videoURL ||
+                    item?.url ||
+                    item?.video ||
+                    (Array.isArray(item?.videos) ? item.videos[0] : null);
+                  if (videoUrl) break;
+                }
+                if (status === "error" || status === "failed") {
+                  res.status(502).json({
+                    success: false,
+                    error: "LTX-2 generation failed during polling",
+                    details: pd,
+                  });
+                  return;
+                }
+                consecutive400 = 0;
+              } catch (e: any) {
+                const statusCode = e?.response?.status;
+                const body = e?.response?.data;
+                console.log("[LTX2] Poll error", {
+                  attempt,
+                  statusCode,
+                  body:
+                    typeof body === "object"
+                      ? JSON.stringify(body).slice(0, 500)
+                      : body,
+                });
+                if (statusCode === 400) {
+                  consecutive400++;
+                  if (
+                    !switched &&
+                    pollTaskUUID !== createdTaskUUID &&
+                    consecutive400 >= 2
+                  ) {
+                    console.log(
+                      "[LTX2] Switching poll taskUUID to created one due to repeated 400",
+                      { from: pollTaskUUID, to: createdTaskUUID }
+                    );
+                    pollTaskUUID = createdTaskUUID;
+                    switched = true;
+                    consecutive400 = 0;
+                  }
+                  if (consecutive400 >= 5) {
+                    res.status(502).json({
+                      success: false,
+                      error: "LTX-2 polling returned repeated 400 errors",
+                      details: body || serializeError(e),
+                    });
+                    return;
+                  }
+                }
+                continue;
+              }
+            }
+          }
+
+          if (!videoUrl) {
+            console.log("[LTX2] Timeout - no video URL returned after polling");
+            res.status(502).json({
+              success: false,
+              error: "LTX-2 did not return a video URL (timeout or missing)",
+              details: data,
+            });
+            return;
+          }
+
+          // 4) Download and upload to Cloudinary
+          let ltxStream;
+          try {
+            ltxStream = await axios.get(videoUrl, {
+              responseType: "stream",
+              timeout: 600000,
+            });
+          } catch (e) {
+            res.status(500).json({
+              success: false,
+              error: "Failed to download LTX-2 video",
+              details: serializeError(e),
+            });
+            return;
+          }
+          let uploadResult: UploadApiResponse;
+          try {
+            uploadResult = await new Promise((resolve, reject) => {
+              const up = cloudinary.uploader.upload_stream(
+                {
+                  resource_type: "video",
+                  folder: "generated-videos",
+                  public_id: `${feature}-ltx2-${Date.now()}`,
+                  chunk_size: 6000000,
+                },
+                (error, result) => {
+                  if (error) return reject(error);
+                  resolve(result as UploadApiResponse);
+                }
+              );
+              ltxStream.data.pipe(up);
+            });
+          } catch (e) {
+            res.status(500).json({
+              success: false,
+              error: "Failed to upload LTX-2 video",
+              details: serializeError(e),
+            });
+            return;
+          }
+          await prisma.generatedVideo.create({
+            data: { feature, url: uploadResult.secure_url },
+          });
+          res.status(200).json({
+            success: true,
+            video: { url: uploadResult.secure_url },
+            cloudinaryId: uploadResult.public_id,
+          });
+          return;
+        } catch (err: any) {
+          console.error("[LTX2] Fatal error:", err?.response?.data || err);
+          res.status(500).json({
+            success: false,
+            error: "LTX-2 Pro generation failed",
+            details: serializeError(err),
+          });
+          return;
+        }
+      }
+
+      // Runware LTX-2 Fast (Lightricks) Image-to-Video
+      if (isRunwareLTX2Fast) {
+        try {
+          console.log("[LTX2F] Start generation", {
+            feature,
+            rawModel,
+            imageCloudUrlInitial: imageCloudUrl?.slice(0, 120),
+          });
+
+          const runwareHeaders = {
+            Authorization: `Bearer ${
+              process.env.RUNWARE_API_KEY || process.env.RUNWARE_KEY
+            }`,
+            "Content-Type": "application/json",
+          };
+
+          // 1) Upload first frame to get imageUUID
+          const uploadPayload = [
+            {
+              taskType: "imageUpload",
+              taskUUID: randomUUID(),
+              image: imageCloudUrl,
+            },
+          ];
+          let firstUUID: string | undefined;
+          try {
+            const up = await axios.post(
+              "https://api.runware.ai/v1",
+              uploadPayload,
+              {
+                headers: runwareHeaders,
+                timeout: 180000,
+              }
+            );
+            const d = up.data;
+            const obj = Array.isArray(d?.data) ? d.data[0] : d?.data;
+            firstUUID = obj?.imageUUID || obj?.imageUuid;
+            console.log("[LTX2F] imageUpload success", { firstUUID });
+          } catch (e: any) {
+            console.error(
+              "[LTX2F] imageUpload failed:",
+              e?.response?.data || e?.message || e
+            );
+            res.status(400).json({
+              success: false,
+              error: "Failed to upload image to Runware (LTX-2 Fast)",
+              details: serializeError(e),
+            });
+            return;
+          }
+          if (!firstUUID) {
+            res.status(400).json({
+              success: false,
+              error: "Runware imageUpload did not return imageUUID",
+            });
+            return;
+          }
+
+          // Defaults: use env overrides if provided
+          const width = Number(process.env.LTX2F_WIDTH || 1920);
+          const height = Number(process.env.LTX2F_HEIGHT || 1080);
+          const duration = Number(process.env.LTX2F_DURATION || 8);
+          const generateAudio =
+            String(process.env.LTX2F_AUDIO || "true") === "true";
+
+          // 2) Create videoInference task (lightricks:2@1)
+          const createdTaskUUID = randomUUID();
+          const task: any = {
+            taskType: "videoInference",
+            taskUUID: createdTaskUUID,
+            model: "lightricks:2@1",
+            positivePrompt: prompt || "",
+            duration,
+            width,
+            height,
+            frameImages: [{ inputImage: firstUUID, frame: "first" }],
+            providerSettings: { lightricks: { generateAudio } },
+          };
+          console.log("[LTX2F] Created task", {
+            taskUUID: createdTaskUUID,
+            width,
+            height,
+            duration,
+            generateAudio,
+          });
+
+          const createResp = await axios.post(
+            "https://api.runware.ai/v1",
+            [task],
+            {
+              headers: runwareHeaders,
+              timeout: 180000,
+            }
+          );
+          const data = createResp.data;
+          const ackItem = Array.isArray(data?.data)
+            ? data.data.find((d: any) => d?.taskType === "videoInference") ||
+              data.data[0]
+            : data?.data;
+          let videoUrl =
+            ackItem?.videoURL ||
+            ackItem?.url ||
+            ackItem?.video ||
+            (Array.isArray(ackItem?.videos) ? ackItem.videos[0] : null);
+          let pollTaskUUID: string = ackItem?.taskUUID || createdTaskUUID;
+          console.log("[LTX2F] Ack response", {
+            ackTaskUUID: ackItem?.taskUUID,
+            createdTaskUUID,
+            chosenPollTaskUUID: pollTaskUUID,
+            immediateVideo: !!videoUrl,
+            status: ackItem?.status || ackItem?.taskStatus,
+          });
+
+          // 3) Poll for completion if needed
+          if (!videoUrl && pollTaskUUID) {
+            const maxAttempts = 100;
+            const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
+            let consecutive400 = 0;
+            let switched = false;
+            for (let attempt = 0; attempt < maxAttempts; attempt++) {
+              await delay(3000);
+              const pollPayload = [
+                { taskType: "getResponse", taskUUID: pollTaskUUID },
+              ];
+              console.log("[LTX2F] Poll attempt", {
+                attempt,
+                pollPayload: pollPayload[0],
+              });
+              try {
+                const poll = await axios.post(
+                  "https://api.runware.ai/v1",
+                  pollPayload,
+                  {
+                    headers: runwareHeaders,
+                    timeout: 60000,
+                  }
+                );
+                const pd = poll.data;
+                const item = Array.isArray(pd?.data)
+                  ? pd.data.find(
+                      (d: any) => d?.taskUUID === pollTaskUUID || d?.videoURL
+                    ) || pd.data[0]
+                  : pd?.data;
+                const status = item?.status || item?.taskStatus;
+                if (status)
+                  console.log("[LTX2F] Poll status", { attempt, status });
+                if (status === "success" || item?.videoURL || item?.url) {
+                  videoUrl =
+                    item?.videoURL ||
+                    item?.url ||
+                    item?.video ||
+                    (Array.isArray(item?.videos) ? item.videos[0] : null);
+                  if (videoUrl) break;
+                }
+                if (status === "error" || status === "failed") {
+                  res.status(502).json({
+                    success: false,
+                    error: "LTX-2 Fast generation failed during polling",
+                    details: pd,
+                  });
+                  return;
+                }
+                consecutive400 = 0;
+              } catch (e: any) {
+                const statusCode = e?.response?.status;
+                const body = e?.response?.data;
+                console.log("[LTX2F] Poll error", {
+                  attempt,
+                  statusCode,
+                  body:
+                    typeof body === "object"
+                      ? JSON.stringify(body).slice(0, 500)
+                      : body,
+                });
+                if (statusCode === 400) {
+                  consecutive400++;
+                  if (
+                    !switched &&
+                    pollTaskUUID !== createdTaskUUID &&
+                    consecutive400 >= 2
+                  ) {
+                    console.log(
+                      "[LTX2F] Switching poll taskUUID to created one due to repeated 400",
+                      { from: pollTaskUUID, to: createdTaskUUID }
+                    );
+                    pollTaskUUID = createdTaskUUID;
+                    switched = true;
+                    consecutive400 = 0;
+                  }
+                  if (consecutive400 >= 5) {
+                    res.status(502).json({
+                      success: false,
+                      error: "LTX-2 Fast polling returned repeated 400 errors",
+                      details: body || serializeError(e),
+                    });
+                    return;
+                  }
+                }
+                continue;
+              }
+            }
+          }
+
+          if (!videoUrl) {
+            console.log(
+              "[LTX2F] Timeout - no video URL returned after polling"
+            );
+            res.status(502).json({
+              success: false,
+              error:
+                "LTX-2 Fast did not return a video URL (timeout or missing)",
+              details: data,
+            });
+            return;
+          }
+
+          // 4) Download and upload to Cloudinary
+          let ltxStream;
+          try {
+            ltxStream = await axios.get(videoUrl, {
+              responseType: "stream",
+              timeout: 600000,
+            });
+          } catch (e) {
+            res.status(500).json({
+              success: false,
+              error: "Failed to download LTX-2 Fast video",
+              details: serializeError(e),
+            });
+            return;
+          }
+          let uploadResult: UploadApiResponse;
+          try {
+            uploadResult = await new Promise((resolve, reject) => {
+              const up = cloudinary.uploader.upload_stream(
+                {
+                  resource_type: "video",
+                  folder: "generated-videos",
+                  public_id: `${feature}-ltx2fast-${Date.now()}`,
+                  chunk_size: 6000000,
+                },
+                (error, result) => {
+                  if (error) return reject(error);
+                  resolve(result as UploadApiResponse);
+                }
+              );
+              ltxStream.data.pipe(up);
+            });
+          } catch (e) {
+            res.status(500).json({
+              success: false,
+              error: "Failed to upload LTX-2 Fast video",
+              details: serializeError(e),
+            });
+            return;
+          }
+          await prisma.generatedVideo.create({
+            data: { feature, url: uploadResult.secure_url },
+          });
+          res.status(200).json({
+            success: true,
+            video: { url: uploadResult.secure_url },
+            cloudinaryId: uploadResult.public_id,
+          });
+          return;
+        } catch (err: any) {
+          console.error("[LTX2F] Fatal error:", err?.response?.data || err);
+          res.status(500).json({
+            success: false,
+            error: "LTX-2 Fast generation failed",
+            details: serializeError(err),
+          });
+          return;
+        }
+      }
+      // Runware Vidu Q2 Turbo (Image-to-Video, first/optional last frame)
+      if (isRunwareViduQ2Turbo) {
+        try {
+          console.log("[VIDUQ2] Start generation", {
+            feature,
+            rawModel,
+            imageCloudUrlInitial: imageCloudUrl?.slice(0, 120),
+            lastFrameProvided: !!lastFrameCloudUrl,
+          });
+
+          const runwareHeaders = {
+            Authorization: `Bearer ${
+              process.env.RUNWARE_API_KEY || process.env.RUNWARE_KEY
+            }`,
+            "Content-Type": "application/json",
+          };
+
+          // 1) Upload frame images to Runware to obtain imageUUIDs
+          const uploadOne = async (imgUrl: string) => {
+            const payload = [
+              {
+                taskType: "imageUpload",
+                taskUUID: randomUUID(),
+                image: imgUrl,
+              },
+            ];
+            const r = await axios.post("https://api.runware.ai/v1", payload, {
+              headers: runwareHeaders,
+              timeout: 180000,
+            });
+            const d = r.data;
+            const obj = Array.isArray(d?.data) ? d.data[0] : d?.data;
+            return obj?.imageUUID || obj?.imageUuid;
+          };
+
+          let firstUUID: string | undefined;
+          try {
+            firstUUID = await uploadOne(imageCloudUrl);
+            console.log("[VIDUQ2] imageUpload first success", { firstUUID });
+          } catch (e: any) {
+            console.error(
+              "[VIDUQ2] imageUpload first failed:",
+              e?.response?.data || e?.message || e
+            );
+            res.status(400).json({
+              success: false,
+              error: "Failed to upload first frame to Runware (Vidu Q2)",
+              details: serializeError(e),
+            });
+            return;
+          }
+          if (!firstUUID) {
+            res.status(400).json({
+              success: false,
+              error: "Runware imageUpload did not return imageUUID",
+            });
+            return;
+          }
+          let lastUUID: string | undefined;
+          if (lastFrameCloudUrl) {
+            try {
+              lastUUID = await uploadOne(lastFrameCloudUrl);
+              console.log("[VIDUQ2] imageUpload last success", { lastUUID });
+            } catch (e: any) {
+              console.warn(
+                "[VIDUQ2] imageUpload last failed (continuing as single frame)",
+                e?.response?.data || e?.message || e
+              );
+            }
+          }
+
+          // Model-specific params
+          const duration = Number(process.env.VIDUQ2_DURATION || 5);
+          const movementAmplitude =
+            process.env.VIDUQ2_MOVEMENT_AMPLITUDE || "medium"; // low|medium|large
+          const bgm = String(process.env.VIDUQ2_BGM || "false") === "true";
+
+          // 2) Create videoInference task (omit width/height when using frameImages)
+          const createdTaskUUID = randomUUID();
+          const frameImages: any[] = [
+            { inputImage: firstUUID, frame: "first" },
+          ];
+          if (lastUUID)
+            frameImages.push({ inputImage: lastUUID, frame: "last" });
+
+          const task: any = {
+            taskType: "videoInference",
+            taskUUID: createdTaskUUID,
+            model: "vidu:3@2",
+            positivePrompt: prompt || "",
+            duration,
+            frameImages,
+            providerSettings: { vidu: { movementAmplitude, bgm } },
+          };
+          console.log("[VIDUQ2] Created task", {
+            taskUUID: createdTaskUUID,
+            duration,
+            movementAmplitude,
+            bgm,
+            frames: frameImages.length,
+          });
+
+          const createResp = await axios.post(
+            "https://api.runware.ai/v1",
+            [task],
+            { headers: runwareHeaders, timeout: 180000 }
+          );
+          const data = createResp.data;
+          const ackItem = Array.isArray(data?.data)
+            ? data.data.find((d: any) => d?.taskType === "videoInference") ||
+              data.data[0]
+            : data?.data;
+          let videoUrl =
+            ackItem?.videoURL ||
+            ackItem?.url ||
+            ackItem?.video ||
+            (Array.isArray(ackItem?.videos) ? ackItem.videos[0] : null);
+          let pollTaskUUID: string = ackItem?.taskUUID || createdTaskUUID;
+          console.log("[VIDUQ2] Ack response", {
+            ackTaskUUID: ackItem?.taskUUID,
+            createdTaskUUID,
+            chosenPollTaskUUID: pollTaskUUID,
+            immediateVideo: !!videoUrl,
+            status: ackItem?.status || ackItem?.taskStatus,
+          });
+
+          // 3) Poll for completion if needed
+          if (!videoUrl && pollTaskUUID) {
+            const maxAttempts = 100;
+            const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
+            let consecutive400 = 0;
+            let switched = false;
+            for (let attempt = 0; attempt < maxAttempts; attempt++) {
+              await delay(3000);
+              const pollPayload = [
+                { taskType: "getResponse", taskUUID: pollTaskUUID },
+              ];
+              console.log("[VIDUQ2] Poll attempt", {
+                attempt,
+                pollPayload: pollPayload[0],
+              });
+              try {
+                const poll = await axios.post(
+                  "https://api.runware.ai/v1",
+                  pollPayload,
+                  { headers: runwareHeaders, timeout: 60000 }
+                );
+                const pd = poll.data;
+                const item = Array.isArray(pd?.data)
+                  ? pd.data.find(
+                      (d: any) => d?.taskUUID === pollTaskUUID || d?.videoURL
+                    ) || pd.data[0]
+                  : pd?.data;
+                const status = item?.status || item?.taskStatus;
+                if (status)
+                  console.log("[VIDUQ2] Poll status", { attempt, status });
+                if (status === "success" || item?.videoURL || item?.url) {
+                  videoUrl =
+                    item?.videoURL ||
+                    item?.url ||
+                    item?.video ||
+                    (Array.isArray(item?.videos) ? item.videos[0] : null);
+                  if (videoUrl) break;
+                }
+                if (status === "error" || status === "failed") {
+                  res.status(502).json({
+                    success: false,
+                    error: "Vidu Q2 Turbo generation failed during polling",
+                    details: pd,
+                  });
+                  return;
+                }
+                consecutive400 = 0;
+              } catch (e: any) {
+                const statusCode = e?.response?.status;
+                const body = e?.response?.data;
+                console.log("[VIDUQ2] Poll error", {
+                  attempt,
+                  statusCode,
+                  body:
+                    typeof body === "object"
+                      ? JSON.stringify(body).slice(0, 500)
+                      : body,
+                });
+                if (statusCode === 400) {
+                  consecutive400++;
+                  if (
+                    !switched &&
+                    pollTaskUUID !== createdTaskUUID &&
+                    consecutive400 >= 2
+                  ) {
+                    console.log(
+                      "[VIDUQ2] Switching poll taskUUID to created one due to repeated 400",
+                      { from: pollTaskUUID, to: createdTaskUUID }
+                    );
+                    pollTaskUUID = createdTaskUUID;
+                    switched = true;
+                    consecutive400 = 0;
+                  }
+                  if (consecutive400 >= 5) {
+                    res.status(502).json({
+                      success: false,
+                      error:
+                        "Vidu Q2 Turbo polling returned repeated 400 errors",
+                      details: body || serializeError(e),
+                    });
+                    return;
+                  }
+                }
+                continue;
+              }
+            }
+          }
+
+          if (!videoUrl) {
+            console.log(
+              "[VIDUQ2] Timeout - no video URL returned after polling"
+            );
+            res.status(502).json({
+              success: false,
+              error:
+                "Vidu Q2 Turbo did not return a video URL (timeout or missing)",
+              details: data,
+            });
+            return;
+          }
+
+          // 4) Download and upload to Cloudinary
+          let vq2Stream;
+          try {
+            vq2Stream = await axios.get(videoUrl, {
+              responseType: "stream",
+              timeout: 600000,
+            });
+          } catch (e) {
+            res.status(500).json({
+              success: false,
+              error: "Failed to download Vidu Q2 Turbo video",
+              details: serializeError(e),
+            });
+            return;
+          }
+          let uploadResult: UploadApiResponse;
+          try {
+            uploadResult = await new Promise((resolve, reject) => {
+              const up = cloudinary.uploader.upload_stream(
+                {
+                  resource_type: "video",
+                  folder: "generated-videos",
+                  public_id: `${feature}-viduq2turbo-${Date.now()}`,
+                  chunk_size: 6000000,
+                },
+                (error, result) => {
+                  if (error) return reject(error);
+                  resolve(result as UploadApiResponse);
+                }
+              );
+              vq2Stream.data.pipe(up);
+            });
+          } catch (e) {
+            res.status(500).json({
+              success: false,
+              error: "Failed to upload Vidu Q2 Turbo video",
+              details: serializeError(e),
+            });
+            return;
+          }
+          await prisma.generatedVideo.create({
+            data: { feature, url: uploadResult.secure_url },
+          });
+          res.status(200).json({
+            success: true,
+            video: { url: uploadResult.secure_url },
+            cloudinaryId: uploadResult.public_id,
+          });
+          return;
+        } catch (err: any) {
+          console.error("[VIDUQ2] Fatal error:", err?.response?.data || err);
+          res.status(500).json({
+            success: false,
+            error: "Vidu Q2 Turbo generation failed",
+            details: serializeError(err),
+          });
+          return;
+        }
+      }
+      // Runware Google Veo 3.1 (with audio) Image-to-Video
+      if (isRunwareVeo31) {
+        try {
+          const runwareHeaders = {
+            Authorization: `Bearer ${
+              process.env.RUNWARE_API_KEY || process.env.RUNWARE_KEY
+            }`,
+            "Content-Type": "application/json",
+          };
+
+          console.log(
+            "Runware API KEY: ",
+            process.env.RUNWARE_API_KEY || process.env.RUNWARE_KEY
+          );
+
+          // Helper to upload an image url and get imageUUID
+          const uploadToRunware = async (
+            img: string
+          ): Promise<string | undefined> => {
+            try {
+              const uploadPayload = [
+                { taskType: "imageUpload", taskUUID: randomUUID(), image: img },
+              ];
+              const r = await axios.post(
+                "https://api.runware.ai/v1",
+                uploadPayload,
+                {
+                  headers: runwareHeaders,
+                  timeout: 180000,
+                  maxBodyLength: Infinity,
+                  maxContentLength: Infinity,
+                }
+              );
+              const d = r.data;
+              const obj = Array.isArray(d?.data) ? d.data[0] : d?.data;
+              return obj?.imageUUID || obj?.imageUuid;
+            } catch (e) {
+              console.warn(
+                "Runware imageUpload failed (Veo3.1):",
+                (e as any)?.response?.data || (e as any)?.message || e
+              );
+              return undefined;
+            }
+          };
+
+          // Build frameImages array
+          const frameImages: any[] = [];
+          if (imageCloudUrl) {
+            const firstUUID = await uploadToRunware(imageCloudUrl);
+            if (!firstUUID) {
+              throw new Error(
+                "Runware imageUpload did not return imageUUID for the first frame (Veo3.1)"
+              );
+            }
+            frameImages.push({ inputImage: firstUUID, frame: "first" });
+          }
+          if (lastFrameCloudUrl) {
+            const lastUUID = await uploadToRunware(lastFrameCloudUrl);
+            if (!lastUUID) {
+              throw new Error(
+                "Runware imageUpload did not return imageUUID for the last frame (Veo3.1)"
+              );
+            }
+            frameImages.push({ inputImage: lastUUID, frame: "last" });
+          }
+
+          const width = Number(process.env.VEO31_WIDTH || 1280);
+          const height = Number(process.env.VEO31_HEIGHT || 720);
+          const duration = Number(process.env.VEO31_DURATION || 8);
+
+          const createdTaskUUID = randomUUID();
+          const task = {
+            taskType: "videoInference",
+            taskUUID: createdTaskUUID,
+            model: "google:3@2",
+            positivePrompt: prompt || "",
+            width,
+            height,
+            duration,
+            deliveryMethod: "async",
+            providerSettings: { google: { generateAudio: true } },
+            frameImages,
+          } as any;
+          console.log("veo 3.1 task:", task);
+
+          const runwareResp = await axios.post(
+            "https://api.runware.ai/v1",
+            [task],
+            {
+              headers: runwareHeaders,
+              timeout: 180000,
+            }
+          );
+          const data = runwareResp.data;
+          console.log("veo 3.1 resp data: ", data);
+
+          const ackItem = Array.isArray(data?.data)
+            ? data.data.find((d: any) => d?.taskType === "videoInference") ||
+              data.data[0]
+            : data?.data;
+          let videoUrl =
+            ackItem?.videoURL ||
+            ackItem?.url ||
+            ackItem?.video ||
+            (Array.isArray(ackItem?.videos) ? ackItem.videos[0] : null);
+          let pollTaskUUID: string = ackItem?.taskUUID || createdTaskUUID;
+
+          // Poll using getResponse with 400 fallback
+          if (!videoUrl && pollTaskUUID) {
+            const maxAttempts = 100;
+            const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
+            let consecutive400 = 0;
+            let switched = false;
+            for (let attempt = 0; attempt < maxAttempts; attempt++) {
+              await delay(3000);
+              const pollPayload = [
+                {
+                  taskType: "getResponse",
+                  taskUUID: pollTaskUUID,
+                },
+              ];
+              try {
+                const poll = await axios.post(
+                  "https://api.runware.ai/v1",
+                  pollPayload,
+                  { headers: runwareHeaders, timeout: 60000 }
+                );
+                console.log("poll payload:", pollPayload);
+
+                const pd = poll.data;
+                console.log("poll data: ", pd);
+
+                const item = Array.isArray(pd?.data)
+                  ? pd.data.find(
+                      (d: any) => d?.taskUUID === pollTaskUUID || d?.videoURL
+                    ) || pd.data[0]
+                  : pd?.data;
+                const status = item?.status || item?.taskStatus;
+                if (status === "success" || item?.videoURL || item?.url) {
+                  videoUrl =
+                    item?.videoURL ||
+                    item?.url ||
+                    item?.video ||
+                    (Array.isArray(item?.videos) ? item.videos[0] : null);
+                  if (videoUrl) break;
+                }
+                if (status === "error" || status === "failed") {
+                  const providerErr: any = extractRunwareError(pd) || {};
+                  res.status(422).json({
+                    success: false,
+                    error:
+                      providerErr.responseContent ||
+                      providerErr.message ||
+                      "Runware Veo 3.1 returned error during polling",
+                    providerError: providerErr,
+                    details: pd,
+                  });
+                  return;
+                }
+                consecutive400 = 0;
+              } catch (e: any) {
+                const statusCode = e?.response?.status;
+                const body = e?.response?.data;
+                console.log("Veo 3.1 poll error", {
+                  attempt,
+                  statusCode,
+                  body:
+                    typeof body === "object"
+                      ? JSON.stringify(body).slice(0, 500)
+                      : body,
+                });
+                if (statusCode === 400) {
+                  consecutive400++;
+                  if (
+                    !switched &&
+                    pollTaskUUID !== createdTaskUUID &&
+                    consecutive400 >= 2
+                  ) {
+                    pollTaskUUID = createdTaskUUID;
+                    switched = true;
+                    consecutive400 = 0;
+                  }
+                  if (consecutive400 >= 5) {
+                    const providerErr: any = extractRunwareError(body) || {};
+                    res.status(422).json({
+                      success: false,
+                      error:
+                        providerErr.responseContent ||
+                        providerErr.message ||
+                        "Runware Veo 3.1 polling returned repeated 400 errors",
+                      providerError: providerErr,
+                      details: body || e?.message,
+                    });
+                    return;
+                  }
+                }
+                continue;
+              }
+            }
+          }
+
+          if (!videoUrl) {
+            res.status(502).json({
+              success: false,
+              error:
+                "Runware Veo 3.1 did not return video URL (timeout or missing)",
+              details: data,
+            });
+            return;
+          }
+
+          // Download & upload to Cloudinary
+          let rwStream;
+          try {
+            rwStream = await axios.get(videoUrl, {
+              responseType: "stream",
+              timeout: 600000,
+            });
+          } catch (e) {
+            res.status(500).json({
+              success: false,
+              error: "Failed to download Runware Veo 3.1 video",
+              details: serializeError(e),
+            });
+            return;
+          }
+          let uploadResult: UploadApiResponse;
+          try {
+            uploadResult = await new Promise((resolve, reject) => {
+              const up = cloudinary.uploader.upload_stream(
+                {
+                  resource_type: "video",
+                  folder: "generated-videos",
+                  public_id: `${feature}-veo31-${Date.now()}`,
+                  chunk_size: 6000000,
+                },
+                (error, result) => {
+                  if (error) return reject(error);
+                  resolve(result as UploadApiResponse);
+                }
+              );
+              rwStream.data.pipe(up);
+            });
+          } catch (e) {
+            res.status(500).json({
+              success: false,
+              error: "Failed to upload Veo 3.1 video to Cloudinary",
+              details: serializeError(e),
+            });
+            return;
+          }
+          await prisma.generatedVideo.create({
+            data: { feature, url: uploadResult.secure_url },
+          });
+          res.status(200).json({
+            success: true,
+            video: { url: uploadResult.secure_url },
+            cloudinaryId: uploadResult.public_id,
+          });
+          return;
+        } catch (err: any) {
+          console.error("Runware Veo 3.1 error:", err?.response?.data || err);
+          res.status(500).json({
+            success: false,
+            error: "Runware Veo 3.1 generation failed",
+            details: serializeError(err),
+          });
+          return;
+        }
+      }
+
+      // Runware Google Veo 3.1 Fast (with audio) Image-to-Video
+      if (isRunwareVeo31Fast) {
+        try {
+          console.log("[VEO31F] Start generation", {
+            feature,
+            rawModel,
+            imageCloudUrlInitial: imageCloudUrl?.slice(0, 120),
+            lastFrameProvided: !!lastFrameCloudUrl,
+          });
+          const runwareHeaders = {
+            Authorization: `Bearer ${
+              process.env.RUNWARE_API_KEY || process.env.RUNWARE_KEY
+            }`,
+            "Content-Type": "application/json",
+          };
+
+          // Helper upload
+          const uploadToRunware = async (
+            img: string
+          ): Promise<string | undefined> => {
+            try {
+              const uploadPayload = [
+                { taskType: "imageUpload", taskUUID: randomUUID(), image: img },
+              ];
+              const r = await axios.post(
+                "https://api.runware.ai/v1",
+                uploadPayload,
+                {
+                  headers: runwareHeaders,
+                  timeout: 180000,
+                  maxBodyLength: Infinity,
+                  maxContentLength: Infinity,
+                }
+              );
+              const d = r.data;
+              const obj = Array.isArray(d?.data) ? d.data[0] : d?.data;
+              return obj?.imageUUID || obj?.imageUuid;
+            } catch (e) {
+              console.warn(
+                "Runware imageUpload failed (Veo3.1 Fast):",
+                (e as any)?.response?.data || (e as any)?.message || e
+              );
+              return undefined;
+            }
+          };
+
+          const frameImages: any[] = [];
+          if (imageCloudUrl) {
+            const firstUUID = await uploadToRunware(imageCloudUrl);
+            if (!firstUUID) {
+              throw new Error(
+                "Runware imageUpload did not return imageUUID for the first frame (Veo3.1 Fast)"
+              );
+            }
+            frameImages.push({ inputImage: firstUUID, frame: "first" });
+          }
+          if (lastFrameCloudUrl) {
+            const lastUUID = await uploadToRunware(lastFrameCloudUrl);
+            if (!lastUUID) {
+              throw new Error(
+                "Runware imageUpload did not return imageUUID for the last frame (Veo3.1 Fast)"
+              );
+            }
+            frameImages.push({ inputImage: lastUUID, frame: "last" });
+          }
+
+          const width = Number(process.env.VEO31F_WIDTH || 1280);
+          const height = Number(process.env.VEO31F_HEIGHT || 720);
+          const duration = Number(process.env.VEO31F_DURATION || 8);
+
+          const createdTaskUUID = randomUUID();
+          const task = {
+            taskType: "videoInference",
+            taskUUID: createdTaskUUID,
+            model: "google:3@3",
+            positivePrompt: prompt || "",
+            width,
+            height,
+            duration,
+            deliveryMethod: "async",
+            providerSettings: { google: { generateAudio: true } },
+            frameImages,
+          } as any;
+          console.log("[VEO31F] Created task", {
+            taskUUID: createdTaskUUID,
+            width,
+            height,
+            duration,
+            frames: frameImages.length,
+          });
+
+          const runwareResp = await axios.post(
+            "https://api.runware.ai/v1",
+            [task],
+            { headers: runwareHeaders, timeout: 180000 }
+          );
+          const data = runwareResp.data;
+          const ackItem = Array.isArray(data?.data)
+            ? data.data.find((d: any) => d?.taskType === "videoInference") ||
+              data.data[0]
+            : data?.data;
+          let videoUrl =
+            ackItem?.videoURL ||
+            ackItem?.url ||
+            ackItem?.video ||
+            (Array.isArray(ackItem?.videos) ? ackItem.videos[0] : null);
+          let pollTaskUUID: string = ackItem?.taskUUID || createdTaskUUID;
+          console.log("[VEO31F] Ack response", {
+            ackTaskUUID: ackItem?.taskUUID,
+            createdTaskUUID,
+            chosenPollTaskUUID: pollTaskUUID,
+            immediateVideo: !!videoUrl,
+            status: ackItem?.status || ackItem?.taskStatus,
+          });
+
+          if (!videoUrl && pollTaskUUID) {
+            const maxAttempts = 100;
+            const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
+            let consecutive400 = 0;
+            let switched = false;
+            for (let attempt = 0; attempt < maxAttempts; attempt++) {
+              await delay(3000);
+              const pollPayload = [
+                { taskType: "getResponse", taskUUID: pollTaskUUID },
+              ];
+              console.log("[VEO31F] Poll attempt", {
+                attempt,
+                pollTaskUUID,
+              });
+              try {
+                const poll = await axios.post(
+                  "https://api.runware.ai/v1",
+                  pollPayload,
+                  { headers: runwareHeaders, timeout: 60000 }
+                );
+                const pd = poll.data;
+                const item = Array.isArray(pd?.data)
+                  ? pd.data.find(
+                      (d: any) => d?.taskUUID === pollTaskUUID || d?.videoURL
+                    ) || pd.data[0]
+                  : pd?.data;
+                const status = item?.status || item?.taskStatus;
+                if (status)
+                  console.log("[VEO31F] Poll status", { attempt, status });
+                if (status === "success" || item?.videoURL || item?.url) {
+                  videoUrl =
+                    item?.videoURL ||
+                    item?.url ||
+                    item?.video ||
+                    (Array.isArray(item?.videos) ? item.videos[0] : null);
+                  if (videoUrl) break;
+                }
+                if (status === "error" || status === "failed") {
+                  const providerErr: any = extractRunwareError(pd) || {};
+                  res.status(422).json({
+                    success: false,
+                    error:
+                      providerErr.responseContent ||
+                      providerErr.message ||
+                      "Runware Veo 3.1 Fast returned error during polling",
+                    providerError: providerErr,
+                    details: pd,
+                  });
+                  return;
+                }
+                consecutive400 = 0;
+              } catch (e: any) {
+                const statusCode = e?.response?.status;
+                const body = e?.response?.data;
+                console.log("[VEO31F] Poll error", {
+                  attempt,
+                  statusCode,
+                  body:
+                    typeof body === "object"
+                      ? JSON.stringify(body).slice(0, 500)
+                      : body,
+                });
+                if (statusCode === 400) {
+                  consecutive400++;
+                  if (
+                    !switched &&
+                    pollTaskUUID !== createdTaskUUID &&
+                    consecutive400 >= 2
+                  ) {
+                    console.log(
+                      "[VEO31F] Switching poll taskUUID to created one due to repeated 400",
+                      { from: pollTaskUUID, to: createdTaskUUID }
+                    );
+                    pollTaskUUID = createdTaskUUID;
+                    switched = true;
+                    consecutive400 = 0;
+                  }
+                  if (consecutive400 >= 5) {
+                    console.log(
+                      "[VEO31F] Aborting after repeated 400s during polling"
+                    );
+                    const providerErr: any = extractRunwareError(body) || {};
+                    res.status(422).json({
+                      success: false,
+                      error:
+                        providerErr.responseContent ||
+                        providerErr.message ||
+                        "Runware Veo 3.1 Fast polling returned repeated 400 errors",
+                      providerError: providerErr,
+                      details: body || e?.message,
+                    });
+                    return;
+                  }
+                }
+                continue;
+              }
+            }
+          }
+
+          if (!videoUrl) {
+            res.status(502).json({
+              success: false,
+              error:
+                "Runware Veo 3.1 Fast did not return video URL (timeout or missing)",
+              details: data,
+            });
+            return;
+          }
+
+          let rwStream;
+          try {
+            rwStream = await axios.get(videoUrl, {
+              responseType: "stream",
+              timeout: 600000,
+            });
+          } catch (e) {
+            res.status(500).json({
+              success: false,
+              error: "Failed to download Runware Veo 3.1 Fast video",
+              details: serializeError(e),
+            });
+            return;
+          }
+          let uploadResult: UploadApiResponse;
+          try {
+            uploadResult = await new Promise((resolve, reject) => {
+              const up = cloudinary.uploader.upload_stream(
+                {
+                  resource_type: "video",
+                  folder: "generated-videos",
+                  public_id: `${feature}-veo31fast-${Date.now()}`,
+                  chunk_size: 6000000,
+                },
+                (error, result) => {
+                  if (error) return reject(error);
+                  resolve(result as UploadApiResponse);
+                }
+              );
+              rwStream.data.pipe(up);
+            });
+            console.log("[VEO31F] Cloudinary upload success", {
+              public_id: uploadResult.public_id,
+              bytes: uploadResult.bytes,
+            });
+          } catch (e) {
+            res.status(500).json({
+              success: false,
+              error: "Failed to upload Veo 3.1 Fast video to Cloudinary",
+              details: serializeError(e),
+            });
+            return;
+          }
+          await prisma.generatedVideo.create({
+            data: { feature, url: uploadResult.secure_url },
+          });
+          console.log("[VEO31F] DB insert", { url: uploadResult.secure_url });
+          res.status(200).json({
+            success: true,
+            video: { url: uploadResult.secure_url },
+            cloudinaryId: uploadResult.public_id,
+          });
+          return;
+        } catch (err: any) {
+          console.error(
+            "Runware Veo 3.1 Fast error:",
+            err?.response?.data || err
+          );
+          res.status(500).json({
+            success: false,
+            error: "Runware Veo 3.1 Fast generation failed",
+            details: serializeError(err),
+          });
+          return;
+        }
+      }
+
       if (isRunwareVeo3Fast) {
         // Expect a Runware-uploaded image URL (already cloudinary if earlier logic succeeded)
         try {
+          console.log("[VEO3F] Start generation", {
+            feature,
+            rawModel,
+            imageCloudUrlInitial: imageCloudUrl?.slice(0, 120),
+            lastFrameProvided: !!lastFrameCloudUrl,
+          });
           // Upload images to Runware to obtain imageUUIDs (more reliable than using plain URLs)
           const runwareHeaders = {
             Authorization: `Bearer ${
@@ -332,8 +2041,16 @@ router.post(
             // Frame images: first and optional last as objects
             frameImages,
           } as any;
+          console.log("[VEO3F] Created task", {
+            width: 1280,
+            height: 720,
+            duration: 8,
+            hasLastFrame: !!lastFrameCloudUrl,
+          });
 
           const payload = [task];
+          console.log("veo 3 task payload:", payload);
+
           const runwareResp = await axios.post(
             "https://api.runware.ai/v1",
             payload,
@@ -355,6 +2072,11 @@ router.post(
 
           // If URL not directly available (async mode), poll getResponse using taskUUID
           let taskUUID = ackItem?.taskUUID;
+          console.log("[VEO3F] Ack response", {
+            ackTaskUUID: taskUUID,
+            immediateVideo: !!videoUrl,
+            status: ackItem?.status || ackItem?.taskStatus,
+          });
           if (!videoUrl && taskUUID) {
             const maxAttempts = 80; // ~4 minutes at 3s interval
             const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -363,6 +2085,8 @@ router.post(
               const pollPayload = [
                 { taskType: "getResponse", taskUUID: taskUUID },
               ];
+              console.log("veo 3 fast poll payload: ", pollPayload);
+
               let pollResp: any;
               try {
                 pollResp = await axios.post(
@@ -372,6 +2096,10 @@ router.post(
                 );
               } catch (e) {
                 // transient errors: continue polling
+                console.log(
+                  "[VEO3F] Poll transient error (continuing)",
+                  (e as any)?.response?.status || (e as any)?.message
+                );
                 continue;
               }
               const pd = pollResp.data;
@@ -381,6 +2109,8 @@ router.post(
                   ) || pd.data[0]
                 : pd?.data;
               const status = item?.status || item?.taskStatus;
+              if (status)
+                console.log("[VEO3F] Poll status", { attempt, status });
               if (status === "success" || item?.videoURL || item?.url) {
                 videoUrl =
                   item?.videoURL ||
@@ -390,10 +2120,15 @@ router.post(
                 if (videoUrl) break;
               }
               if (status === "error" || status === "failed") {
-                // surface provider error
-                res.status(502).json({
+                // surface provider error with provider fields
+                const providerErr: any = extractRunwareError(pd) || {};
+                res.status(422).json({
                   success: false,
-                  error: "Runware Veo3@fast returned error during polling",
+                  error:
+                    providerErr.responseContent ||
+                    providerErr.message ||
+                    "Runware Veo3@fast returned error during polling",
+                  providerError: providerErr,
                   details: pd,
                 });
                 return;
@@ -401,6 +2136,9 @@ router.post(
             }
           }
           if (!videoUrl) {
+            console.log(
+              "[VEO3F] Timeout - no video URL returned after polling"
+            );
             res.status(502).json({
               success: false,
               error:
@@ -441,17 +2179,24 @@ router.post(
               );
               rwStream.data.pipe(up);
             });
+            console.log("[VEO3F] Cloudinary upload success", {
+              public_id: uploadResult.public_id,
+              bytes: uploadResult.bytes,
+            });
           } catch (e) {
             res.status(500).json({
               success: false,
               error: "Failed to upload Veo3@fast video to Cloudinary",
               details: serializeError(e),
             });
+            console.log("cloudinary upload error veo 3 fast : ", e);
+
             return;
           }
           await prisma.generatedVideo.create({
             data: { feature, url: uploadResult.secure_url },
           });
+          console.log("[VEO3F] DB insert", { url: uploadResult.secure_url });
           res.status(200).json({
             success: true,
             video: { url: uploadResult.secure_url },
