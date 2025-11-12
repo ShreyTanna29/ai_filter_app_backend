@@ -115,7 +115,7 @@ window.addEventListener("DOMContentLoaded", function () {
     // Hide dashboard and show login modal
     document
       .querySelectorAll(
-        "main, aside, header, .tab-content, #tab-dashboard, #tab-filters, #tab-templates"
+        "main, aside, header, .tab-content, #tab-dashboard, #tab-filters, #tab-photo-filters, #tab-templates"
       )
       .forEach((el) => {
         if (el) el.style.display = "none";
@@ -277,7 +277,7 @@ window.addEventListener("DOMContentLoaded", function () {
         // Show main UI and initialize
         document
           .querySelectorAll(
-            "main, aside, header, .tab-content, #tab-dashboard, #tab-filters, #tab-templates"
+            "main, aside, header, .tab-content, #tab-dashboard, #tab-filters, #tab-photo-filters, #tab-templates"
           )
           .forEach((el) => {
             if (el) el.style.display = "";
@@ -299,7 +299,7 @@ window.addEventListener("DOMContentLoaded", function () {
     // Hide dashboard content and force sign in
     document
       .querySelectorAll(
-        "main, aside, header, .tab-content, #tab-dashboard, #tab-filters, #tab-templates"
+        "main, aside, header, .tab-content, #tab-dashboard, #tab-filters, #tab-photo-filters, #tab-templates"
       )
       .forEach((el) => {
         if (el) el.style.display = "none";
@@ -322,13 +322,23 @@ window.addEventListener("DOMContentLoaded", function () {
   if (addFeatureBtn) {
     addFeatureBtn.addEventListener("click", openFeatureCrudModal);
   }
+  // Wire up Add Photo Filter button to reuse same modal
+  const addPhotoFeatureBtn = document.getElementById("addPhotoFeatureBtn");
+  if (addPhotoFeatureBtn) {
+    addPhotoFeatureBtn.addEventListener("click", openFeatureCrudModal);
+  }
 
   var modal = document.getElementById("featureCrudModal");
   if (modal) modal.classList.add("hidden");
 
   // Tab switching logic
   const sidebarButtons = document.querySelectorAll("aside nav ul li button");
-  const tabIds = ["tab-dashboard", "tab-filters", "tab-templates"];
+  const tabIds = [
+    "tab-dashboard",
+    "tab-filters",
+    "tab-photo-filters",
+    "tab-templates",
+  ];
   sidebarButtons.forEach((button, idx) => {
     button.addEventListener("click", function (e) {
       e.preventDefault();
@@ -347,8 +357,16 @@ window.addEventListener("DOMContentLoaded", function () {
       const showId = tabIds[idx];
       const showEl = document.getElementById(showId);
       if (showEl) showEl.classList.remove("hidden");
-      if (showId === "tab-filters") {
-        ensureFeaturesLoaded();
+      if (showId === "tab-filters" || showId === "tab-photo-filters") {
+        // Load features if needed and render appropriate grid
+        if (!featuresInitialRequested && !featuresLoading) {
+          loadAllFeatures().then(() => {
+            if (showId === "tab-photo-filters") displayPhotoFeatures();
+          });
+          featuresInitialRequested = true;
+        } else {
+          if (showId === "tab-photo-filters") displayPhotoFeatures();
+        }
       }
     });
   });
@@ -361,7 +379,12 @@ window.addEventListener("DOMContentLoaded", function () {
 
 // Global function for tab switching (called from HTML onclick)
 window.switchTab = function (tabName) {
-  const tabIds = ["tab-dashboard", "tab-filters", "tab-templates"];
+  const tabIds = [
+    "tab-dashboard",
+    "tab-filters",
+    "tab-photo-filters",
+    "tab-templates",
+  ];
   const tabIndex = tabIds.findIndex((id) => id === `tab-${tabName}`);
 
   if (tabIndex === -1) return;
@@ -393,9 +416,17 @@ window.switchTab = function (tabName) {
   const showEl = document.getElementById(showId);
   if (showEl) showEl.classList.remove("hidden");
 
-  // Only load features on tab switch if not already loaded and not just initialized
-  if (showId === "tab-filters" && !featuresInitialRequested) {
-    // Do nothing, features will be loaded by initializeDashboard
+  // Only load features on tab switch if not already loaded
+  if (
+    (showId === "tab-filters" || showId === "tab-photo-filters") &&
+    !featuresInitialRequested
+  ) {
+    loadAllFeatures().then(() => {
+      if (showId === "tab-photo-filters") displayPhotoFeatures();
+    });
+    featuresInitialRequested = true;
+  } else if (showId === "tab-photo-filters") {
+    displayPhotoFeatures();
   }
 };
 
@@ -407,7 +438,7 @@ async function initializeDashboard() {
   console.log("Showing dashboard UI elements");
   document
     .querySelectorAll(
-      "main, aside, header, .tab-content, #tab-dashboard, #tab-filters, #tab-templates"
+      "main, aside, header, .tab-content, #tab-dashboard, #tab-filters, #tab-photo-filters, #tab-templates"
     )
     .forEach((el) => {
       if (el) {
@@ -494,6 +525,12 @@ async function loadAllFeatures() {
     }
 
     displayFeatures();
+    // Also mirror into Photo Filters tab if present
+    if (document.getElementById("photoFeaturesGrid")) {
+      try {
+        displayPhotoFeatures();
+      } catch (_) {}
+    }
     updateStats();
   } catch (e) {
     console.error("Error loading features", e);
@@ -589,6 +626,82 @@ function displayFeatures() {
   }
 }
 
+// Display features in Photo Filters tab (reuses same data and card layout)
+function displayPhotoFeatures() {
+  const grid = document.getElementById("photoFeaturesGrid");
+  if (!grid) return;
+
+  const graphicsCount = Object.keys(featureGraphics).length;
+  const videosCount = Object.keys(latestVideos).length;
+  console.log(
+    `displayPhotoFeatures: ${graphicsCount} graphics, ${videosCount} videos available`
+  );
+
+  const searchInput = document.getElementById("photoFeatureSearch");
+  const searchTerm = searchInput ? searchInput.value.toLowerCase() : "";
+
+  function renderFeatureCards(featureArr) {
+    const cardsHtml = featureArr
+      .map((feature) => {
+        const videoUrl =
+          featureGraphics[feature.endpoint] || latestVideos[feature.endpoint];
+        const videoUrlWithParams = addCloudinaryParams(videoUrl);
+        const videoHtml = videoUrlWithParams
+          ? `<div class="video-preview">
+               <video controls preload="metadata" style="width: 100%;">
+                 <source src="${videoUrlWithParams}" type="video/mp4">
+                 Your browser does not support the video tag.
+               </video>
+             </div>`
+          : `<div class=\"video-preview\"> 
+               <div class=\"bg-gray-100 rounded-lg p-8 text-center text-gray-500\">
+                 <i class=\"fas fa-video text-3xl mb-2\"></i>
+                 <div>No video generated yet</div>
+               </div>
+             </div>`;
+        return `
+          <div class=\"feature-card bg-white rounded-lg shadow p-4 flex flex-col gap-2 cursor-pointer\" data-endpoint=\"${feature.endpoint}\"> 
+            <div class=\"feature-name font-semibold text-lg mb-2\">${feature.endpoint}</div>
+            ${videoHtml}
+            <div class=\"text-gray-600 text-sm mt-1\"></div>
+            <div class=\"mt-2\">
+              <button class=\"view-feature-details px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700\">View details</button>
+            </div>
+          </div>
+        `;
+      })
+      .join("");
+    grid.innerHTML = cardsHtml;
+    grid.addEventListener("click", (e) => {
+      const btn = e.target.closest(".view-feature-details");
+      if (btn) {
+        const card = btn.closest(".feature-card");
+        if (card) {
+          const endpoint = card.getAttribute("data-endpoint");
+          if (endpoint) showFeatureDetailPage(endpoint);
+        }
+      }
+    });
+  }
+
+  if (searchTerm) {
+    fetch(`/api/features?search=${encodeURIComponent(searchTerm)}`)
+      .then((res) => res.json())
+      .then((data) => {
+        let filtered = [];
+        if (data && data.success && Array.isArray(data.features)) {
+          filtered = data.features;
+        }
+        renderFeatureCards(filtered);
+      })
+      .catch(() => {
+        renderFeatureCards([]);
+      });
+  } else {
+    renderFeatureCards(features);
+  }
+}
+
 // Full reload convenience used by legacy calls
 async function loadFeatures() {
   features = [];
@@ -602,6 +715,15 @@ if (featureSearchInput) {
     if (!featuresInitialRequested) return; // don't auto-load if tab never opened
     // For client-side filtering we just re-display
     displayFeatures();
+  });
+}
+
+// Photo Filters search handling
+const photoFeatureSearchInput = document.getElementById("photoFeatureSearch");
+if (photoFeatureSearchInput) {
+  photoFeatureSearchInput.addEventListener("input", () => {
+    if (!featuresInitialRequested) return;
+    displayPhotoFeatures();
   });
 }
 
@@ -1380,7 +1502,7 @@ function closeFeatureDetailPage() {
   console.log("Restoring main UI elements...");
   document
     .querySelectorAll(
-      "main, aside, header, .tab-content, #tab-dashboard, #tab-filters, #tab-templates"
+      "main, aside, header, .tab-content, #tab-dashboard, #tab-filters, #tab-photo-filters, #tab-templates"
     )
     .forEach((el) => {
       if (el) {
@@ -1936,7 +2058,7 @@ function closeStepDetailPage() {
   console.log("Restoring main UI elements...");
   document
     .querySelectorAll(
-      "main, aside, header, .tab-content, #tab-dashboard, #tab-filters, #tab-templates"
+      "main, aside, header, .tab-content, #tab-dashboard, #tab-filters, #tab-photo-filters, #tab-templates"
     )
     .forEach((el) => {
       if (el) {
