@@ -1797,12 +1797,44 @@ function showStepDetailPage(templateId, stepIndex, subcatIndex) {
           .map((v) => {
             const vidUrl = v.signedUrl || v.url;
             return `<div class="relative rounded-lg overflow-hidden border border-gray-200 hover:border-blue-400 hover:shadow group step-detail-thumb" data-url="${vidUrl}" data-id="${v.id}" style="width:120px;height:213px;display:inline-block;vertical-align:top;background:#000;cursor:pointer;">
-       <video src="${vidUrl}" class="w-full h-full object-cover" preload="none" style="width:100%;height:100%;object-fit:cover;pointer-events:none;"></video>
+       <video src="${vidUrl}" class="w-full h-full object-cover" preload="metadata" muted playsinline style="width:100%;height:100%;object-fit:cover;pointer-events:none;"></video>
        <button class="absolute top-1 right-1 bg-red-600/80 text-white text-[10px] px-1.5 py-0.5 rounded opacity-0 group-hover:opacity-100 transition delete-step-video-btn" title="Delete video"><svg xmlns='http://www.w3.org/2000/svg' width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' class='pointer-events-none'><path d='M3 6h18'/><path d='M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2'/><path d='M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6'/><path d='M10 11v6'/><path d='M14 11v6'/></svg></button>
      </div>`;
           })
           .join("");
         generatedListEl.innerHTML = html;
+        // Initialize thumbnails to show the first frame
+        function initializeStepVideoThumbs(container) {
+          const vids = container.querySelectorAll(".step-detail-thumb video");
+          vids.forEach((vid) => {
+            try {
+              vid.muted = true;
+              vid.playsInline = true;
+              vid.preload = "metadata";
+              const onMeta = () => {
+                try {
+                  vid.currentTime = 0.01;
+                } catch (_) {}
+              };
+              const onSeeked = () => {
+                try {
+                  vid.pause();
+                } catch (_) {}
+                vid.removeEventListener("seeked", onSeeked);
+              };
+              vid.addEventListener("loadedmetadata", onMeta, { once: true });
+              vid.addEventListener("seeked", onSeeked, { once: true });
+              // Timeout fallback
+              setTimeout(() => {
+                try {
+                  vid.pause();
+                } catch (_) {}
+              }, 4000);
+              vid.load();
+            } catch (_) {}
+          });
+        }
+        initializeStepVideoThumbs(generatedListEl);
         // Click to open modal
         generatedListEl.querySelectorAll(".step-detail-thumb").forEach((el) => {
           el.addEventListener("click", (e) => {
