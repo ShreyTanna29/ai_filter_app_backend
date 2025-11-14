@@ -1,7 +1,9 @@
 import { Router, Request, Response } from "express";
 import axios from "axios";
 import type { RequestHandler } from "express";
-import cloudinary from "cloudinary";
+// S3 migration: replace Cloudinary deletion with S3 object removal
+import { deleteObject } from "../lib/s3";
+import { signKey, deriveKey } from "../middleware/signedUrl";
 import prisma from "../lib/prisma";
 
 const router = Router();
@@ -205,14 +207,29 @@ router.get("/videos/:endpoint", async (req: Request, res: Response) => {
       where: { feature: req.params.endpoint },
       orderBy: { createdAt: "desc" },
     });
-    res.json(videos);
+    // Map stored URL (which may be raw S3 path or legacy Cloudinary) to signed URL if S3
+    const out = await Promise.all(
+      videos.map(async (v) => {
+        let signed = v.url;
+        try {
+          if (v.url && /amazonaws\.com\//.test(v.url)) {
+            const key = deriveKey(v.url);
+            signed = await signKey(key);
+          }
+        } catch (e) {
+          // keep original URL if signing fails
+        }
+        return { ...v, signedUrl: signed };
+      })
+    );
+    res.json(out);
   } catch (error) {
     console.error("Error fetching videos:", error);
     res.status(500).json({ error: "Failed to fetch videos" });
   }
 });
 
-// Delete a generated video (Cloudinary + DB)
+// Delete a generated video (S3 + DB)
 router.delete("/videos/:id", async (req: Request, res: Response) => {
   try {
     const id = parseInt(req.params.id, 10);
@@ -225,21 +242,18 @@ router.delete("/videos/:id", async (req: Request, res: Response) => {
       res.status(404).json({ error: "Video not found" });
       return;
     }
-    // Extract public id from cloudinary URL
-    let publicId: string | null = null;
-    if (video.url) {
-      const match = video.url.match(/\/upload\/v\d+\/(.+?)\.mp4/);
-      if (match) publicId = match[1];
-    }
-    if (publicId) {
-      try {
-        await cloudinary.v2.uploader.destroy(publicId, {
-          resource_type: "video",
-        });
-      } catch (e) {
-        // Non-fatal – continue with DB deletion
-        console.warn("Cloudinary delete failed for", publicId, e);
+    // Derive S3 key from stored URL: assume pattern https://<bucket or cdn>/<key>
+    try {
+      if (video.url) {
+        const u = new URL(video.url);
+        // Remove leading slash
+        const key = u.pathname.startsWith("/")
+          ? u.pathname.slice(1)
+          : u.pathname;
+        await deleteObject(key);
       }
+    } catch (e) {
+      console.warn("S3 delete failed (non-fatal):", e);
     }
     await prisma.generatedVideo.delete({ where: { id } });
     res.json({ success: true });
@@ -249,7 +263,7 @@ router.delete("/videos/:id", async (req: Request, res: Response) => {
   }
 });
 
-// Use GeneratedVideo instead of FeatureGraphic: return latest video per endpoint
+// Use GeneratedVideo instead of FeatureGraphic: return latest video per endpoint (now S3 URLs)
 router.get("/feature-graphic", async (req: Request, res: Response) => {
   try {
     const latestVideos = await prisma.generatedVideo.findMany({
@@ -270,10 +284,17 @@ router.get("/feature-graphic", async (req: Request, res: Response) => {
     });
 
     // The database has already done all the work!
-    const result = latestVideos.map((v) => ({
-      endpoint: v.feature,
-      graphicUrl: v.url,
-    }));
+    const result = await Promise.all(
+      latestVideos.map(async (v) => {
+        let signed = v.url;
+        try {
+          if (v.url && /amazonaws\.com\//.test(v.url)) {
+            signed = await signKey(deriveKey(v.url));
+          }
+        } catch {}
+        return { endpoint: v.feature, graphicUrl: signed };
+      })
+    );
 
     res.json(result);
   } catch (error) {
@@ -325,11 +346,21 @@ router.get("/photo-graphic", async (req: Request, res: Response) => {
       },
     });
 
-    const result = latestPhotos.map((photo) => ({
-      endpoint: photo.feature,
-      graphicUrl: photo.url,
-      createdAt: photo.createdAt,
-    }));
+    const result = await Promise.all(
+      latestPhotos.map(async (photo) => {
+        let signed = photo.url;
+        try {
+          if (photo.url && /amazonaws\.com\//.test(photo.url)) {
+            signed = await signKey(deriveKey(photo.url));
+          }
+        } catch {}
+        return {
+          endpoint: photo.feature,
+          graphicUrl: signed,
+          createdAt: photo.createdAt,
+        };
+      })
+    );
 
     res.json(result);
   } catch (error) {
@@ -347,7 +378,18 @@ router.get("/photo-graphic/:endpoint", async (req: Request, res: Response) => {
       take: 18,
     });
 
-    res.json(photos);
+    const out = await Promise.all(
+      photos.map(async (p) => {
+        let signed = p.url;
+        try {
+          if (p.url && /amazonaws\.com\//.test(p.url)) {
+            signed = await signKey(deriveKey(p.url));
+          }
+        } catch {}
+        return { ...p, signedUrl: signed };
+      })
+    );
+    res.json(out);
   } catch (error) {
     console.error("Error fetching generated photos:", error);
     res.status(500).json({ error: "Failed to fetch generated photos" });

@@ -2,15 +2,14 @@ import { Router, Request, Response } from "express";
 import prisma from "../lib/prisma";
 import axios from "axios";
 import { requireAdmin } from "../middleware/roles";
+import { uploadStream, publicUrlFor, makeKey, deleteObject } from "../lib/s3";
+import { deriveKey, signKey } from "../middleware/signedUrl";
+import { Readable } from "stream";
+import { GetObjectCommand } from "@aws-sdk/client-s3";
 
-// Cloudinary config (assume env vars set)
-
-const cloudinary = require("cloudinary").v2;
-cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-  api_key: process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET,
-});
+// This route previously used Cloudinary. All video assets now stored in private S3.
+// We keep DB column `videoUrl` but store canonical S3 public-style URL (not presigned).
+// Responses enrich with `signedUrl` so clients can access private objects.
 
 const router = Router();
 
@@ -47,12 +46,23 @@ async function registerTemplateEndpoint(template: any) {
         where: { templateId: template.id },
         orderBy: { stepIndex: "asc" },
       });
+      // Enrich each video with a signed URL when possible
+      const enriched = await Promise.all(
+        stepVideos.map(async (v) => {
+          let signedUrl: string | undefined;
+          try {
+            const key = deriveKey(v.videoUrl);
+            signedUrl = await signKey(key);
+          } catch {}
+          return { ...v, signedUrl };
+        })
+      );
       res.json({
         id: dbTemplate.id,
         name: dbTemplate.name,
         description: dbTemplate.description,
         subcategories: dbTemplate.subcategories,
-        stepVideos,
+        stepVideos: enriched,
       });
     } catch (e) {
       res.status(500).json({ error: "Failed to fetch template data" });
@@ -285,20 +295,17 @@ router.delete(
       const template = await prisma.template.findUnique({
         where: { id: parseInt(id) },
       });
-      // Delete all step videos for this template (and from Cloudinary)
+      // Delete all step videos for this template (and from S3)
       const stepVideos = await prisma.templateStepVideo.findMany({
         where: { templateId: parseInt(id) },
       });
       for (const vid of stepVideos) {
-        // Extract public_id from videoUrl
-        const match = vid.videoUrl.match(/\/upload\/v\d+\/([^\.]+)\.mp4/);
-        if (match) {
-          try {
-            await cloudinary.v2.uploader.destroy(
-              `generated-videos/${match[1]}`,
-              { resource_type: "video" }
-            );
-          } catch {}
+        // Extract S3 key and delete
+        try {
+          const key = deriveKey(vid.videoUrl);
+          await deleteObject(key);
+        } catch (e) {
+          console.warn("[TEMPLATE DELETE] Failed to delete S3 object", e);
         }
       }
       await prisma.templateStepVideo.deleteMany({
@@ -392,12 +399,16 @@ router.post(
           );
 
           const result = response.data;
-          results.push({
-            step: step.endpoint,
-            result: result,
-          });
-
-          // Use the generated video URL as input for the next step
+          // Augment result.video with signedUrl if we have key
+          try {
+            if (result?.video?.url) {
+              const key = deriveKey(result.video.url);
+              const signedUrl = await signKey(key);
+              result.video.signedUrl = signedUrl;
+            }
+          } catch {}
+          results.push({ step: step.endpoint, result });
+          // Use the generated video canonical URL for chaining
           currentImageUrl = result.video.url;
         }
       }
@@ -443,16 +454,45 @@ router.post(
             .status(400)
             .json({ error: "endpoint and videoUrl required" });
         }
-        // Save to DB
+        // If provided videoUrl is not already an S3 URL to our bucket, ingest & upload to S3
+        let finalUrl = videoUrl;
+        const bucketName = process.env.AWS_S3_BUCKET || "";
+        const isS3Already =
+          /https?:\/\/[^/]*s3[^/]*\.amazonaws\.com\//i.test(videoUrl) ||
+          (process.env.AWS_S3_PUBLIC_URL_PREFIX &&
+            videoUrl.startsWith(process.env.AWS_S3_PUBLIC_URL_PREFIX));
+        if (!isS3Already) {
+          try {
+            const response = await axios.get(videoUrl, {
+              responseType: "stream",
+            });
+            const key = `templates/${templateId}/steps/${stepIndex}-${Date.now()}.mp4`;
+            const uploadRes = await uploadStream(
+              key,
+              response.data as Readable,
+              "video/mp4"
+            );
+            finalUrl = uploadRes.url;
+          } catch (e) {
+            console.error("[STEP-VIDEO] Failed to ingest remote video", e);
+            return res.status(400).json({ error: "Failed to ingest videoUrl" });
+          }
+        }
         const saved = await prisma.templateStepVideo.create({
           data: {
             templateId: parseInt(templateId),
             stepIndex,
             endpoint,
-            videoUrl,
+            videoUrl: finalUrl,
           },
         });
-        res.json(saved);
+        // Attach signedUrl for convenience
+        let signedUrl: string | undefined;
+        try {
+          const key = deriveKey(saved.videoUrl);
+          signedUrl = await signKey(key);
+        } catch {}
+        res.json({ ...saved, signedUrl });
       } catch (e) {
         res.status(500).json({ error: "Failed to save step video" });
       }
@@ -470,7 +510,17 @@ router.get("/templates/:templateId/step-videos", function (req, res) {
         where: { templateId: parseInt(templateId) },
         orderBy: { stepIndex: "asc" },
       });
-      res.json(vids);
+      const enriched = await Promise.all(
+        vids.map(async (v) => {
+          let signedUrl: string | undefined;
+          try {
+            const key = deriveKey(v.videoUrl);
+            signedUrl = await signKey(key);
+          } catch {}
+          return { ...v, signedUrl };
+        })
+      );
+      res.json(enriched);
     } catch (e) {
       res.status(500).json({ error: "Failed to fetch step videos" });
     }
@@ -494,14 +544,11 @@ router.delete(
           },
         });
         if (vid) {
-          const match = vid.videoUrl.match(/\/upload\/v\d+\/([^\.]+)\.mp4/);
-          if (match) {
-            try {
-              await cloudinary.uploader.destroy(
-                `generated-videos/${match[1]}`,
-                { resource_type: "video" }
-              );
-            } catch {}
+          try {
+            const key = deriveKey(vid.videoUrl);
+            await deleteObject(key);
+          } catch (e) {
+            console.warn("[STEP-VIDEO DELETE] Failed to delete S3 object", e);
           }
           await prisma.templateStepVideo.delete({ where: { id: vid.id } });
         }

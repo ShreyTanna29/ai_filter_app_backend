@@ -4,11 +4,13 @@ import dotenv from "dotenv";
 import prisma from "./lib/prisma";
 import facetrixfiltersRouter from "./routes/filter_endpoints";
 import templatesRouter from "./routes/templates";
-import cloudinaryRouter from "./routes/cloudinary";
 import videoGenerationRouter from "./routes/generate-video";
 import runwareRouter from "./routes/runware";
 import simpleAuthRouter from "./routes/simple-auth";
 import categoriesRouter from "./routes/categories";
+import multer from "multer";
+import { uploadBuffer, makeKey, ensure512SquareImageFromUrl } from "./lib/s3";
+import { signKey, deriveKey } from "./middleware/signedUrl";
 import { requireAdmin } from "./middleware/roles";
 
 // Load environment variables
@@ -490,9 +492,149 @@ app.use("/api", facetrixfiltersRouter);
 app.use("/api", templatesRouter);
 app.use("/api/generate-video", videoGenerationRouter);
 app.use("/api", runwareRouter);
-app.use("/api/cloudinary", cloudinaryRouter);
 app.use("/api/auth", simpleAuthRouter);
 app.use("/api/categories", categoriesRouter);
+
+// S3-based image upload replacing legacy Cloudinary upload.
+// Supports multipart file under field 'file' OR JSON body with { image_url }.
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 15 * 1024 * 1024 },
+});
+
+app.post(
+  "/api/upload-image",
+  upload.single("file"),
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      // If multipart file provided
+      if (req.file) {
+        const key = makeKey({ type: "image", feature: "uploaded" });
+        const result = await uploadBuffer(
+          key,
+          req.file.buffer,
+          req.file.mimetype
+        );
+        const signedUrl = await signKey(key);
+        res.json({
+          success: true,
+          key: result.key,
+          url: result.url,
+          signedUrl,
+        });
+        return;
+      }
+      // If JSON body with remote image_url provided
+      const { image_url, resize512 } = req.body as any;
+      if (image_url && typeof image_url === "string") {
+        let buffer: Buffer;
+        let contentType = "image/png";
+        if (resize512) {
+          // Normalize & resize
+          const ensured = await ensure512SquareImageFromUrl(image_url);
+          buffer = ensured.buffer;
+          contentType = ensured.contentType;
+        } else {
+          const resp = await fetch(image_url);
+          if (!resp.ok) {
+            res
+              .status(400)
+              .json({ success: false, message: "Failed to fetch image_url" });
+            return;
+          }
+          const arr = await resp.arrayBuffer();
+          buffer = Buffer.from(arr);
+          const ct = resp.headers.get("content-type");
+          if (ct) contentType = ct;
+        }
+        const key = makeKey({ type: "image", feature: "uploaded" });
+        const result = await uploadBuffer(key, buffer, contentType);
+        const signedUrl = await signKey(key);
+        res.json({
+          success: true,
+          key: result.key,
+          url: result.url,
+          signedUrl,
+        });
+        return;
+      }
+      res
+        .status(400)
+        .json({ success: false, message: "No file or image_url provided" });
+      return;
+    } catch (e: any) {
+      console.error("[UPLOAD-IMAGE] Error", e);
+      res
+        .status(500)
+        .json({
+          success: false,
+          message: "Upload failed",
+          details: e?.message,
+        });
+      return;
+    }
+  }
+);
+
+// Backwards compatible path for former Cloudinary route if clients still call /api/cloudinary/upload
+app.post(
+  "/api/cloudinary/upload",
+  upload.single("file"),
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      if (req.file) {
+        const key = makeKey({ type: "image", feature: "uploaded" });
+        const result = await uploadBuffer(
+          key,
+          req.file.buffer,
+          req.file.mimetype
+        );
+        const signedUrl = await signKey(key);
+        res.json({
+          success: true,
+          key: result.key,
+          url: result.url,
+          signedUrl,
+          migrated: true,
+        });
+        return;
+      }
+      const { image_url } = req.body as any;
+      if (image_url) {
+        const ensured = await ensure512SquareImageFromUrl(image_url);
+        const key = makeKey({ type: "image", feature: "uploaded" });
+        const result = await uploadBuffer(
+          key,
+          ensured.buffer,
+          ensured.contentType
+        );
+        const signedUrl = await signKey(key);
+        res.json({
+          success: true,
+          key: result.key,
+          url: result.url,
+          signedUrl,
+          migrated: true,
+        });
+        return;
+      }
+      res
+        .status(400)
+        .json({ success: false, message: "No file or image_url provided" });
+      return;
+    } catch (e: any) {
+      console.error("[LEGACY-CLOUDINARY-UPLOAD] Error", e);
+      res
+        .status(500)
+        .json({
+          success: false,
+          message: "Upload failed",
+          details: e?.message,
+        });
+      return;
+    }
+  }
+);
 
 // Serve admin panel HTML
 app.get("/", (req: Request, res: Response) => {

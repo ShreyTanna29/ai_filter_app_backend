@@ -1,7 +1,16 @@
 import { Router, Request, Response, NextFunction } from "express";
 import multer from "multer";
 import prisma from "../lib/prisma";
-import { v2 as cloudinary, UploadApiResponse } from "cloudinary";
+// Cloudinary removed – migrating to S3 private bucket storage
+import { Readable } from "stream";
+import {
+  uploadStream as s3UploadStream,
+  makeKey,
+  publicUrlFor,
+  uploadBuffer,
+  ensure512SquareImageFromUrl,
+} from "../lib/s3";
+import { signKey } from "../middleware/signedUrl";
 import dotenv from "dotenv";
 import axios, { AxiosResponse } from "axios";
 import https from "https";
@@ -11,16 +20,7 @@ import { log } from "console";
 
 dotenv.config();
 
-// Configure Cloudinary
-if (!process.env.CLOUDINARY_CLOUD_NAME || !process.env.CLOUDINARY_API_SECRET) {
-  throw new Error("Missing required Cloudinary configuration");
-}
-
-cloudinary.config({
-  api_key: process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET,
-  secure: true,
-});
+// Legacy Cloudinary configuration removed. All generated videos now stored in S3.
 
 const router = Router();
 
@@ -125,16 +125,67 @@ interface VideoGenerationRequest {
 
 interface VideoGenerationResponse {
   success: boolean;
-  video?: { url: string };
+  video?: { url: string; signedUrl?: string; key?: string };
   videoUrl?: string;
-  cloudinaryId?: string;
+  s3Key?: string;
   error?: string;
   details?: any;
-  // Provider specific metadata (optional)
   provider?: string;
   provider_status?: string;
   provider_message?: string;
   provider_code?: string | number;
+}
+
+// Helper: upload generated video stream to S3 and return signed + canonical URLs
+async function uploadGeneratedVideo(
+  feature: string,
+  variant: string,
+  readable: Readable
+): Promise<{ key: string; url: string; signedUrl: string }> {
+  const key = makeKey({ type: "video", feature, ext: "mp4" });
+  await s3UploadStream(key, readable, "video/mp4");
+  const url = publicUrlFor(key);
+  let signedUrl = url;
+  try {
+    signedUrl = await signKey(key);
+  } catch (e) {
+    // If signing fails, fall back to canonical (may be inaccessible if bucket is private)
+    console.warn("[uploadGeneratedVideo] Failed to sign key", key, e);
+  }
+  await prisma.generatedVideo.create({ data: { feature, url } });
+  return { key, url, signedUrl };
+}
+
+// Helper: ensure image is accessible via URL for provider (uploads to S3 if not clearly public)
+async function prepareImageForProvider(
+  rawUrl: string,
+  feature: string
+): Promise<{ providerUrl: string; storedUrl: string }> {
+  const isLikelyPublic =
+    /^https?:\/\//i.test(rawUrl) &&
+    !/localhost|127\.0\.0\.1|^file:/i.test(rawUrl);
+  // If already a public http(s) URL we can use directly (providers will fetch it)
+  if (isLikelyPublic) {
+    return { providerUrl: rawUrl, storedUrl: rawUrl };
+  }
+  // Otherwise fetch + resize + upload to S3 then return signed URL for provider
+  try {
+    const { buffer, contentType } = await ensure512SquareImageFromUrl(rawUrl);
+    const key = makeKey({ type: "image", feature, ext: "png" });
+    await uploadBuffer(key, buffer, contentType);
+    const storedUrl = publicUrlFor(key);
+    let providerUrl = storedUrl;
+    try {
+      providerUrl = await signKey(key);
+    } catch (e) {
+      console.warn("[prepareImageForProvider] sign failed", e);
+    }
+    return { providerUrl, storedUrl };
+  } catch (e) {
+    console.error("[prepareImageForProvider] failed", e);
+    // Fallback to raw URL (will likely fail at provider if not reachable)
+    return { providerUrl: rawUrl, storedUrl: rawUrl };
+  }
 }
 
 // Multer setup for audio upload (memory storage)
@@ -159,95 +210,22 @@ router.post(
         return;
       }
 
-      // Step 1: Upload image to Cloudinary if not already a Cloudinary URL
-      let imageCloudUrl = imageUrl;
-      const isLikelyPublic =
-        /^https?:\/\//i.test(imageUrl) &&
-        !/localhost|127\.0\.0\.1|^file:/i.test(imageUrl);
-      if (!imageUrl.includes("cloudinary.com")) {
-        try {
-          if (
-            !process.env.CLOUDINARY_UPLOAD_URL ||
-            !process.env.CLOUDINARY_UPLOAD_PRESET
-          ) {
-            if (!isLikelyPublic) {
-              throw new Error(
-                "Missing CLOUDINARY_UPLOAD_URL/UPLOAD_PRESET and image is not public"
-              );
-            }
-          } else {
-            const uploadRes = await axios.post(
-              process.env.CLOUDINARY_UPLOAD_URL!,
-              {
-                file: imageUrl,
-                upload_preset: process.env.CLOUDINARY_UPLOAD_PRESET,
-              },
-              {
-                headers: { "Content-Type": "application/json" },
-                timeout: 20000,
-              }
-            );
-            imageCloudUrl = uploadRes.data.secure_url;
-          }
-        } catch (err) {
-          const e = err as any;
-          const brief =
-            summarizeCloudinaryError(e) || "Cloudinary upload failed";
-          console.error(
-            "Cloudinary upload error (image):",
-            e?.response?.data || e?.message || e
-          );
-          if (isLikelyPublic) {
-            imageCloudUrl = imageUrl; // fallback
-          } else {
-            res.status(503).json({
-              success: false,
-              error: brief,
-              details: serializeError(e),
-            });
-            return;
-          }
-        }
-      }
+      // Step 1: Prepare image for provider (S3 private bucket migration)
+      const { providerUrl: imageCloudUrl } = await prepareImageForProvider(
+        imageUrl,
+        feature
+      );
 
       // Optional: second image for transition models (Pixverse) - treat similarly
       const lastFrameRaw =
         (req.body as any).lastFrameUrl || (req.body as any).last_frame_url;
-      let lastFrameCloudUrl: string | undefined = lastFrameRaw;
-      if (lastFrameRaw && !lastFrameRaw.includes("cloudinary.com")) {
-        const isLikelyPublicLast =
-          /^https?:\/\//i.test(lastFrameRaw) &&
-          !/localhost|127\\.0\\.0\\.1|^file:/i.test(lastFrameRaw);
+      let lastFrameCloudUrl: string | undefined = undefined;
+      if (lastFrameRaw) {
         try {
-          if (
-            process.env.CLOUDINARY_UPLOAD_URL &&
-            process.env.CLOUDINARY_UPLOAD_PRESET
-          ) {
-            const uploadRes = await axios.post(
-              process.env.CLOUDINARY_UPLOAD_URL!,
-              {
-                file: lastFrameRaw,
-                upload_preset: process.env.CLOUDINARY_UPLOAD_PRESET,
-              },
-              {
-                headers: { "Content-Type": "application/json" },
-                timeout: 20000,
-              }
-            );
-            lastFrameCloudUrl = uploadRes.data.secure_url;
-          } else if (!isLikelyPublicLast) {
-            throw new Error(
-              "Missing CLOUDINARY_UPLOAD_URL/UPLOAD_PRESET and last frame image is not public"
-            );
-          }
-        } catch (err) {
-          const brief =
-            summarizeCloudinaryError(err) || "Last frame upload failed";
-          console.warn(
-            "Last frame Cloudinary upload failed; proceeding if public:",
-            brief
-          );
-          if (!isLikelyPublicLast) lastFrameCloudUrl = undefined; // drop unusable
+          const prep = await prepareImageForProvider(lastFrameRaw, feature);
+          lastFrameCloudUrl = prep.providerUrl;
+        } catch (e) {
+          console.warn("[lastFrame] prepare failed; ignoring", e);
         }
       }
 
@@ -488,7 +466,7 @@ router.post(
             return;
           }
 
-          // 4) Download and upload to Cloudinary
+          // 4) Download and upload to S3
           let rwStream;
           try {
             rwStream = await axios.get(videoUrl, {
@@ -507,46 +485,33 @@ router.post(
             });
             return;
           }
-          let uploadResult: UploadApiResponse;
+          let uploaded;
           try {
-            uploadResult = await new Promise((resolve, reject) => {
-              const up = cloudinary.uploader.upload_stream(
-                {
-                  resource_type: "video",
-                  folder: "generated-videos",
-                  public_id: `${feature}-seedance-pro-fast-${Date.now()}`,
-                  chunk_size: 6000000,
-                },
-                (error, result) => {
-                  if (error) return reject(error);
-                  resolve(result as UploadApiResponse);
-                }
-              );
-              rwStream.data.pipe(up);
-            });
-            console.log("[Seedance] Cloudinary upload success", {
-              public_id: uploadResult.public_id,
-              bytes: uploadResult.bytes,
-            });
+            uploaded = await uploadGeneratedVideo(
+              feature,
+              "seedance-pro-fast",
+              rwStream.data as Readable
+            );
+            console.log("[Seedance] S3 upload success", { key: uploaded.key });
           } catch (e) {
-            console.log("[Seedance] Cloudinary upload error", {
+            console.log("[Seedance] S3 upload error", {
               error: serializeError(e),
             });
             res.status(500).json({
               success: false,
-              error: "Failed to upload Seedance video to Cloudinary",
+              error: "Failed to upload Seedance video to S3",
               details: serializeError(e),
             });
             return;
           }
-          await prisma.generatedVideo.create({
-            data: { feature, url: uploadResult.secure_url },
-          });
-          console.log("[Seedance] DB insert", { url: uploadResult.secure_url });
           res.status(200).json({
             success: true,
-            video: { url: uploadResult.secure_url },
-            cloudinaryId: uploadResult.public_id,
+            video: {
+              url: uploaded.signedUrl,
+              signedUrl: uploaded.signedUrl,
+              key: uploaded.key,
+            },
+            s3Key: uploaded.key,
           });
           return;
         } catch (err: any) {
@@ -776,7 +741,7 @@ router.post(
             return;
           }
 
-          // 4) Download and upload to Cloudinary
+          // 4) Download and upload to S3
           let ltxStream;
           try {
             ltxStream = await axios.get(videoUrl, {
@@ -791,38 +756,29 @@ router.post(
             });
             return;
           }
-          let uploadResult: UploadApiResponse;
+          let uploaded;
           try {
-            uploadResult = await new Promise((resolve, reject) => {
-              const up = cloudinary.uploader.upload_stream(
-                {
-                  resource_type: "video",
-                  folder: "generated-videos",
-                  public_id: `${feature}-ltx2-${Date.now()}`,
-                  chunk_size: 6000000,
-                },
-                (error, result) => {
-                  if (error) return reject(error);
-                  resolve(result as UploadApiResponse);
-                }
-              );
-              ltxStream.data.pipe(up);
-            });
+            uploaded = await uploadGeneratedVideo(
+              feature,
+              "ltx2-pro",
+              ltxStream.data as Readable
+            );
           } catch (e) {
             res.status(500).json({
               success: false,
-              error: "Failed to upload LTX-2 video",
+              error: "Failed to upload LTX-2 video to S3",
               details: serializeError(e),
             });
             return;
           }
-          await prisma.generatedVideo.create({
-            data: { feature, url: uploadResult.secure_url },
-          });
           res.status(200).json({
             success: true,
-            video: { url: uploadResult.secure_url },
-            cloudinaryId: uploadResult.public_id,
+            video: {
+              url: uploaded.signedUrl,
+              signedUrl: uploaded.signedUrl,
+              key: uploaded.key,
+            },
+            s3Key: uploaded.key,
           });
           return;
         } catch (err: any) {
@@ -1052,7 +1008,7 @@ router.post(
             return;
           }
 
-          // 4) Download and upload to Cloudinary
+          // 4) Download and upload to S3
           let ltxStream;
           try {
             ltxStream = await axios.get(videoUrl, {
@@ -1067,38 +1023,29 @@ router.post(
             });
             return;
           }
-          let uploadResult: UploadApiResponse;
+          let uploaded;
           try {
-            uploadResult = await new Promise((resolve, reject) => {
-              const up = cloudinary.uploader.upload_stream(
-                {
-                  resource_type: "video",
-                  folder: "generated-videos",
-                  public_id: `${feature}-ltx2fast-${Date.now()}`,
-                  chunk_size: 6000000,
-                },
-                (error, result) => {
-                  if (error) return reject(error);
-                  resolve(result as UploadApiResponse);
-                }
-              );
-              ltxStream.data.pipe(up);
-            });
+            uploaded = await uploadGeneratedVideo(
+              feature,
+              "ltx2-fast",
+              ltxStream.data as Readable
+            );
           } catch (e) {
             res.status(500).json({
               success: false,
-              error: "Failed to upload LTX-2 Fast video",
+              error: "Failed to upload LTX-2 Fast video to S3",
               details: serializeError(e),
             });
             return;
           }
-          await prisma.generatedVideo.create({
-            data: { feature, url: uploadResult.secure_url },
-          });
           res.status(200).json({
             success: true,
-            video: { url: uploadResult.secure_url },
-            cloudinaryId: uploadResult.public_id,
+            video: {
+              url: uploaded.signedUrl,
+              signedUrl: uploaded.signedUrl,
+              key: uploaded.key,
+            },
+            s3Key: uploaded.key,
           });
           return;
         } catch (err: any) {
@@ -1338,7 +1285,7 @@ router.post(
             return;
           }
 
-          // 4) Download and upload to Cloudinary
+          // 4) Download and upload to S3
           let vq2Stream;
           try {
             vq2Stream = await axios.get(videoUrl, {
@@ -1353,38 +1300,29 @@ router.post(
             });
             return;
           }
-          let uploadResult: UploadApiResponse;
+          let uploaded;
           try {
-            uploadResult = await new Promise((resolve, reject) => {
-              const up = cloudinary.uploader.upload_stream(
-                {
-                  resource_type: "video",
-                  folder: "generated-videos",
-                  public_id: `${feature}-viduq2turbo-${Date.now()}`,
-                  chunk_size: 6000000,
-                },
-                (error, result) => {
-                  if (error) return reject(error);
-                  resolve(result as UploadApiResponse);
-                }
-              );
-              vq2Stream.data.pipe(up);
-            });
+            uploaded = await uploadGeneratedVideo(
+              feature,
+              "viduq2-turbo",
+              vq2Stream.data as Readable
+            );
           } catch (e) {
             res.status(500).json({
               success: false,
-              error: "Failed to upload Vidu Q2 Turbo video",
+              error: "Failed to upload Vidu Q2 Turbo video to S3",
               details: serializeError(e),
             });
             return;
           }
-          await prisma.generatedVideo.create({
-            data: { feature, url: uploadResult.secure_url },
-          });
           res.status(200).json({
             success: true,
-            video: { url: uploadResult.secure_url },
-            cloudinaryId: uploadResult.public_id,
+            video: {
+              url: uploaded.signedUrl,
+              signedUrl: uploaded.signedUrl,
+              key: uploaded.key,
+            },
+            s3Key: uploaded.key,
           });
           return;
         } catch (err: any) {
@@ -1608,7 +1546,7 @@ router.post(
             return;
           }
 
-          // Download & upload to Cloudinary
+          // Download & upload to S3
           let rwStream;
           try {
             rwStream = await axios.get(videoUrl, {
@@ -1623,38 +1561,29 @@ router.post(
             });
             return;
           }
-          let uploadResult: UploadApiResponse;
+          let uploaded;
           try {
-            uploadResult = await new Promise((resolve, reject) => {
-              const up = cloudinary.uploader.upload_stream(
-                {
-                  resource_type: "video",
-                  folder: "generated-videos",
-                  public_id: `${feature}-veo31-${Date.now()}`,
-                  chunk_size: 6000000,
-                },
-                (error, result) => {
-                  if (error) return reject(error);
-                  resolve(result as UploadApiResponse);
-                }
-              );
-              rwStream.data.pipe(up);
-            });
+            uploaded = await uploadGeneratedVideo(
+              feature,
+              "veo31",
+              rwStream.data as Readable
+            );
           } catch (e) {
             res.status(500).json({
               success: false,
-              error: "Failed to upload Veo 3.1 video to Cloudinary",
+              error: "Failed to upload Veo 3.1 video to S3",
               details: serializeError(e),
             });
             return;
           }
-          await prisma.generatedVideo.create({
-            data: { feature, url: uploadResult.secure_url },
-          });
           res.status(200).json({
             success: true,
-            video: { url: uploadResult.secure_url },
-            cloudinaryId: uploadResult.public_id,
+            video: {
+              url: uploaded.signedUrl,
+              signedUrl: uploaded.signedUrl,
+              key: uploaded.key,
+            },
+            s3Key: uploaded.key,
           });
           return;
         } catch (err: any) {
@@ -1906,43 +1835,30 @@ router.post(
             });
             return;
           }
-          let uploadResult: UploadApiResponse;
+          let uploaded;
           try {
-            uploadResult = await new Promise((resolve, reject) => {
-              const up = cloudinary.uploader.upload_stream(
-                {
-                  resource_type: "video",
-                  folder: "generated-videos",
-                  public_id: `${feature}-veo31fast-${Date.now()}`,
-                  chunk_size: 6000000,
-                },
-                (error, result) => {
-                  if (error) return reject(error);
-                  resolve(result as UploadApiResponse);
-                }
-              );
-              rwStream.data.pipe(up);
-            });
-            console.log("[VEO31F] Cloudinary upload success", {
-              public_id: uploadResult.public_id,
-              bytes: uploadResult.bytes,
-            });
+            uploaded = await uploadGeneratedVideo(
+              feature,
+              "veo31-fast",
+              rwStream.data as Readable
+            );
+            console.log("[VEO31F] S3 upload success", { key: uploaded.key });
           } catch (e) {
             res.status(500).json({
               success: false,
-              error: "Failed to upload Veo 3.1 Fast video to Cloudinary",
+              error: "Failed to upload Veo 3.1 Fast video to S3",
               details: serializeError(e),
             });
             return;
           }
-          await prisma.generatedVideo.create({
-            data: { feature, url: uploadResult.secure_url },
-          });
-          console.log("[VEO31F] DB insert", { url: uploadResult.secure_url });
           res.status(200).json({
             success: true,
-            video: { url: uploadResult.secure_url },
-            cloudinaryId: uploadResult.public_id,
+            video: {
+              url: uploaded.signedUrl,
+              signedUrl: uploaded.signedUrl,
+              key: uploaded.key,
+            },
+            s3Key: uploaded.key,
           });
           return;
         } catch (err: any) {
@@ -2147,7 +2063,7 @@ router.post(
             });
             return;
           }
-          // Download & re-upload to Cloudinary (normalize hosting)
+          // Download & upload to S3 (normalize hosting)
           let rwStream;
           try {
             rwStream = await axios.get(videoUrl, {
@@ -2162,45 +2078,30 @@ router.post(
             });
             return;
           }
-          let uploadResult: UploadApiResponse;
+          let uploaded;
           try {
-            uploadResult = await new Promise((resolve, reject) => {
-              const up = cloudinary.uploader.upload_stream(
-                {
-                  resource_type: "video",
-                  folder: "generated-videos",
-                  public_id: `${feature}-veo3fast-${Date.now()}`,
-                  chunk_size: 6000000,
-                },
-                (error, result) => {
-                  if (error) return reject(error);
-                  resolve(result as UploadApiResponse);
-                }
-              );
-              rwStream.data.pipe(up);
-            });
-            console.log("[VEO3F] Cloudinary upload success", {
-              public_id: uploadResult.public_id,
-              bytes: uploadResult.bytes,
-            });
+            uploaded = await uploadGeneratedVideo(
+              feature,
+              "veo3-fast",
+              rwStream.data as Readable
+            );
+            console.log("[VEO3F] S3 upload success", { key: uploaded.key });
           } catch (e) {
             res.status(500).json({
               success: false,
-              error: "Failed to upload Veo3@fast video to Cloudinary",
+              error: "Failed to upload Veo3@fast video to S3",
               details: serializeError(e),
             });
-            console.log("cloudinary upload error veo 3 fast : ", e);
-
             return;
           }
-          await prisma.generatedVideo.create({
-            data: { feature, url: uploadResult.secure_url },
-          });
-          console.log("[VEO3F] DB insert", { url: uploadResult.secure_url });
           res.status(200).json({
             success: true,
-            video: { url: uploadResult.secure_url },
-            cloudinaryId: uploadResult.public_id,
+            video: {
+              url: uploaded.signedUrl,
+              signedUrl: uploaded.signedUrl,
+              key: uploaded.key,
+            },
+            s3Key: uploaded.key,
           });
           return;
         } catch (err: any) {
@@ -2431,7 +2332,7 @@ router.post(
           });
           return;
         }
-        // Download & upload to Cloudinary
+        // Download & upload to S3
         let pixStream;
         try {
           pixStream = await axios.get(pixVideoUrl, {
@@ -2446,38 +2347,29 @@ router.post(
           });
           return;
         }
-        let pixUpload: UploadApiResponse;
+        let uploadedPix;
         try {
-          pixUpload = await new Promise((resolve, reject) => {
-            const uploadStream = cloudinary.uploader.upload_stream(
-              {
-                resource_type: "video",
-                folder: "generated-videos",
-                public_id: `${feature}-pixverse-${Date.now()}`,
-                chunk_size: 6000000,
-              },
-              (error, result) => {
-                if (error) return reject(error);
-                resolve(result as UploadApiResponse);
-              }
-            );
-            pixStream.data.pipe(uploadStream);
-          });
+          uploadedPix = await uploadGeneratedVideo(
+            feature,
+            "pixverse",
+            pixStream.data as Readable
+          );
         } catch (e) {
           res.status(500).json({
             success: false,
-            error: "Failed to upload Pixverse video",
+            error: "Failed to upload Pixverse video to S3",
             details: serializeError(e),
           });
           return;
         }
-        await prisma.generatedVideo.create({
-          data: { feature, url: pixUpload.secure_url },
-        });
         res.status(200).json({
           success: true,
-          video: { url: pixUpload.secure_url },
-          cloudinaryId: pixUpload.public_id,
+          video: {
+            url: uploadedPix.signedUrl,
+            signedUrl: uploadedPix.signedUrl,
+            key: uploadedPix.key,
+          },
+          s3Key: uploadedPix.key,
         });
         return;
       }
@@ -2693,7 +2585,7 @@ router.post(
           });
           return;
         }
-        // Download & upload to Cloudinary
+        // Download & upload to S3
         let viduStream;
         try {
           viduStream = await axios.get(viduVideoUrl, {
@@ -2708,38 +2600,29 @@ router.post(
           });
           return;
         }
-        let viduUpload: UploadApiResponse;
+        let uploadedViduQ1;
         try {
-          viduUpload = await new Promise((resolve, reject) => {
-            const uploadStream = cloudinary.uploader.upload_stream(
-              {
-                resource_type: "video",
-                folder: "generated-videos",
-                public_id: `${feature}-viduq1-${Date.now()}`,
-                chunk_size: 6000000,
-              },
-              (error, result) => {
-                if (error) return reject(error);
-                resolve(result as UploadApiResponse);
-              }
-            );
-            viduStream.data.pipe(uploadStream);
-          });
+          uploadedViduQ1 = await uploadGeneratedVideo(
+            feature,
+            "viduq1-ref",
+            viduStream.data as Readable
+          );
         } catch (e) {
           res.status(500).json({
             success: false,
-            error: "Failed to upload Vidu Q1 video",
+            error: "Failed to upload Vidu Q1 video to S3",
             details: serializeError(e),
           });
           return;
         }
-        await prisma.generatedVideo.create({
-          data: { feature, url: viduUpload.secure_url },
-        });
         res.status(200).json({
           success: true,
-          video: { url: viduUpload.secure_url },
-          cloudinaryId: viduUpload.public_id,
+          video: {
+            url: uploadedViduQ1.signedUrl,
+            signedUrl: uploadedViduQ1.signedUrl,
+            key: uploadedViduQ1.key,
+          },
+          s3Key: uploadedViduQ1.key,
         });
         return;
       }
@@ -2898,7 +2781,7 @@ router.post(
           });
           return;
         }
-        // Download & upload to Cloudinary
+        // Download & upload to S3
         let viduStream;
         try {
           viduStream = await axios.get(viduVideoUrl, {
@@ -2913,38 +2796,29 @@ router.post(
           });
           return;
         }
-        let viduUpload: UploadApiResponse;
+        let uploadedVidu15;
         try {
-          viduUpload = await new Promise((resolve, reject) => {
-            const uploadStream = cloudinary.uploader.upload_stream(
-              {
-                resource_type: "video",
-                folder: "generated-videos",
-                public_id: `${feature}-vidu15-${Date.now()}`,
-                chunk_size: 6000000,
-              },
-              (error, result) => {
-                if (error) reject(error);
-                else resolve(result as UploadApiResponse);
-              }
-            );
-            viduStream.data.pipe(uploadStream);
-          });
+          uploadedVidu15 = await uploadGeneratedVideo(
+            feature,
+            "vidu15",
+            viduStream.data as Readable
+          );
         } catch (e) {
           res.status(500).json({
             success: false,
-            error: "Failed to upload Vidu 1.5 video",
+            error: "Failed to upload Vidu 1.5 video to S3",
             details: serializeError(e),
           });
           return;
         }
-        await prisma.generatedVideo.create({
-          data: { feature, url: viduUpload.secure_url },
-        });
         res.status(200).json({
           success: true,
-          video: { url: viduUpload.secure_url },
-          cloudinaryId: viduUpload.public_id,
+          video: {
+            url: uploadedVidu15.signedUrl,
+            signedUrl: uploadedVidu15.signedUrl,
+            key: uploadedVidu15.key,
+          },
+          s3Key: uploadedVidu15.key,
         });
         return;
       }
@@ -3105,7 +2979,7 @@ router.post(
           });
           return;
         }
-        // Download & upload to Cloudinary
+        // Download & upload to S3
         let viduStream;
         try {
           viduStream = await axios.get(viduVideoUrl, {
@@ -3120,38 +2994,29 @@ router.post(
           });
           return;
         }
-        let viduUpload: UploadApiResponse;
+        let uploadedViduQ1I2V;
         try {
-          viduUpload = await new Promise((resolve, reject) => {
-            const uploadStream = cloudinary.uploader.upload_stream(
-              {
-                resource_type: "video",
-                folder: "generated-videos",
-                public_id: `${feature}-viduq1i2v-${Date.now()}`,
-                chunk_size: 6000000,
-              },
-              (error, result) => {
-                if (error) reject(error);
-                else resolve(result as UploadApiResponse);
-              }
-            );
-            viduStream.data.pipe(uploadStream);
-          });
+          uploadedViduQ1I2V = await uploadGeneratedVideo(
+            feature,
+            "viduq1-i2v",
+            viduStream.data as Readable
+          );
         } catch (e) {
           res.status(500).json({
             success: false,
-            error: "Failed to upload Vidu Q1 I2V video",
+            error: "Failed to upload Vidu Q1 I2V video to S3",
             details: serializeError(e),
           });
           return;
         }
-        await prisma.generatedVideo.create({
-          data: { feature, url: viduUpload.secure_url },
-        });
         res.status(200).json({
           success: true,
-          video: { url: viduUpload.secure_url },
-          cloudinaryId: viduUpload.public_id,
+          video: {
+            url: uploadedViduQ1I2V.signedUrl,
+            signedUrl: uploadedViduQ1I2V.signedUrl,
+            key: uploadedViduQ1I2V.key,
+          },
+          s3Key: uploadedViduQ1I2V.key,
         });
         return;
       }
@@ -3316,7 +3181,7 @@ router.post(
           });
           return;
         }
-        // Download & upload to Cloudinary
+        // Download & upload to S3
         let viduStream;
         try {
           viduStream = await axios.get(viduVideoUrl, {
@@ -3331,38 +3196,29 @@ router.post(
           });
           return;
         }
-        let viduUpload: UploadApiResponse;
+        let uploadedVidu20;
         try {
-          viduUpload = await new Promise((resolve, reject) => {
-            const uploadStream = cloudinary.uploader.upload_stream(
-              {
-                resource_type: "video",
-                folder: "generated-videos",
-                public_id: `${feature}-vidu20-${Date.now()}`,
-                chunk_size: 6000000,
-              },
-              (error, result) => {
-                if (error) return reject(error);
-                resolve(result as UploadApiResponse);
-              }
-            );
-            viduStream.data.pipe(uploadStream);
-          });
+          uploadedVidu20 = await uploadGeneratedVideo(
+            feature,
+            "vidu20",
+            viduStream.data as Readable
+          );
         } catch (e) {
           res.status(500).json({
             success: false,
-            error: "Failed to upload Vidu 2.0 video",
+            error: "Failed to upload Vidu 2.0 video to S3",
             details: serializeError(e),
           });
           return;
         }
-        await prisma.generatedVideo.create({
-          data: { feature, url: viduUpload.secure_url },
-        });
         res.status(200).json({
           success: true,
-          video: { url: viduUpload.secure_url },
-          cloudinaryId: viduUpload.public_id,
+          video: {
+            url: uploadedVidu20.signedUrl,
+            signedUrl: uploadedVidu20.signedUrl,
+            key: uploadedVidu20.key,
+          },
+          s3Key: uploadedVidu20.key,
         });
         return;
       }
@@ -3528,7 +3384,7 @@ router.post(
           });
           return;
         }
-        // Download & upload to Cloudinary
+        // Download & upload to S3
         let veoStream;
         try {
           veoStream = await axios.get(veoVideoUrl, {
@@ -3543,38 +3399,29 @@ router.post(
           });
           return;
         }
-        let veoUpload: UploadApiResponse;
+        let uploadedVeo2I2V;
         try {
-          veoUpload = await new Promise((resolve, reject) => {
-            const uploadStream = cloudinary.uploader.upload_stream(
-              {
-                resource_type: "video",
-                folder: "generated-videos",
-                public_id: `${feature}-veo2i2v-${Date.now()}`,
-                chunk_size: 6000000,
-              },
-              (error, result) => {
-                if (error) return reject(error);
-                resolve(result as UploadApiResponse);
-              }
-            );
-            veoStream.data.pipe(uploadStream);
-          });
+          uploadedVeo2I2V = await uploadGeneratedVideo(
+            feature,
+            "veo2-i2v",
+            veoStream.data as Readable
+          );
         } catch (e) {
           res.status(500).json({
             success: false,
-            error: "Failed to upload Veo 2 Image to Video video",
+            error: "Failed to upload Veo 2 Image to Video video to S3",
             details: serializeError(e),
           });
           return;
         }
-        await prisma.generatedVideo.create({
-          data: { feature, url: veoUpload.secure_url },
-        });
         res.status(200).json({
           success: true,
-          video: { url: veoUpload.secure_url },
-          cloudinaryId: veoUpload.public_id,
+          video: {
+            url: uploadedVeo2I2V.signedUrl,
+            signedUrl: uploadedVeo2I2V.signedUrl,
+            key: uploadedVeo2I2V.key,
+          },
+          s3Key: uploadedVeo2I2V.key,
         });
         return;
       }
@@ -3738,7 +3585,7 @@ router.post(
           });
           return;
         }
-        // Download & upload to Cloudinary
+        // Download & upload to S3
         let veoStream;
         try {
           veoStream = await axios.get(veoVideoUrl, {
@@ -3753,38 +3600,29 @@ router.post(
           });
           return;
         }
-        let veoUpload: UploadApiResponse;
+        let uploadedVeo3I2V;
         try {
-          veoUpload = await new Promise((resolve, reject) => {
-            const uploadStream = cloudinary.uploader.upload_stream(
-              {
-                resource_type: "video",
-                folder: "generated-videos",
-                public_id: `${feature}-veo3i2v-${Date.now()}`,
-                chunk_size: 6000000,
-              },
-              (error, result) => {
-                if (error) return reject(error);
-                resolve(result as UploadApiResponse);
-              }
-            );
-            veoStream.data.pipe(uploadStream);
-          });
+          uploadedVeo3I2V = await uploadGeneratedVideo(
+            feature,
+            "veo3-i2v",
+            veoStream.data as Readable
+          );
         } catch (e) {
           res.status(500).json({
             success: false,
-            error: "Failed to upload Veo 3 Image to Video video",
+            error: "Failed to upload Veo 3 Image to Video video to S3",
             details: serializeError(e),
           });
           return;
         }
-        await prisma.generatedVideo.create({
-          data: { feature, url: veoUpload.secure_url },
-        });
         res.status(200).json({
           success: true,
-          video: { url: veoUpload.secure_url },
-          cloudinaryId: veoUpload.public_id,
+          video: {
+            url: uploadedVeo3I2V.signedUrl,
+            signedUrl: uploadedVeo3I2V.signedUrl,
+            key: uploadedVeo3I2V.key,
+          },
+          s3Key: uploadedVeo3I2V.key,
         });
         return;
       }
@@ -3811,12 +3649,10 @@ router.post(
           return;
         }
 
-        // If audio file is present, upload to Cloudinary and get URL
+        // If audio file is present, upload to S3 and get signed URL
         let audioUrl: string | null = null;
         if (req.file) {
-          console.log(
-            "[Bytedance] Audio file detected, uploading to Cloudinary..."
-          );
+          console.log("[Bytedance] Audio file detected, uploading to S3...");
           // Only accept files up to ~1MB (30s mp3/wav)
           if (req.file.size > 2 * 1024 * 1024) {
             res.status(400).json({
@@ -3825,25 +3661,33 @@ router.post(
             });
             return;
           }
-          // Upload to Cloudinary
-          const audioUpload: UploadApiResponse = await new Promise(
-            (resolve, reject) => {
-              const uploadStream = cloudinary.uploader.upload_stream(
-                {
-                  resource_type: "video",
-                  public_id: `${feature}_audio_${Date.now()}`,
-                  overwrite: true,
-                },
-                (error, result) => {
-                  if (error) reject(error);
-                  else if (result) resolve(result);
-                  else reject(new Error("No result from Cloudinary"));
-                }
-              );
-              uploadStream.end(req.file?.buffer);
+          try {
+            const audioExt =
+              (req.file.originalname || "mp3").split(".").pop() || "mp3";
+            const audioKey = makeKey({
+              type: "audio",
+              feature,
+              ext: audioExt,
+            });
+            await uploadBuffer(
+              audioKey,
+              req.file.buffer,
+              req.file.mimetype || "audio/mpeg"
+            );
+            try {
+              audioUrl = await signKey(audioKey);
+            } catch {
+              audioUrl = publicUrlFor(audioKey); // fallback (may be private)
             }
-          );
-          audioUrl = audioUpload.secure_url;
+          } catch (e) {
+            console.error("[Bytedance] Audio S3 upload failed", e);
+            res.status(500).json({
+              success: false,
+              error: "Failed to upload audio file",
+              details: serializeError(e),
+            });
+            return;
+          }
         }
 
         // Build payload for Omnihuman or Seeddance
@@ -4042,51 +3886,32 @@ router.post(
           return;
         }
 
-        // Upload to Cloudinary
-        const bytedanceUpload: UploadApiResponse = await new Promise(
-          (resolve, reject) => {
-            const uploadStream = cloudinary.uploader.upload_stream(
-              {
-                resource_type: "video",
-                public_id: `${feature}_${Date.now()}`,
-                overwrite: true,
-              },
-              (error, result) => {
-                if (error) {
-                  console.error(
-                    "[Bytedance] Cloudinary upload error:",
-                    serializeError(error)
-                  );
-                  reject(error);
-                } else if (result) {
-                  resolve(result);
-                } else {
-                  reject(new Error("No result from Cloudinary"));
-                }
-              }
-            );
-            bytedanceStream.data.pipe(uploadStream);
-          }
-        );
-
-        const finalBytedanceUrl = bytedanceUpload.secure_url;
-        console.log(
-          "[Bytedance] Video uploaded to Cloudinary:",
-          finalBytedanceUrl
-        );
-
-        // Save to database
-        await prisma.generatedVideo.create({
-          data: {
+        // Upload to S3
+        let uploadedBytedance;
+        try {
+          uploadedBytedance = await uploadGeneratedVideo(
             feature,
-            url: finalBytedanceUrl,
-            createdAt: new Date(),
-          },
-        });
-
+            isBytedanceOmnihuman ? "bytedance-omnihuman" : "seedance-v1-pro",
+            bytedanceStream.data as Readable
+          );
+        } catch (e) {
+          console.error("[Bytedance] S3 upload error", serializeError(e));
+          res.status(500).json({
+            success: false,
+            error: "Failed to upload Bytedance video to S3",
+            provider: "Bytedance",
+            details: serializeError(e),
+          });
+          return;
+        }
         res.json({
           success: true,
-          video: { url: finalBytedanceUrl },
+          video: {
+            url: uploadedBytedance.signedUrl,
+            signedUrl: uploadedBytedance.signedUrl,
+            key: uploadedBytedance.key,
+          },
+          s3Key: uploadedBytedance.key,
           provider: "Bytedance",
         });
         return;
@@ -4340,31 +4165,32 @@ router.post(
           });
           return;
         }
-        // Upload to Cloudinary
-        const mmUpload: UploadApiResponse = await new Promise(
-          (resolve, reject) => {
-            const uploadStream = cloudinary.uploader.upload_stream(
-              {
-                resource_type: "video",
-                folder: "generated-videos",
-                public_id: `${feature}-minimax-${Date.now()}`,
-                chunk_size: 6000000,
-              },
-              (error, result) => {
-                if (error) return reject(error);
-                resolve(result as UploadApiResponse);
-              }
-            );
-            mmStream.data.pipe(uploadStream);
-          }
-        );
-        await prisma.generatedVideo.create({
-          data: { feature, url: mmUpload.secure_url },
-        });
+        // Upload to S3
+        let uploadedMiniMax;
+        try {
+          uploadedMiniMax = await uploadGeneratedVideo(
+            feature,
+            "minimax",
+            mmStream.data as Readable
+          );
+        } catch (e) {
+          res.status(500).json({
+            success: false,
+            error: "Failed to upload MiniMax video to S3",
+            provider: "MiniMax",
+            details: serializeError(e),
+          });
+          return;
+        }
         res.status(200).json({
           success: true,
-          video: { url: mmUpload.secure_url },
-          cloudinaryId: mmUpload.public_id,
+          video: {
+            url: uploadedMiniMax.signedUrl,
+            signedUrl: uploadedMiniMax.signedUrl,
+            key: uploadedMiniMax.key,
+          },
+          s3Key: uploadedMiniMax.key,
+          provider: "MiniMax",
         });
         return;
       }
@@ -4598,39 +4424,33 @@ router.post(
         return;
       }
 
-      // Upload the video stream to Cloudinary
-      const uploadResult: UploadApiResponse = await new Promise(
-        (resolve, reject) => {
-          const uploadStream = cloudinary.uploader.upload_stream(
-            {
-              resource_type: "video",
-              folder: "generated-videos",
-              public_id: `${feature}-${Date.now()}`,
-              chunk_size: 6000000,
-            },
-            (error, result) => {
-              if (error) return reject(error);
-              resolve(result as UploadApiResponse);
-            }
-          );
-          videoResponse.data.pipe(uploadStream);
-        }
-      );
-
-      // Save the generated video to the database
-      await prisma.generatedVideo.create({
-        data: {
+      // Upload the video stream to S3
+      let uploadedLuma;
+      try {
+        const variant = selectedModel.replace(/[^a-z0-9-]/gi, "-");
+        uploadedLuma = await uploadGeneratedVideo(
           feature,
-          url: uploadResult.secure_url,
-        },
-      });
-
+          variant,
+          videoResponse.data as Readable
+        );
+      } catch (e) {
+        res.status(500).json({
+          success: false,
+          error: "Failed to upload Luma video to S3",
+          provider: "Luma",
+          details: serializeError(e),
+        });
+        return;
+      }
       res.status(200).json({
         success: true,
         video: {
-          url: uploadResult.secure_url,
+          url: uploadedLuma.signedUrl,
+          signedUrl: uploadedLuma.signedUrl,
+          key: uploadedLuma.key,
         },
-        cloudinaryId: uploadResult.public_id,
+        s3Key: uploadedLuma.key,
+        provider: "Luma",
       });
     } catch (error) {
       console.error("Error generating video:", serializeError(error));

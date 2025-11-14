@@ -1,12 +1,10 @@
-// Helper to add Cloudinary smart delivery params to video URLs
-function addCloudinaryParams(url) {
-  if (!url || typeof url !== "string") return url;
-  // Only add if it's a Cloudinary URL and not already present
-  if (url.includes("res.cloudinary.com") && !/f_auto|q_auto/.test(url)) {
-    // Insert params after /upload/
-    return url.replace(/\/upload\//, "/upload/f_auto,q_auto/");
-  }
-  return url;
+// Helper to choose playable video URL (prefers signed S3 URL when present)
+function selectPlayableUrl(obj) {
+  if (!obj) return null;
+  if (typeof obj === "string") return obj;
+  if (obj.signedUrl) return obj.signedUrl;
+  if (obj.url) return obj.url;
+  return null;
 }
 // --- Scroll position preservation for template page ---
 let savedTemplateScrollPosition = 0;
@@ -570,14 +568,14 @@ function displayFeatures() {
       .map((feature) => {
         const videoUrl =
           featureGraphics[feature.endpoint] || latestVideos[feature.endpoint];
-        const videoUrlWithParams = addCloudinaryParams(videoUrl);
-        const videoHtml = videoUrlWithParams
-          ? `<div class=\"video-preview\">
-               <video controls preload=\"metadata\" style=\"width: 100%;\">
-                 <source src=\"${videoUrlWithParams}\" type=\"video/mp4\">
-                 Your browser does not support the video tag.
-               </video>
-             </div>`
+        const playable =
+          videoUrl && typeof videoUrl === "object"
+            ? videoUrl.signedUrl || videoUrl.url
+            : videoUrl;
+        const videoHtml = playable
+          ? `<div class="video-preview lazy-video" data-src="${playable}">
+              <div class="video-skeleton" style="width:100%;height:180px;background:#111;display:flex;align-items:center;justify-content:center;color:#999;font-size:12px;border-radius:4px;">Loading preview...</div>
+            </div>`
           : `<div class=\"video-preview\">
                <div class=\"bg-gray-100 rounded-lg p-8 text-center text-gray-500\">
                  <i class=\"fas fa-video text-3xl mb-2\"></i>
@@ -597,6 +595,7 @@ function displayFeatures() {
       })
       .join("");
     grid.innerHTML = cardsHtml;
+    if (window.initializeLazyVideos) window.initializeLazyVideos();
     grid.addEventListener("click", (e) => {
       const btn = e.target.closest(".view-feature-details");
       if (btn) {
@@ -645,14 +644,14 @@ function displayPhotoFeatures() {
       .map((feature) => {
         const videoUrl =
           featureGraphics[feature.endpoint] || latestVideos[feature.endpoint];
-        const videoUrlWithParams = addCloudinaryParams(videoUrl);
-        const videoHtml = videoUrlWithParams
-          ? `<div class="video-preview">
-               <video controls preload="metadata" style="width: 100%;">
-                 <source src="${videoUrlWithParams}" type="video/mp4">
-                 Your browser does not support the video tag.
-               </video>
-             </div>`
+        const playable =
+          videoUrl && typeof videoUrl === "object"
+            ? videoUrl.signedUrl || videoUrl.url
+            : videoUrl;
+        const videoHtml = playable
+          ? `<div class="video-preview lazy-video" data-src="${playable}">
+                         <div class="video-skeleton" style="width:100%;height:180px;background:#111;display:flex;align-items:center;justify-content:center;color:#999;font-size:12px;border-radius:4px;">Loading preview...</div>
+                       </div>`
           : `<div class=\"video-preview\"> 
                <div class=\"bg-gray-100 rounded-lg p-8 text-center text-gray-500\">
                  <i class=\"fas fa-video text-3xl mb-2\"></i>
@@ -672,6 +671,7 @@ function displayPhotoFeatures() {
       })
       .join("");
     grid.innerHTML = cardsHtml;
+    if (window.initializeLazyVideos) window.initializeLazyVideos();
     grid.addEventListener("click", (e) => {
       const btn = e.target.closest(".view-feature-details");
       if (btn) {
@@ -928,7 +928,7 @@ function showFeatureDetailPage(endpoint) {
         const formData = new FormData();
         formData.append("image", file);
         if (uploadStatus) uploadStatus.textContent = "Uploading last frame...";
-        fetch("/api/cloudinary/upload", { method: "POST", body: formData })
+        fetch("/api/upload-image", { method: "POST", body: formData })
           .then((r) => r.json())
           .then((r) => {
             if (r && r.success && r.url) {
@@ -960,7 +960,7 @@ function showFeatureDetailPage(endpoint) {
         const formData = new FormData();
         formData.append("image", file);
         if (uploadStatus) uploadStatus.textContent = "Uploading ref 2...";
-        fetch("/api/cloudinary/upload", { method: "POST", body: formData })
+        fetch("/api/upload-image", { method: "POST", body: formData })
           .then((r) => r.json())
           .then((r) => {
             if (r && r.success && r.url) {
@@ -990,7 +990,7 @@ function showFeatureDetailPage(endpoint) {
         const formData = new FormData();
         formData.append("image", file);
         if (uploadStatus) uploadStatus.textContent = "Uploading ref 3...";
-        fetch("/api/cloudinary/upload", { method: "POST", body: formData })
+        fetch("/api/upload-image", { method: "POST", body: formData })
           .then((r) => r.json())
           .then((r) => {
             if (r && r.success && r.url) {
@@ -1114,7 +1114,7 @@ function showFeatureDetailPage(endpoint) {
       const formData = new FormData();
       formData.append("image", file);
       if (uploadStatus) uploadStatus.textContent = "Uploading...";
-      fetch("/api/cloudinary/upload", { method: "POST", body: formData })
+      fetch("/api/upload-image", { method: "POST", body: formData })
         .then((res) => res.json())
         .then((result) => {
           if (result && result.success && result.url) {
@@ -1751,9 +1751,9 @@ function showStepDetailPage(templateId, stepIndex, subcatIndex) {
         }
         const html = videos
           .map((v) => {
-            const urlWithParams = addCloudinaryParams(v.url);
-            return `<div class="relative rounded-lg overflow-hidden border border-gray-200 hover:border-blue-400 hover:shadow group step-detail-thumb" data-url="${urlWithParams}" data-id="${v.id}" style="width:120px;height:213px;display:inline-block;vertical-align:top;background:#000;cursor:pointer;">
-       <video src="${urlWithParams}" class="w-full h-full object-cover" preload="metadata" style="width:100%;height:100%;object-fit:cover;pointer-events:none;"></video>
+            const vidUrl = v.signedUrl || v.url;
+            return `<div class="relative rounded-lg overflow-hidden border border-gray-200 hover:border-blue-400 hover:shadow group step-detail-thumb" data-url="${vidUrl}" data-id="${v.id}" style="width:120px;height:213px;display:inline-block;vertical-align:top;background:#000;cursor:pointer;">
+       <video src="${vidUrl}" class="w-full h-full object-cover" preload="none" style="width:100%;height:100%;object-fit:cover;pointer-events:none;"></video>
        <button class="absolute top-1 right-1 bg-red-600/80 text-white text-[10px] px-1.5 py-0.5 rounded opacity-0 group-hover:opacity-100 transition delete-step-video-btn" title="Delete video"><svg xmlns='http://www.w3.org/2000/svg' width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' class='pointer-events-none'><path d='M3 6h18'/><path d='M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2'/><path d='M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6'/><path d='M10 11v6'/><path d='M14 11v6'/></svg></button>
      </div>`;
           })
@@ -1897,7 +1897,7 @@ function showStepDetailPage(templateId, stepIndex, subcatIndex) {
     const formData = new FormData();
     formData.append("image", file);
     if (uploadStatus) uploadStatus.textContent = "Uploading...";
-    fetch("/api/cloudinary/upload", { method: "POST", body: formData })
+    fetch("/api/upload-image", { method: "POST", body: formData })
       .then((res) => res.json())
       .then((result) => {
         if (result && result.success && result.url) {
@@ -1926,7 +1926,7 @@ function showStepDetailPage(templateId, stepIndex, subcatIndex) {
       formData.append("image", file);
       if (stepUploadStatus)
         stepUploadStatus.textContent = "Uploading last frame...";
-      fetch("/api/cloudinary/upload", { method: "POST", body: formData })
+      fetch("/api/upload-image", { method: "POST", body: formData })
         .then((r) => r.json())
         .then((r) => {
           if (r && r.success && r.url) {
@@ -1987,7 +1987,7 @@ function showStepDetailPage(templateId, stepIndex, subcatIndex) {
       const fd = new FormData();
       fd.append("image", file);
       if (stepUploadStatus) stepUploadStatus.textContent = "Uploading ref 2...";
-      fetch("/api/cloudinary/upload", { method: "POST", body: fd })
+      fetch("/api/upload-image", { method: "POST", body: fd })
         .then((r) => r.json())
         .then((r) => {
           if (r && r.success && r.url) {
@@ -2018,7 +2018,7 @@ function showStepDetailPage(templateId, stepIndex, subcatIndex) {
       const fd = new FormData();
       fd.append("image", file);
       if (stepUploadStatus) stepUploadStatus.textContent = "Uploading ref 3...";
-      fetch("/api/cloudinary/upload", { method: "POST", body: fd })
+      fetch("/api/upload-image", { method: "POST", body: fd })
         .then((r) => r.json())
         .then((r) => {
           if (r && r.success && r.url) {
@@ -2535,7 +2535,7 @@ function renderStepGeneratedVideos(containerEl, endpoint, onSelect) {
         .map(
           (v) =>
             `<div class="rounded-lg overflow-hidden border border-gray-200 bg-white hover:border-blue-300 hover:shadow cursor-pointer step-gen-video-item" data-url="${v.url}">
-               <video src="${v.url}#t=0.1" class="w-full" style="aspect-ratio:16/9" preload="metadata"></video>
+               <video src="${v.url}#t=0.1" class="w-full" style="aspect-ratio:16/9" preload="none"></video>
              </div>`
         )
         .join("");
@@ -2642,17 +2642,11 @@ document
   .getElementById("templateSearch")
   .addEventListener("input", displayTemplates);
 
-// Handle card click to show Cloudinary video in dialog
+// Handle card click to show generated video (S3 signed URL)
 function toggleVideo(endpoint) {
-  const cloudinaryVideo = document.getElementById(`cloudinary-${endpoint}`);
   const generatedVideo = document.getElementById(`generated-${endpoint}`);
-
-  // If there's a generated video, show it in the dialog
   if (generatedVideo && generatedVideo.src) {
     showVideoDialog(generatedVideo.src);
-  } else if (cloudinaryVideo) {
-    // Otherwise show the Cloudinary video in the dialog
-    showVideoDialog(cloudinaryVideo.querySelector("source").src);
   }
 }
 
@@ -3543,3 +3537,187 @@ window.refreshDisplayTest = function () {
   console.log("Refreshing display...");
   displayFeatures();
 };
+// Lazy video hydration with improved first-frame thumbnail capture & throttling
+(function setupLazyVideos() {
+  const MAX_CONCURRENT = 4; // limit simultaneous metadata loads
+  let activeHydrates = 0;
+  const queue = [];
+
+  function dequeue() {
+    while (activeHydrates < MAX_CONCURRENT && queue.length) {
+      const next = queue.shift();
+      startHydration(next);
+    }
+  }
+
+  function createControlsVideo(src) {
+    const video = document.createElement("video");
+    video.controls = true;
+    video.style.width = "100%";
+    video.preload = "none";
+    video.playsInline = true;
+    const source = document.createElement("source");
+    source.src = src;
+    source.type = "video/mp4";
+    video.appendChild(source);
+    return video;
+  }
+
+  function buildPlayOverlay(wrapper, container) {
+    const play = document.createElement("button");
+    play.type = "button";
+    play.textContent = "▶";
+    play.className = "video-play-overlay";
+    play.style.position = "absolute";
+    play.style.left = "50%";
+    play.style.top = "50%";
+    play.style.transform = "translate(-50%, -50%)";
+    play.style.background = "rgba(0,0,0,0.5)";
+    play.style.color = "#fff";
+    play.style.fontSize = "42px";
+    play.style.lineHeight = "42px";
+    play.style.padding = "12px 20px";
+    play.style.borderRadius = "50%";
+    play.style.cursor = "pointer";
+    play.style.border = "none";
+    play.setAttribute("aria-label", "Play video");
+    play.addEventListener("click", () => {
+      if (play.disabled) return; // guard against double clicks
+      play.disabled = true;
+      const thumbVideo = wrapper.querySelector("video");
+      if (thumbVideo) {
+        thumbVideo.setAttribute("controls", "controls");
+        // Unmute on user gesture if desired
+        try {
+          thumbVideo.muted = false;
+        } catch (_) {}
+        // Remove overlay smoothly
+        play.style.transition = "opacity 200ms";
+        play.style.opacity = "0";
+        setTimeout(() => play.remove(), 220);
+        const attemptPlay = () => {
+          const p = thumbVideo.play();
+          if (p && typeof p.then === "function") {
+            p.catch(() => {
+              /* ignore autoplay block errors */
+            });
+          }
+        };
+        attemptPlay();
+        thumbVideo.focus();
+      } else {
+        // Fallback: create a fresh controls video
+        const src = container.getAttribute("data-src");
+        const fullVideo = createControlsVideo(src);
+        wrapper.replaceWith(fullVideo);
+        try {
+          fullVideo.play().catch(() => {});
+        } catch (_) {}
+        fullVideo.focus();
+      }
+    });
+    return play;
+  }
+
+  function showThumbnail(container, video, skeleton) {
+    // Reuse the decoded video element itself as the thumbnail (paused first frame)
+    // Remove off-screen positioning if present
+    video.style.position = "static";
+    video.style.left = "0";
+    video.style.width = "100%";
+    video.style.borderRadius = "4px";
+    video.removeAttribute("controls"); // hide controls until user clicks
+    const wrapper = document.createElement("div");
+    wrapper.className = "video-thumb-wrapper";
+    wrapper.style.position = "relative";
+    wrapper.appendChild(video);
+    wrapper.appendChild(buildPlayOverlay(wrapper, container));
+    skeleton.replaceWith(wrapper);
+  }
+
+  function captureAndShow(container, tempVideo, skeleton) {
+    let finalized = false;
+    function finalize() {
+      if (finalized) return;
+      finalized = true;
+      try {
+        tempVideo.pause();
+      } catch (_) {}
+      showThumbnail(container, tempVideo, skeleton);
+      activeHydrates--;
+      dequeue();
+    }
+    tempVideo.addEventListener(
+      "loadedmetadata",
+      () => {
+        try {
+          tempVideo.currentTime = 0.01;
+        } catch (_) {}
+      },
+      { once: true }
+    );
+    tempVideo.addEventListener(
+      "seeked",
+      () => {
+        // Allow paint of frame before using video as thumbnail
+        requestAnimationFrame(finalize);
+      },
+      { once: true }
+    );
+    tempVideo.addEventListener("error", finalize, { once: true });
+    setTimeout(finalize, 4500); // timeout fallback
+    tempVideo.load();
+  }
+
+  function startHydration(container) {
+    const src = container.getAttribute("data-src");
+    if (!src) return;
+    const skeleton = container.querySelector(".video-skeleton");
+    if (!skeleton) return;
+    activeHydrates++;
+    const tempVideo = document.createElement("video");
+    tempVideo.preload = "metadata";
+    tempVideo.muted = true;
+    tempVideo.playsInline = true;
+    tempVideo.style.position = "absolute";
+    tempVideo.style.left = "-9999px"; // off-screen during metadata load
+    const source = document.createElement("source");
+    source.src = src;
+    source.type = "video/mp4";
+    tempVideo.appendChild(source);
+    document.body.appendChild(tempVideo); // ensure decode
+    captureAndShow(container, tempVideo, skeleton);
+  }
+
+  function enqueueHydration(container) {
+    queue.push(container);
+    dequeue();
+  }
+
+  function initialize() {
+    const nodes = document.querySelectorAll(".lazy-video");
+    if (!nodes.length) return;
+    if (!("IntersectionObserver" in window)) {
+      nodes.forEach(enqueueHydration);
+      return;
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            enqueueHydration(entry.target);
+            observer.unobserve(entry.target);
+          }
+        });
+      },
+      { rootMargin: "200px 0px", threshold: 0.01 }
+    );
+    nodes.forEach((n) => observer.observe(n));
+  }
+
+  window.initializeLazyVideos = initialize;
+})();
+
+document.addEventListener("DOMContentLoaded", () => {
+  if (window.initializeLazyVideos) window.initializeLazyVideos();
+});

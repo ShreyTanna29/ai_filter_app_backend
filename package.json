@@ -6,13 +6,17 @@
     "start": "ts-node src/index.ts",
     "dev": "nodemon src/index.ts",
     "test": "echo \"Error: no test specified\" && exit 1",
-    "generate-videos": "ts-node src/scripts/generate-videos.ts"
+    "generate-videos": "ts-node src/scripts/generate-videos.ts",
+    "migrate:cloudinary-videos-to-s3": "ts-node scripts/migrate-cloudinary-videos-to-s3.ts"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.679.0",
+    "@aws-sdk/lib-storage": "^3.679.0",
+    "@aws-sdk/s3-request-presigner": "^3.931.0",
     "@huggingface/inference": "^4.3.0",
     "@prisma/client": "^6.11.0",
     "@sendgrid/mail": "^8.1.5",
@@ -26,7 +30,6 @@
     "@types/node": "^24.0.8",
     "axios": "^1.10.0",
     "bcryptjs": "^3.0.2",
-    "cloudinary": "^2.7.0",
     "cors": "^2.8.5",
     "dotenv": "^17.0.0",
     "express": "^5.1.0",
@@ -36,6 +39,7 @@
     "multer": "^2.0.1",
     "nodemon": "^3.1.10",
     "prisma": "^6.11.0",
+    "sharp": "^0.33.5",
     "ts-node": "^10.9.2",
     "typescript": "^5.8.3"
   }
