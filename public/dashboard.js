@@ -355,15 +355,19 @@ window.addEventListener("DOMContentLoaded", function () {
       const showId = tabIds[idx];
       const showEl = document.getElementById(showId);
       if (showEl) showEl.classList.remove("hidden");
-      if (showId === "tab-filters" || showId === "tab-photo-filters") {
-        // Load features if needed and render appropriate grid
+      if (showId === "tab-filters") {
         if (!featuresInitialRequested && !featuresLoading) {
-          loadAllFeatures().then(() => {
-            if (showId === "tab-photo-filters") displayPhotoFeatures();
-          });
+          loadAllFeatures();
           featuresInitialRequested = true;
         } else {
-          if (showId === "tab-photo-filters") displayPhotoFeatures();
+          displayFeatures();
+        }
+      } else if (showId === "tab-photo-filters") {
+        if (!photoFeaturesInitialRequested && !photoFeaturesLoading) {
+          loadAllPhotoFeatures().then(() => displayPhotoFeatures());
+          photoFeaturesInitialRequested = true;
+        } else {
+          displayPhotoFeatures();
         }
       }
     });
@@ -415,16 +419,16 @@ window.switchTab = function (tabName) {
   if (showEl) showEl.classList.remove("hidden");
 
   // Only load features on tab switch if not already loaded
-  if (
-    (showId === "tab-filters" || showId === "tab-photo-filters") &&
-    !featuresInitialRequested
-  ) {
-    loadAllFeatures().then(() => {
-      if (showId === "tab-photo-filters") displayPhotoFeatures();
-    });
+  if (showId === "tab-filters" && !featuresInitialRequested) {
+    loadAllFeatures();
     featuresInitialRequested = true;
   } else if (showId === "tab-photo-filters") {
-    displayPhotoFeatures();
+    if (!photoFeaturesInitialRequested) {
+      loadAllPhotoFeatures().then(() => displayPhotoFeatures());
+      photoFeaturesInitialRequested = true;
+    } else {
+      displayPhotoFeatures();
+    }
   }
 };
 
@@ -483,6 +487,10 @@ async function initializeDashboard() {
 let features = [];
 let featuresLoading = false;
 let featuresInitialRequested = false;
+// Photo Filters data store (from Photo_Features model)
+let photoFeatures = [];
+let photoFeaturesLoading = false;
+let photoFeaturesInitialRequested = false;
 let savedScrollPosition = 0;
 
 // Load all features at once
@@ -523,12 +531,6 @@ async function loadAllFeatures() {
     }
 
     displayFeatures();
-    // Also mirror into Photo Filters tab if present
-    if (document.getElementById("photoFeaturesGrid")) {
-      try {
-        displayPhotoFeatures();
-      } catch (_) {}
-    }
     updateStats();
   } catch (e) {
     console.error("Error loading features", e);
@@ -538,6 +540,45 @@ async function loadAllFeatures() {
     }
   } finally {
     featuresLoading = false;
+  }
+}
+
+// Load all photo features (Photo_Features model)
+async function loadAllPhotoFeatures() {
+  if (photoFeaturesLoading) return;
+
+  photoFeaturesLoading = true;
+  const grid = document.getElementById("photoFeaturesGrid");
+
+  if (grid) {
+    grid.innerHTML =
+      '<div class="col-span-full text-sm text-gray-500">Loading all photo filters...</div>';
+  }
+
+  try {
+    const response = await fetch(`/api/photo-features/all`);
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || "Failed");
+    photoFeatures =
+      data.features || (Array.isArray(data) ? data : data.items || []);
+
+    if (photoFeatures.length === 0) {
+      if (grid) {
+        grid.innerHTML =
+          '<div class="text-sm text-gray-500">No photo filters found.</div>';
+      }
+      return;
+    }
+
+    displayPhotoFeatures();
+  } catch (e) {
+    console.error("Error loading photo features", e);
+    if (grid) {
+      grid.innerHTML =
+        '<div class="text-sm text-red-500">Error loading photo filters. Please try again.</div>';
+    }
+  } finally {
+    photoFeaturesLoading = false;
   }
 }
 
@@ -685,7 +726,7 @@ function displayPhotoFeatures() {
   }
 
   if (searchTerm) {
-    fetch(`/api/features?search=${encodeURIComponent(searchTerm)}`)
+    fetch(`/api/photo-features?search=${encodeURIComponent(searchTerm)}`)
       .then((res) => res.json())
       .then((data) => {
         let filtered = [];
@@ -698,7 +739,7 @@ function displayPhotoFeatures() {
         renderFeatureCards([]);
       });
   } else {
-    renderFeatureCards(features);
+    renderFeatureCards(photoFeatures);
   }
 }
 
@@ -722,7 +763,7 @@ if (featureSearchInput) {
 const photoFeatureSearchInput = document.getElementById("photoFeatureSearch");
 if (photoFeatureSearchInput) {
   photoFeatureSearchInput.addEventListener("input", () => {
-    if (!featuresInitialRequested) return;
+    if (!photoFeaturesInitialRequested) return;
     displayPhotoFeatures();
   });
 }
@@ -738,7 +779,10 @@ function showFeatureDetailPage(endpoint) {
   console.log("Saved scroll position:", savedScrollPosition);
 
   try {
-    const feature = features.find((f) => f.endpoint === endpoint);
+    let feature = features.find((f) => f.endpoint === endpoint);
+    if (!feature && Array.isArray(photoFeatures) && photoFeatures.length) {
+      feature = photoFeatures.find((f) => f.endpoint === endpoint);
+    }
     console.log("Found feature:", feature);
     if (!feature) {
       console.error("Feature not found for endpoint:", endpoint);

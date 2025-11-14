@@ -92,47 +92,43 @@ app.get("/api/features", async (req, res) => {
   }
 });
 
-// Update a feature's prompt (admin only)
-app.put(
-  "/api/features/:endpoint",
-  requireAdmin,
-  async (req, res): Promise<any> => {
-    const { endpoint } = req.params;
-    const { prompt } = req.body;
+// Update a feature's prompt (no auth required)
+app.put("/api/features/:endpoint", async (req, res): Promise<any> => {
+  const { endpoint } = req.params;
+  const { prompt } = req.body;
 
-    if (!prompt) {
-      return res.status(400).json({
-        success: false,
-        message: "Prompt is required",
-      });
-    }
-
-    try {
-      const feature = await prisma.features.update({
-        where: { endpoint },
-        data: { prompt },
-      });
-
-      res.json({
-        success: true,
-        message: "Feature updated successfully",
-        feature,
-      });
-    } catch (error: any) {
-      console.error(error);
-      if (error.code === "P2025") {
-        return res.status(404).json({
-          success: false,
-          message: "Feature not found",
-        });
-      }
-      res.status(500).json({
-        success: false,
-        message: "Internal server error",
-      });
-    }
+  if (!prompt) {
+    return res.status(400).json({
+      success: false,
+      message: "Prompt is required",
+    });
   }
-);
+
+  try {
+    const feature = await prisma.features.update({
+      where: { endpoint },
+      data: { prompt },
+    });
+
+    res.json({
+      success: true,
+      message: "Feature updated successfully",
+      feature,
+    });
+  } catch (error: any) {
+    console.error(error);
+    if (error.code === "P2025") {
+      return res.status(404).json({
+        success: false,
+        message: "Feature not found",
+      });
+    }
+    res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  }
+});
 
 // Create a new feature (admin only)
 app.post("/api/features", requireAdmin, async (req, res): Promise<any> => {
@@ -564,13 +560,11 @@ app.post(
       return;
     } catch (e: any) {
       console.error("[UPLOAD-IMAGE] Error", e);
-      res
-        .status(500)
-        .json({
-          success: false,
-          message: "Upload failed",
-          details: e?.message,
-        });
+      res.status(500).json({
+        success: false,
+        message: "Upload failed",
+        details: e?.message,
+      });
       return;
     }
   }
@@ -624,13 +618,11 @@ app.post(
       return;
     } catch (e: any) {
       console.error("[LEGACY-CLOUDINARY-UPLOAD] Error", e);
-      res
-        .status(500)
-        .json({
-          success: false,
-          message: "Upload failed",
-          details: e?.message,
-        });
+      res.status(500).json({
+        success: false,
+        message: "Upload failed",
+        details: e?.message,
+      });
       return;
     }
   }
