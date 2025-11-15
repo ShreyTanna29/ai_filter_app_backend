@@ -500,16 +500,23 @@ const upload = multer({
 
 app.post(
   "/api/upload-image",
-  upload.single("file"),
+  upload.fields([
+    { name: "file", maxCount: 1 },
+    { name: "image", maxCount: 1 },
+  ]),
   async (req: Request, res: Response): Promise<void> => {
     try {
-      // If multipart file provided
-      if (req.file) {
+      // If multipart file provided (accept both 'file' and 'image' field names)
+      const files: any = (req as any).files || {};
+      const uploaded =
+        (files["file"] && files["file"][0]) ||
+        (files["image"] && files["image"][0]);
+      if (uploaded) {
         const key = makeKey({ type: "image", feature: "uploaded" });
         const result = await uploadBuffer(
           key,
-          req.file.buffer,
-          req.file.mimetype
+          uploaded.buffer,
+          uploaded.mimetype
         );
         const signedUrl = await signKey(key);
         res.json({
@@ -573,15 +580,22 @@ app.post(
 // Backwards compatible path for former Cloudinary route if clients still call /api/cloudinary/upload
 app.post(
   "/api/cloudinary/upload",
-  upload.single("file"),
+  upload.fields([
+    { name: "file", maxCount: 1 },
+    { name: "image", maxCount: 1 },
+  ]),
   async (req: Request, res: Response): Promise<void> => {
     try {
-      if (req.file) {
+      const files: any = (req as any).files || {};
+      const uploaded =
+        (files["file"] && files["file"][0]) ||
+        (files["image"] && files["image"][0]);
+      if (uploaded) {
         const key = makeKey({ type: "image", feature: "uploaded" });
         const result = await uploadBuffer(
           key,
-          req.file.buffer,
-          req.file.mimetype
+          uploaded.buffer,
+          uploaded.mimetype
         );
         const signedUrl = await signKey(key);
         res.json({

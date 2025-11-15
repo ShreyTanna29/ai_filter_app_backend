@@ -975,10 +975,11 @@ function showFeatureDetailPage(endpoint) {
         fetch("/api/upload-image", { method: "POST", body: formData })
           .then((r) => r.json())
           .then((r) => {
-            if (r && r.success && r.url) {
-              featureLastFrameUrl = r.url;
+            const url = r && r.success ? r.signedUrl || r.url : null;
+            if (url) {
+              featureLastFrameUrl = url;
               if (featureLastFramePreview) {
-                featureLastFramePreview.src = r.url;
+                featureLastFramePreview.src = url;
                 featureLastFramePreview.style.display = "block";
               }
               if (uploadStatus)
@@ -1007,10 +1008,11 @@ function showFeatureDetailPage(endpoint) {
         fetch("/api/upload-image", { method: "POST", body: formData })
           .then((r) => r.json())
           .then((r) => {
-            if (r && r.success && r.url) {
-              featureRef2Url = r.url;
+            const url = r && r.success ? r.signedUrl || r.url : null;
+            if (url) {
+              featureRef2Url = url;
               if (featureRef2Preview) {
-                featureRef2Preview.src = r.url;
+                featureRef2Preview.src = url;
                 featureRef2Preview.style.display = "block";
               }
               if (uploadStatus) uploadStatus.textContent = "Ref 2 uploaded!";
@@ -1037,10 +1039,11 @@ function showFeatureDetailPage(endpoint) {
         fetch("/api/upload-image", { method: "POST", body: formData })
           .then((r) => r.json())
           .then((r) => {
-            if (r && r.success && r.url) {
-              featureRef3Url = r.url;
+            const url = r && r.success ? r.signedUrl || r.url : null;
+            if (url) {
+              featureRef3Url = url;
               if (featureRef3Preview) {
-                featureRef3Preview.src = r.url;
+                featureRef3Preview.src = url;
                 featureRef3Preview.style.display = "block";
               }
               if (uploadStatus) uploadStatus.textContent = "Ref 3 uploaded!";
@@ -1161,10 +1164,12 @@ function showFeatureDetailPage(endpoint) {
       fetch("/api/upload-image", { method: "POST", body: formData })
         .then((res) => res.json())
         .then((result) => {
-          if (result && result.success && result.url) {
-            uploadedImageUrl = result.url;
+          const url =
+            result && result.success ? result.signedUrl || result.url : null;
+          if (url) {
+            uploadedImageUrl = url;
             if (preview) {
-              preview.src = result.url;
+              preview.src = url;
               preview.style.display = "block";
               preview.classList.add("image-preview");
             }
@@ -1976,10 +1981,12 @@ function showStepDetailPage(templateId, stepIndex, subcatIndex) {
     fetch("/api/upload-image", { method: "POST", body: formData })
       .then((res) => res.json())
       .then((result) => {
-        if (result && result.success && result.url) {
-          window._stepUploadedImageUrl = result.url;
+        const url =
+          result && result.success ? result.signedUrl || result.url : null;
+        if (url) {
+          window._stepUploadedImageUrl = url;
           if (preview) {
-            preview.src = result.url;
+            preview.src = url;
             preview.style.display = "block";
           }
           if (uploadStatus) uploadStatus.textContent = "Image uploaded!";
@@ -2005,10 +2012,11 @@ function showStepDetailPage(templateId, stepIndex, subcatIndex) {
       fetch("/api/upload-image", { method: "POST", body: formData })
         .then((r) => r.json())
         .then((r) => {
-          if (r && r.success && r.url) {
-            window._stepLastFrameUrl = r.url;
+          const url = r && r.success ? r.signedUrl || r.url : null;
+          if (url) {
+            window._stepLastFrameUrl = url;
             if (stepLastFramePreview) {
-              stepLastFramePreview.src = r.url;
+              stepLastFramePreview.src = url;
               stepLastFramePreview.style.display = "block";
             }
             if (stepUploadStatus)
@@ -2066,10 +2074,11 @@ function showStepDetailPage(templateId, stepIndex, subcatIndex) {
       fetch("/api/upload-image", { method: "POST", body: fd })
         .then((r) => r.json())
         .then((r) => {
-          if (r && r.success && r.url) {
-            window._stepRef2Url = r.url;
+          const url = r && r.success ? r.signedUrl || r.url : null;
+          if (url) {
+            window._stepRef2Url = url;
             if (stepRef2Preview) {
-              stepRef2Preview.src = r.url;
+              stepRef2Preview.src = url;
               stepRef2Preview.style.display = "block";
             }
             if (stepUploadStatus)
@@ -2097,10 +2106,11 @@ function showStepDetailPage(templateId, stepIndex, subcatIndex) {
       fetch("/api/upload-image", { method: "POST", body: fd })
         .then((r) => r.json())
         .then((r) => {
-          if (r && r.success && r.url) {
-            window._stepRef3Url = r.url;
+          const url = r && r.success ? r.signedUrl || r.url : null;
+          if (url) {
+            window._stepRef3Url = url;
             if (stepRef3Preview) {
-              stepRef3Preview.src = r.url;
+              stepRef3Preview.src = url;
               stepRef3Preview.style.display = "block";
             }
             if (stepUploadStatus)
