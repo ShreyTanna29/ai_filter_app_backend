@@ -336,6 +336,7 @@ window.addEventListener("DOMContentLoaded", function () {
     "tab-filters",
     "tab-photo-filters",
     "tab-templates",
+    "tab-apps",
   ];
   sidebarButtons.forEach((button, idx) => {
     button.addEventListener("click", function (e) {
@@ -369,6 +370,14 @@ window.addEventListener("DOMContentLoaded", function () {
         } else {
           displayPhotoFeatures();
         }
+      } else if (showId === "tab-apps") {
+        if (!appsInitialRequested && !appsLoading) {
+          initAppsTab();
+          loadApps();
+          appsInitialRequested = true;
+        } else {
+          renderApps();
+        }
       }
     });
   });
@@ -386,6 +395,7 @@ window.switchTab = function (tabName) {
     "tab-filters",
     "tab-photo-filters",
     "tab-templates",
+    "tab-apps",
   ];
   const tabIndex = tabIds.findIndex((id) => id === `tab-${tabName}`);
 
@@ -428,6 +438,14 @@ window.switchTab = function (tabName) {
       photoFeaturesInitialRequested = true;
     } else {
       displayPhotoFeatures();
+    }
+  } else if (showId === "tab-apps") {
+    if (!appsInitialRequested) {
+      initAppsTab();
+      loadApps();
+      appsInitialRequested = true;
+    } else {
+      renderApps();
     }
   }
 };
@@ -492,6 +510,259 @@ let photoFeatures = [];
 let photoFeaturesLoading = false;
 let photoFeaturesInitialRequested = false;
 let savedScrollPosition = 0;
+
+// === Apps tab state ===
+let apps = [];
+let appsLoading = false;
+let appsInitialRequested = false;
+
+function getStoredApiKey() {
+  return (
+    localStorage.getItem("adminApiKey") || localStorage.getItem("apiKey") || ""
+  );
+}
+
+function setStoredApiKey(key) {
+  if (key && typeof key === "string") {
+    localStorage.setItem("adminApiKey", key.trim());
+  }
+}
+
+async function ensureApiKey(interactive = false) {
+  let key = getStoredApiKey();
+  if (!key && interactive) {
+    key = window.prompt("Enter admin API key (x-api-key):", "");
+    if (key) setStoredApiKey(key);
+  }
+  return key;
+}
+
+function apiKeyHeaders() {
+  const key = getStoredApiKey();
+  return key ? { "x-api-key": key } : {};
+}
+
+function initAppsTab() {
+  const form = document.getElementById("createAppForm");
+  if (form) {
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      await createApp();
+    });
+  }
+}
+
+async function loadApps() {
+  if (appsLoading) return;
+  appsLoading = true;
+  const listEl = document.getElementById("appsList");
+  if (listEl) {
+    listEl.innerHTML =
+      '<div class="text-sm text-gray-500">Loading apps...</div>';
+  }
+  try {
+    let res = await fetch("/api/apps", { headers: { ...apiKeyHeaders() } });
+    if (res.status === 401) {
+      // Prompt for API key and retry once
+      await ensureApiKey(true);
+      res = await fetch("/api/apps", { headers: { ...apiKeyHeaders() } });
+    }
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data?.success === false) {
+      throw new Error(data?.message || `Failed to load apps (${res.status})`);
+    }
+    apps = Array.isArray(data) ? data : data.apps || [];
+    renderApps();
+  } catch (err) {
+    if (listEl) {
+      listEl.innerHTML = `<div class="text-sm text-red-500">${
+        (err && err.message) || "Failed to load apps"
+      }</div>`;
+    }
+  } finally {
+    appsLoading = false;
+  }
+}
+
+function maskKey(k) {
+  if (!k || typeof k !== "string") return "";
+  if (k.length <= 8) return k;
+  return `${k.slice(0, 6)}••••${k.slice(-4)}`;
+}
+
+function renderApps() {
+  const listEl = document.getElementById("appsList");
+  if (!listEl) return;
+  if (!apps || apps.length === 0) {
+    listEl.innerHTML =
+      '<div class="text-sm text-gray-500">No apps yet. Create one above.</div>';
+    return;
+  }
+  listEl.innerHTML = apps
+    .map((app) => {
+      const created = app.createdAt
+        ? new Date(app.createdAt).toLocaleString()
+        : "";
+      const keyMasked = app.apiKey ? maskKey(app.apiKey) : "";
+      return `
+        <div class="border rounded-lg p-4 bg-white shadow-sm">
+          <div class="flex items-center justify-between">
+            <div>
+              <div class="font-semibold text-gray-800">${app.name}</div>
+              <div class="text-xs text-gray-500">${created}</div>
+            </div>
+            <div class="flex items-center gap-2">
+              <button data-app-id="${
+                app.id
+              }" class="rotate-app px-3 py-1 bg-yellow-500 text-white rounded hover:bg-yellow-600 text-sm">Rotate Key</button>
+              <button data-app-id="${
+                app.id
+              }" class="delete-app px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700 text-sm">Delete</button>
+            </div>
+          </div>
+          <div class="mt-3 p-2 bg-gray-50 rounded border text-sm flex items-center justify-between">
+            <code class="truncate flex-1" title="${
+              app.apiKey || ""
+            }">${keyMasked}</code>
+            <div class="flex items-center gap-2 ml-3">
+              <button data-key="${
+                app.apiKey || ""
+              }" class="copy-key px-2 py-1 bg-blue-600 text-white rounded text-xs">Copy</button>
+              <button data-key-full="${
+                app.apiKey || ""
+              }" class="reveal-key px-2 py-1 bg-gray-200 text-gray-700 rounded text-xs">Reveal</button>
+            </div>
+          </div>
+        </div>
+      `;
+    })
+    .join("");
+
+  // Wire up buttons
+  listEl.querySelectorAll(".copy-key").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const key = btn.getAttribute("data-key") || "";
+      if (!key) return;
+      try {
+        await navigator.clipboard.writeText(key);
+        btn.textContent = "Copied";
+        setTimeout(() => (btn.textContent = "Copy"), 1200);
+      } catch (_) {}
+    });
+  });
+  listEl.querySelectorAll(".reveal-key").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const key = btn.getAttribute("data-key-full") || "";
+      if (!key) return;
+      alert(`API Key:\n${key}`);
+    });
+  });
+  listEl.querySelectorAll(".rotate-app").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const id = btn.getAttribute("data-app-id");
+      if (!id) return;
+      await rotateAppKey(+id, btn);
+    });
+  });
+  listEl.querySelectorAll(".delete-app").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const id = btn.getAttribute("data-app-id");
+      if (!id) return;
+      if (!confirm("Delete this app?")) return;
+      await deleteApp(+id, btn);
+    });
+  });
+}
+
+async function createApp() {
+  const nameEl = document.getElementById("newAppName");
+  const statusEl = document.getElementById("createAppStatus");
+  if (!nameEl) return;
+  const name = nameEl.value.trim();
+  if (!name) {
+    if (statusEl) statusEl.textContent = "Name is required";
+    return;
+  }
+  if (statusEl) statusEl.textContent = "Creating app...";
+  try {
+    let res = await fetch("/api/apps", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...apiKeyHeaders() },
+      body: JSON.stringify({ name }),
+    });
+    if (res.status === 401) {
+      await ensureApiKey(true);
+      res = await fetch("/api/apps", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...apiKeyHeaders() },
+        body: JSON.stringify({ name }),
+      });
+    }
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data?.success === false) {
+      throw new Error(data?.message || `Failed (${res.status})`);
+    }
+    // Clear input and reload
+    nameEl.value = "";
+    if (statusEl) statusEl.textContent = "App created!";
+    await loadApps();
+  } catch (err) {
+    if (statusEl)
+      statusEl.textContent = (err && err.message) || "Failed to create app";
+  }
+}
+
+async function rotateAppKey(id, btn) {
+  if (btn) btn.disabled = true;
+  try {
+    let res = await fetch(`/api/apps/${id}/rotate`, {
+      method: "POST",
+      headers: { ...apiKeyHeaders() },
+    });
+    if (res.status === 401) {
+      await ensureApiKey(true);
+      res = await fetch(`/api/apps/${id}/rotate`, {
+        method: "POST",
+        headers: { ...apiKeyHeaders() },
+      });
+    }
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data?.success === false) {
+      throw new Error(data?.message || `Failed (${res.status})`);
+    }
+    await loadApps();
+  } catch (err) {
+    alert((err && err.message) || "Failed to rotate key");
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function deleteApp(id, btn) {
+  if (btn) btn.disabled = true;
+  try {
+    let res = await fetch(`/api/apps/${id}`, {
+      method: "DELETE",
+      headers: { ...apiKeyHeaders() },
+    });
+    if (res.status === 401) {
+      await ensureApiKey(true);
+      res = await fetch(`/api/apps/${id}`, {
+        method: "DELETE",
+        headers: { ...apiKeyHeaders() },
+      });
+    }
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || (data && data.success === false)) {
+      throw new Error(data?.message || `Failed (${res.status})`);
+    }
+    await loadApps();
+  } catch (err) {
+    alert((err && err.message) || "Failed to delete app");
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
 
 // Load all features at once
 async function loadAllFeatures() {

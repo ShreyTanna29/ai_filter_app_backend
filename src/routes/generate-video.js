@@ -1,0 +1,3954 @@
+"use strict";
+var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
+    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+};
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const multer_1 = __importDefault(require("multer"));
+const prisma_1 = __importDefault(require("../lib/prisma"));
+const s3_1 = require("../lib/s3");
+const signedUrl_1 = require("../middleware/signedUrl");
+const dotenv_1 = __importDefault(require("dotenv"));
+const axios_1 = __importDefault(require("axios"));
+const https_1 = __importDefault(require("https"));
+const http_1 = __importDefault(require("http"));
+const crypto_1 = require("crypto");
+dotenv_1.default.config();
+// Legacy Cloudinary configuration removed. All generated videos now stored in S3.
+const router = (0, express_1.Router)();
+// --- Helper serialization utilities to avoid circular JSON issues in error responses ---
+const safeJson = (value, depth = 3) => {
+    var _a, _b, _c, _d, _e;
+    if (value === null || value === undefined)
+        return value;
+    if (depth <= 0)
+        return typeof value;
+    if (Array.isArray(value))
+        return value.slice(0, 10).map((v) => safeJson(v, depth - 1));
+    if (typeof value === "object") {
+        // Axios error formatting
+        if (value.isAxiosError) {
+            const ax = value;
+            return {
+                isAxiosError: true,
+                message: ax.message,
+                code: ax.code,
+                status: (_a = ax.response) === null || _a === void 0 ? void 0 : _a.status,
+                statusText: (_b = ax.response) === null || _b === void 0 ? void 0 : _b.statusText,
+                data: safeJson((_c = ax.response) === null || _c === void 0 ? void 0 : _c.data, depth - 1),
+                url: (_d = ax.config) === null || _d === void 0 ? void 0 : _d.url,
+                method: (_e = ax.config) === null || _e === void 0 ? void 0 : _e.method,
+            };
+        }
+        const out = {};
+        let count = 0;
+        for (const k of Object.keys(value)) {
+            if (count++ > 20) {
+                out.__truncated = true;
+                break;
+            }
+            try {
+                const v = value[k];
+                if (v === value)
+                    continue; // circular self
+                if (typeof v === "function")
+                    continue;
+                if (k.startsWith("_"))
+                    continue; // skip internal/private heavy props
+                out[k] = safeJson(v, depth - 1);
+            }
+            catch (_f) {
+                out[k] = "[unserializable]";
+            }
+        }
+        return out;
+    }
+    return value;
+};
+const serializeError = (err) => {
+    if (!err)
+        return undefined;
+    if (typeof err === "string")
+        return err;
+    if (err instanceof Error) {
+        return {
+            message: err.message,
+            name: err.name,
+            code: err.code,
+        };
+    }
+    return safeJson(err);
+};
+// Extract a short, user-friendly Cloudinary error summary (if structure matches)
+function summarizeCloudinaryError(err) {
+    var _a, _b;
+    if (!err)
+        return undefined;
+    const data = ((_a = err === null || err === void 0 ? void 0 : err.response) === null || _a === void 0 ? void 0 : _a.data) || (err === null || err === void 0 ? void 0 : err.data) || err;
+    // Common Cloudinary error shapes: { error: { message: "..." } } or { message: "..." }
+    const msg = ((_b = data === null || data === void 0 ? void 0 : data.error) === null || _b === void 0 ? void 0 : _b.message) || (data === null || data === void 0 ? void 0 : data.message) || (err === null || err === void 0 ? void 0 : err.message);
+    if (!msg)
+        return undefined;
+    // Trim overly long messages
+    return msg.length > 180 ? msg.slice(0, 177) + "..." : msg;
+}
+// Extract structured Runware error details for UI surfacing
+function extractRunwareError(raw) {
+    try {
+        const body = typeof raw === "string" ? JSON.parse(raw) : raw;
+        const firstErr = Array.isArray(body === null || body === void 0 ? void 0 : body.errors) ? body.errors[0] : undefined;
+        if (!firstErr)
+            return undefined;
+        return {
+            code: firstErr.code,
+            message: firstErr.message,
+            responseContent: firstErr.responseContent,
+            documentation: firstErr.documentation,
+            taskUUID: firstErr.taskUUID,
+            taskType: firstErr.taskType,
+        };
+    }
+    catch (_a) {
+        return undefined;
+    }
+}
+// Helper: upload generated video stream to S3 and return signed + canonical URLs
+function uploadGeneratedVideo(feature, variant, readable) {
+    return __awaiter(this, void 0, void 0, function* () {
+        const key = (0, s3_1.makeKey)({ type: "video", feature, ext: "mp4" });
+        yield (0, s3_1.uploadStream)(key, readable, "video/mp4");
+        const url = (0, s3_1.publicUrlFor)(key);
+        let signedUrl = url;
+        try {
+            signedUrl = yield (0, signedUrl_1.signKey)(key);
+        }
+        catch (e) {
+            // If signing fails, fall back to canonical (may be inaccessible if bucket is private)
+            console.warn("[uploadGeneratedVideo] Failed to sign key", key, e);
+        }
+        yield prisma_1.default.generatedVideo.create({ data: { feature, url } });
+        return { key, url, signedUrl };
+    });
+}
+// Helper: ensure image is accessible via URL for provider (uploads to S3 if not clearly public)
+function prepareImageForProvider(rawUrl, feature) {
+    return __awaiter(this, void 0, void 0, function* () {
+        const isLikelyPublic = /^https?:\/\//i.test(rawUrl) &&
+            !/localhost|127\.0\.0\.1|^file:/i.test(rawUrl);
+        // If already a public http(s) URL we can use directly (providers will fetch it)
+        if (isLikelyPublic) {
+            return { providerUrl: rawUrl, storedUrl: rawUrl };
+        }
+        // Otherwise fetch + resize + upload to S3 then return signed URL for provider
+        try {
+            const { buffer, contentType } = yield (0, s3_1.ensure512SquareImageFromUrl)(rawUrl);
+            const key = (0, s3_1.makeKey)({ type: "image", feature, ext: "png" });
+            yield (0, s3_1.uploadBuffer)(key, buffer, contentType);
+            const storedUrl = (0, s3_1.publicUrlFor)(key);
+            let providerUrl = storedUrl;
+            try {
+                providerUrl = yield (0, signedUrl_1.signKey)(key);
+            }
+            catch (e) {
+                console.warn("[prepareImageForProvider] sign failed", e);
+            }
+            return { providerUrl, storedUrl };
+        }
+        catch (e) {
+            console.error("[prepareImageForProvider] failed", e);
+            // Fallback to raw URL (will likely fail at provider if not reachable)
+            return { providerUrl: rawUrl, storedUrl: rawUrl };
+        }
+    });
+}
+// Multer setup for audio upload (memory storage)
+const upload = (0, multer_1.default)({ storage: multer_1.default.memoryStorage() });
+// Default model selection (env override or fallback). Fallback chosen for broad provider support & speed.
+const DEFAULT_VIDEO_MODEL = process.env.DEFAULT_VIDEO_MODEL || "lightricks:2@1"; // LTX-2 Fast as default
+// Generate video from feature endpoint
+router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _0, _1, _2, _3, _4, _5, _6, _7, _8, _9, _10, _11, _12, _13, _14, _15, _16, _17, _18, _19, _20, _21, _22, _23, _24, _25, _26, _27, _28, _29, _30, _31, _32, _33, _34, _35, _36, _37, _38, _39, _40, _41, _42, _43, _44, _45, _46, _47, _48, _49, _50, _51, _52, _53, _54, _55, _56, _57, _58, _59, _60, _61, _62, _63;
+    try {
+        const { feature } = req.params;
+        // Accept model from body or query; apply default if absent
+        const userModel = req.body.model || req.query.model;
+        const selectedModel = typeof userModel === "string" && userModel.trim().length > 0
+            ? userModel.trim()
+            : DEFAULT_VIDEO_MODEL;
+        const promptOverride = req.body.prompt;
+        const imageUrl = req.body.imageUrl || req.body.image_url;
+        if (!imageUrl) {
+            res.status(400).json({
+                success: false,
+                error: "Image URL is required",
+            });
+            return;
+        }
+        // Step 1: Prepare image for provider (S3 private bucket migration)
+        const { providerUrl: imageCloudUrl } = yield prepareImageForProvider(imageUrl, feature);
+        // Optional: second image for transition models (Pixverse) - treat similarly
+        const lastFrameRaw = req.body.lastFrameUrl || req.body.last_frame_url;
+        let lastFrameCloudUrl = undefined;
+        if (lastFrameRaw) {
+            try {
+                const prep = yield prepareImageForProvider(lastFrameRaw, feature);
+                lastFrameCloudUrl = prep.providerUrl;
+            }
+            catch (e) {
+                console.warn("[lastFrame] prepare failed; ignoring", e);
+            }
+        }
+        // Step 2: Get the prompt for the selected feature (allow client override)
+        const featureObj = yield prisma_1.default.features.findUnique({
+            where: { endpoint: feature },
+        });
+        const prompt = typeof promptOverride === "string" && promptOverride.trim().length > 0
+            ? promptOverride
+            : featureObj
+                ? featureObj.prompt
+                : "";
+        // Step 3: Provider branching (Pixverse transition, then MiniMax, else Luma)
+        const rawModel = selectedModel.toString();
+        const isPixverseTransition = /pixverse-v4-transition/i.test(rawModel);
+        // Support v4, v4.5 and v5 image to video variants
+        const isPixverseImage2Video = /pixverse-v4(?:\.5)?-image-to-video|pixverse-v5-image-to-video|kling-v1-pro-image-to-video|kling-v1-standard-image-to-video|kling-1\.5-pro-image-to-video|kling-v1\.6-pro-image-to-video|kling-1\.6-standard-image-to-video|kling-v2-master-image-to-video|kling-v2\.1-standard-image-to-video|kling-v2\.1-pro-image-to-video/i.test(rawModel);
+        // Runware Veo 3 Fast (native audio) direct support
+        const isRunwareVeo3Fast = /veo3@fast/i.test(rawModel);
+        const isRunwareVeo31Fast = /veo\s*3\.1.*fast|google:3@3/i.test(rawModel);
+        const isRunwareVeo31 = /veo\s*3\.1(?!.*fast)|google:3@2/i.test(rawModel);
+        const isRunwareSeedanceProFast = /seedance[\s-]*1\.0[\s-]*pro[\s-]*fast|seedance[\s-]*pro[\s-]*fast|bytedance:2@2/i.test(rawModel);
+        const isRunwareLTX2Pro = /ltx[\s-]*2.*pro|lightricks:2@0/i.test(rawModel);
+        const isRunwareLTX2Fast = /ltx[\s-]*2.*fast|lightricks:2@1/i.test(rawModel);
+        const isRunwareViduQ2Turbo = /vidu[\s-]*q?2.*turbo|vidu:3@2/i.test(rawModel);
+        const isRunwareViduQ2Pro = /vidu[\s-]*q?2.*pro|vidu:3@1/i.test(rawModel);
+        if (isRunwareSeedanceProFast) {
+            try {
+                console.log("[Seedance] Start generation", {
+                    feature,
+                    rawModel,
+                    imageCloudUrlInitial: imageCloudUrl === null || imageCloudUrl === void 0 ? void 0 : imageCloudUrl.slice(0, 120),
+                });
+                const runwareHeaders = {
+                    Authorization: `Bearer ${process.env.RUNWARE_API_KEY || process.env.RUNWARE_KEY}`,
+                    "Content-Type": "application/json",
+                };
+                // 1) Upload first frame image to get imageUUID
+                const uploadPayload = [
+                    {
+                        taskType: "imageUpload",
+                        taskUUID: (0, crypto_1.randomUUID)(),
+                        image: imageCloudUrl,
+                    },
+                ];
+                let firstUUID;
+                try {
+                    const up = yield axios_1.default.post("https://api.runware.ai/v1", uploadPayload, { headers: runwareHeaders, timeout: 180000 });
+                    const d = up.data;
+                    const obj = Array.isArray(d === null || d === void 0 ? void 0 : d.data) ? d.data[0] : d === null || d === void 0 ? void 0 : d.data;
+                    firstUUID = (obj === null || obj === void 0 ? void 0 : obj.imageUUID) || (obj === null || obj === void 0 ? void 0 : obj.imageUuid);
+                    console.log("[Seedance] imageUpload success", { firstUUID });
+                }
+                catch (e) {
+                    console.error("Runware Seedance imageUpload failed:", ((_a = e === null || e === void 0 ? void 0 : e.response) === null || _a === void 0 ? void 0 : _a.data) || (e === null || e === void 0 ? void 0 : e.message) || e);
+                    res.status(400).json({
+                        success: false,
+                        error: "Failed to upload image to Runware (Seedance)",
+                        details: serializeError(e),
+                    });
+                    return;
+                }
+                if (!firstUUID) {
+                    res.status(400).json({
+                        success: false,
+                        error: "Runware imageUpload did not return imageUUID",
+                    });
+                    return;
+                }
+                // 2) Create videoInference task
+                const taskUUIDCreated = (0, crypto_1.randomUUID)();
+                const task = {
+                    taskType: "videoInference",
+                    taskUUID: taskUUIDCreated,
+                    model: "bytedance:2@2",
+                    positivePrompt: prompt || "",
+                    width: 864,
+                    height: 480,
+                    duration: 5,
+                    deliveryMethod: "async",
+                    frameImages: [{ inputImage: firstUUID, frame: "first" }],
+                    providerSettings: { bytedance: { cameraFixed: false } },
+                };
+                console.log("[Seedance] Created task", {
+                    taskUUID: taskUUIDCreated,
+                    width: 864,
+                    height: 480,
+                    duration: 5,
+                });
+                const createResp = yield axios_1.default.post("https://api.runware.ai/v1", [task], { headers: runwareHeaders, timeout: 180000 });
+                const createData = createResp.data;
+                const ackItem = Array.isArray(createData === null || createData === void 0 ? void 0 : createData.data)
+                    ? createData.data.find((d) => (d === null || d === void 0 ? void 0 : d.taskType) === "videoInference") || createData.data[0]
+                    : createData === null || createData === void 0 ? void 0 : createData.data;
+                let videoUrl = (ackItem === null || ackItem === void 0 ? void 0 : ackItem.videoURL) ||
+                    (ackItem === null || ackItem === void 0 ? void 0 : ackItem.url) ||
+                    (ackItem === null || ackItem === void 0 ? void 0 : ackItem.video) ||
+                    (Array.isArray(ackItem === null || ackItem === void 0 ? void 0 : ackItem.videos) ? ackItem.videos[0] : null);
+                let pollTaskUUID = (ackItem === null || ackItem === void 0 ? void 0 : ackItem.taskUUID) || taskUUIDCreated;
+                console.log("[Seedance] Ack response", {
+                    ackTaskUUID: ackItem === null || ackItem === void 0 ? void 0 : ackItem.taskUUID,
+                    createdTaskUUID: taskUUIDCreated,
+                    chosenPollTaskUUID: pollTaskUUID,
+                    immediateVideo: !!videoUrl,
+                    status: (ackItem === null || ackItem === void 0 ? void 0 : ackItem.status) || (ackItem === null || ackItem === void 0 ? void 0 : ackItem.taskStatus),
+                });
+                // 3) Poll if no immediate URL
+                if (!videoUrl && pollTaskUUID) {
+                    const maxAttempts = 100; // ~5 min
+                    const delay = (ms) => new Promise((r) => setTimeout(r, ms));
+                    let consecutive400 = 0;
+                    let switchedToCreated = false;
+                    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+                        yield delay(3000);
+                        const pollPayload = [
+                            { taskType: "getResponse", taskUUID: pollTaskUUID },
+                        ];
+                        console.log("[Seedance] Poll attempt", {
+                            attempt,
+                            pollPayload: pollPayload[0],
+                        });
+                        try {
+                            const poll = yield axios_1.default.post("https://api.runware.ai/v1", pollPayload, { headers: runwareHeaders, timeout: 60000 });
+                            const pd = poll.data;
+                            const item = Array.isArray(pd === null || pd === void 0 ? void 0 : pd.data)
+                                ? pd.data.find((d) => (d === null || d === void 0 ? void 0 : d.taskUUID) === pollTaskUUID || (d === null || d === void 0 ? void 0 : d.videoURL)) || pd.data[0]
+                                : pd === null || pd === void 0 ? void 0 : pd.data;
+                            const status = (item === null || item === void 0 ? void 0 : item.status) || (item === null || item === void 0 ? void 0 : item.taskStatus);
+                            if (status)
+                                console.log("[Seedance] Poll status", { attempt, status });
+                            if (status === "success" || (item === null || item === void 0 ? void 0 : item.videoURL) || (item === null || item === void 0 ? void 0 : item.url)) {
+                                videoUrl =
+                                    (item === null || item === void 0 ? void 0 : item.videoURL) ||
+                                        (item === null || item === void 0 ? void 0 : item.url) ||
+                                        (item === null || item === void 0 ? void 0 : item.video) ||
+                                        (Array.isArray(item === null || item === void 0 ? void 0 : item.videos) ? item.videos[0] : null);
+                                if (videoUrl)
+                                    break;
+                            }
+                            if (status === "error" || status === "failed") {
+                                res.status(502).json({
+                                    success: false,
+                                    error: "Runware Seedance generation failed during polling",
+                                    details: pd,
+                                });
+                                return;
+                            }
+                            consecutive400 = 0; // reset on successful poll
+                        }
+                        catch (e) {
+                            const statusCode = (_b = e === null || e === void 0 ? void 0 : e.response) === null || _b === void 0 ? void 0 : _b.status;
+                            const body = (_c = e === null || e === void 0 ? void 0 : e.response) === null || _c === void 0 ? void 0 : _c.data;
+                            console.log("[Seedance] Poll error", {
+                                attempt,
+                                statusCode,
+                                body: typeof body === "object"
+                                    ? JSON.stringify(body).slice(0, 500)
+                                    : body,
+                            });
+                            if (statusCode === 400) {
+                                consecutive400++;
+                                // If repeated 400 and ack UUID differs, try switching to created taskUUID once
+                                if (!switchedToCreated &&
+                                    pollTaskUUID !== taskUUIDCreated &&
+                                    consecutive400 >= 2) {
+                                    console.log("[Seedance] Switching to created taskUUID due to repeated 400", { from: pollTaskUUID, to: taskUUIDCreated });
+                                    pollTaskUUID = taskUUIDCreated;
+                                    switchedToCreated = true;
+                                    consecutive400 = 0;
+                                }
+                                if (consecutive400 >= 5) {
+                                    res.status(502).json({
+                                        success: false,
+                                        error: "Runware Seedance polling returned repeated 400 errors",
+                                        details: body || serializeError(e),
+                                    });
+                                    return;
+                                }
+                            }
+                            continue;
+                        }
+                    }
+                }
+                if (!videoUrl) {
+                    console.log("[Seedance] Timeout - no video URL returned after polling");
+                    res.status(502).json({
+                        success: false,
+                        error: "Runware Seedance 1.0 Pro Fast did not return a video URL (timeout or missing)",
+                        details: createData,
+                    });
+                    return;
+                }
+                // 4) Download and upload to S3
+                let rwStream;
+                try {
+                    rwStream = yield axios_1.default.get(videoUrl, {
+                        responseType: "stream",
+                        timeout: 600000,
+                    });
+                    console.log("[Seedance] Download started");
+                }
+                catch (e) {
+                    console.log("[Seedance] Download error", {
+                        error: serializeError(e),
+                    });
+                    res.status(500).json({
+                        success: false,
+                        error: "Failed to download Seedance video",
+                        details: serializeError(e),
+                    });
+                    return;
+                }
+                let uploaded;
+                try {
+                    uploaded = yield uploadGeneratedVideo(feature, "seedance-pro-fast", rwStream.data);
+                    console.log("[Seedance] S3 upload success", { key: uploaded.key });
+                }
+                catch (e) {
+                    console.log("[Seedance] S3 upload error", {
+                        error: serializeError(e),
+                    });
+                    res.status(500).json({
+                        success: false,
+                        error: "Failed to upload Seedance video to S3",
+                        details: serializeError(e),
+                    });
+                    return;
+                }
+                res.status(200).json({
+                    success: true,
+                    video: {
+                        url: uploaded.signedUrl,
+                        signedUrl: uploaded.signedUrl,
+                        key: uploaded.key,
+                    },
+                    s3Key: uploaded.key,
+                    model: selectedModel,
+                    defaultApplied: selectedModel === DEFAULT_VIDEO_MODEL && !userModel,
+                });
+                return;
+            }
+            catch (err) {
+                console.error("Runware Seedance 1.0 Pro Fast error:", ((_d = err === null || err === void 0 ? void 0 : err.response) === null || _d === void 0 ? void 0 : _d.data) || err);
+                res.status(500).json({
+                    success: false,
+                    error: "Seedance 1.0 Pro Fast generation failed",
+                    details: serializeError(err),
+                });
+                return;
+            }
+        }
+        // Runware LTX-2 Pro (Lightricks) Image-to-Video
+        if (isRunwareLTX2Pro) {
+            try {
+                console.log("[LTX2] Start generation", {
+                    feature,
+                    rawModel,
+                    imageCloudUrlInitial: imageCloudUrl === null || imageCloudUrl === void 0 ? void 0 : imageCloudUrl.slice(0, 120),
+                });
+                const runwareHeaders = {
+                    Authorization: `Bearer ${process.env.RUNWARE_API_KEY || process.env.RUNWARE_KEY}`,
+                    "Content-Type": "application/json",
+                };
+                // 1) Upload first frame to get imageUUID
+                const uploadPayload = [
+                    {
+                        taskType: "imageUpload",
+                        taskUUID: (0, crypto_1.randomUUID)(),
+                        image: imageCloudUrl,
+                    },
+                ];
+                let firstUUID;
+                try {
+                    const up = yield axios_1.default.post("https://api.runware.ai/v1", uploadPayload, {
+                        headers: runwareHeaders,
+                        timeout: 180000,
+                    });
+                    const d = up.data;
+                    const obj = Array.isArray(d === null || d === void 0 ? void 0 : d.data) ? d.data[0] : d === null || d === void 0 ? void 0 : d.data;
+                    firstUUID = (obj === null || obj === void 0 ? void 0 : obj.imageUUID) || (obj === null || obj === void 0 ? void 0 : obj.imageUuid);
+                    console.log("[LTX2] imageUpload success", { firstUUID });
+                }
+                catch (e) {
+                    console.error("[LTX2] imageUpload failed:", ((_e = e === null || e === void 0 ? void 0 : e.response) === null || _e === void 0 ? void 0 : _e.data) || (e === null || e === void 0 ? void 0 : e.message) || e);
+                    res.status(400).json({
+                        success: false,
+                        error: "Failed to upload image to Runware (LTX-2)",
+                        details: serializeError(e),
+                    });
+                    return;
+                }
+                if (!firstUUID) {
+                    res.status(400).json({
+                        success: false,
+                        error: "Runware imageUpload did not return imageUUID",
+                    });
+                    return;
+                }
+                // Defaults per docs: 1080p, 6/8/10 sec; enable audio
+                const width = Number(process.env.LTX2_WIDTH || 1920);
+                const height = Number(process.env.LTX2_HEIGHT || 1080);
+                const duration = Number(process.env.LTX2_DURATION || 8);
+                const generateAudio = String(process.env.LTX2_AUDIO || "true") === "true";
+                // 2) Create videoInference task
+                const createdTaskUUID = (0, crypto_1.randomUUID)();
+                const task = {
+                    taskType: "videoInference",
+                    taskUUID: createdTaskUUID,
+                    model: "lightricks:2@0",
+                    positivePrompt: prompt || "",
+                    duration,
+                    width,
+                    height,
+                    frameImages: [{ inputImage: firstUUID, frame: "first" }],
+                    providerSettings: { lightricks: { generateAudio } },
+                };
+                console.log("[LTX2] Created task", {
+                    taskUUID: createdTaskUUID,
+                    width,
+                    height,
+                    duration,
+                    generateAudio,
+                });
+                const createResp = yield axios_1.default.post("https://api.runware.ai/v1", [task], {
+                    headers: runwareHeaders,
+                    timeout: 180000,
+                });
+                const data = createResp.data;
+                const ackItem = Array.isArray(data === null || data === void 0 ? void 0 : data.data)
+                    ? data.data.find((d) => (d === null || d === void 0 ? void 0 : d.taskType) === "videoInference") ||
+                        data.data[0]
+                    : data === null || data === void 0 ? void 0 : data.data;
+                let videoUrl = (ackItem === null || ackItem === void 0 ? void 0 : ackItem.videoURL) ||
+                    (ackItem === null || ackItem === void 0 ? void 0 : ackItem.url) ||
+                    (ackItem === null || ackItem === void 0 ? void 0 : ackItem.video) ||
+                    (Array.isArray(ackItem === null || ackItem === void 0 ? void 0 : ackItem.videos) ? ackItem.videos[0] : null);
+                let pollTaskUUID = (ackItem === null || ackItem === void 0 ? void 0 : ackItem.taskUUID) || createdTaskUUID;
+                console.log("[LTX2] Ack response", {
+                    ackTaskUUID: ackItem === null || ackItem === void 0 ? void 0 : ackItem.taskUUID,
+                    createdTaskUUID,
+                    chosenPollTaskUUID: pollTaskUUID,
+                    immediateVideo: !!videoUrl,
+                    status: (ackItem === null || ackItem === void 0 ? void 0 : ackItem.status) || (ackItem === null || ackItem === void 0 ? void 0 : ackItem.taskStatus),
+                });
+                // 3) Poll for completion if needed
+                if (!videoUrl && pollTaskUUID) {
+                    const maxAttempts = 100;
+                    const delay = (ms) => new Promise((r) => setTimeout(r, ms));
+                    let consecutive400 = 0;
+                    let switched = false;
+                    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+                        yield delay(3000);
+                        const pollPayload = [
+                            { taskType: "getResponse", taskUUID: pollTaskUUID },
+                        ];
+                        console.log("[LTX2] Poll attempt", {
+                            attempt,
+                            pollPayload: pollPayload[0],
+                        });
+                        try {
+                            const poll = yield axios_1.default.post("https://api.runware.ai/v1", pollPayload, {
+                                headers: runwareHeaders,
+                                timeout: 60000,
+                            });
+                            const pd = poll.data;
+                            const item = Array.isArray(pd === null || pd === void 0 ? void 0 : pd.data)
+                                ? pd.data.find((d) => (d === null || d === void 0 ? void 0 : d.taskUUID) === pollTaskUUID || (d === null || d === void 0 ? void 0 : d.videoURL)) || pd.data[0]
+                                : pd === null || pd === void 0 ? void 0 : pd.data;
+                            const status = (item === null || item === void 0 ? void 0 : item.status) || (item === null || item === void 0 ? void 0 : item.taskStatus);
+                            if (status)
+                                console.log("[LTX2] Poll status", { attempt, status });
+                            if (status === "success" || (item === null || item === void 0 ? void 0 : item.videoURL) || (item === null || item === void 0 ? void 0 : item.url)) {
+                                videoUrl =
+                                    (item === null || item === void 0 ? void 0 : item.videoURL) ||
+                                        (item === null || item === void 0 ? void 0 : item.url) ||
+                                        (item === null || item === void 0 ? void 0 : item.video) ||
+                                        (Array.isArray(item === null || item === void 0 ? void 0 : item.videos) ? item.videos[0] : null);
+                                if (videoUrl)
+                                    break;
+                            }
+                            if (status === "error" || status === "failed") {
+                                res.status(502).json({
+                                    success: false,
+                                    error: "LTX-2 generation failed during polling",
+                                    details: pd,
+                                });
+                                return;
+                            }
+                            consecutive400 = 0;
+                        }
+                        catch (e) {
+                            const statusCode = (_f = e === null || e === void 0 ? void 0 : e.response) === null || _f === void 0 ? void 0 : _f.status;
+                            const body = (_g = e === null || e === void 0 ? void 0 : e.response) === null || _g === void 0 ? void 0 : _g.data;
+                            console.log("[LTX2] Poll error", {
+                                attempt,
+                                statusCode,
+                                body: typeof body === "object"
+                                    ? JSON.stringify(body).slice(0, 500)
+                                    : body,
+                            });
+                            if (statusCode === 400) {
+                                consecutive400++;
+                                if (!switched &&
+                                    pollTaskUUID !== createdTaskUUID &&
+                                    consecutive400 >= 2) {
+                                    console.log("[LTX2] Switching poll taskUUID to created one due to repeated 400", { from: pollTaskUUID, to: createdTaskUUID });
+                                    pollTaskUUID = createdTaskUUID;
+                                    switched = true;
+                                    consecutive400 = 0;
+                                }
+                                if (consecutive400 >= 5) {
+                                    res.status(502).json({
+                                        success: false,
+                                        error: "LTX-2 polling returned repeated 400 errors",
+                                        details: body || serializeError(e),
+                                    });
+                                    return;
+                                }
+                            }
+                            continue;
+                        }
+                    }
+                }
+                if (!videoUrl) {
+                    console.log("[LTX2] Timeout - no video URL returned after polling");
+                    res.status(502).json({
+                        success: false,
+                        error: "LTX-2 did not return a video URL (timeout or missing)",
+                        details: data,
+                    });
+                    return;
+                }
+                // 4) Download and upload to S3
+                let ltxStream;
+                try {
+                    ltxStream = yield axios_1.default.get(videoUrl, {
+                        responseType: "stream",
+                        timeout: 600000,
+                    });
+                }
+                catch (e) {
+                    res.status(500).json({
+                        success: false,
+                        error: "Failed to download LTX-2 video",
+                        details: serializeError(e),
+                    });
+                    return;
+                }
+                let uploaded;
+                try {
+                    uploaded = yield uploadGeneratedVideo(feature, "ltx2-pro", ltxStream.data);
+                }
+                catch (e) {
+                    res.status(500).json({
+                        success: false,
+                        error: "Failed to upload LTX-2 video to S3",
+                        details: serializeError(e),
+                    });
+                    return;
+                }
+                res.status(200).json({
+                    success: true,
+                    video: {
+                        url: uploaded.signedUrl,
+                        signedUrl: uploaded.signedUrl,
+                        key: uploaded.key,
+                    },
+                    s3Key: uploaded.key,
+                    model: selectedModel,
+                    defaultApplied: selectedModel === DEFAULT_VIDEO_MODEL && !userModel,
+                });
+                return;
+            }
+            catch (err) {
+                console.error("[LTX2] Fatal error:", ((_h = err === null || err === void 0 ? void 0 : err.response) === null || _h === void 0 ? void 0 : _h.data) || err);
+                res.status(500).json({
+                    success: false,
+                    error: "LTX-2 Pro generation failed",
+                    details: serializeError(err),
+                });
+                return;
+            }
+        }
+        // Runware LTX-2 Fast (Lightricks) Image-to-Video
+        if (isRunwareLTX2Fast) {
+            try {
+                console.log("[LTX2F] Start generation", {
+                    feature,
+                    rawModel,
+                    imageCloudUrlInitial: imageCloudUrl === null || imageCloudUrl === void 0 ? void 0 : imageCloudUrl.slice(0, 120),
+                });
+                const runwareHeaders = {
+                    Authorization: `Bearer ${process.env.RUNWARE_API_KEY || process.env.RUNWARE_KEY}`,
+                    "Content-Type": "application/json",
+                };
+                // 1) Upload first frame to get imageUUID
+                const uploadPayload = [
+                    {
+                        taskType: "imageUpload",
+                        taskUUID: (0, crypto_1.randomUUID)(),
+                        image: imageCloudUrl,
+                    },
+                ];
+                let firstUUID;
+                try {
+                    const up = yield axios_1.default.post("https://api.runware.ai/v1", uploadPayload, {
+                        headers: runwareHeaders,
+                        timeout: 180000,
+                    });
+                    const d = up.data;
+                    const obj = Array.isArray(d === null || d === void 0 ? void 0 : d.data) ? d.data[0] : d === null || d === void 0 ? void 0 : d.data;
+                    firstUUID = (obj === null || obj === void 0 ? void 0 : obj.imageUUID) || (obj === null || obj === void 0 ? void 0 : obj.imageUuid);
+                    console.log("[LTX2F] imageUpload success", { firstUUID });
+                }
+                catch (e) {
+                    console.error("[LTX2F] imageUpload failed:", ((_j = e === null || e === void 0 ? void 0 : e.response) === null || _j === void 0 ? void 0 : _j.data) || (e === null || e === void 0 ? void 0 : e.message) || e);
+                    res.status(400).json({
+                        success: false,
+                        error: "Failed to upload image to Runware (LTX-2 Fast)",
+                        details: serializeError(e),
+                    });
+                    return;
+                }
+                if (!firstUUID) {
+                    res.status(400).json({
+                        success: false,
+                        error: "Runware imageUpload did not return imageUUID",
+                    });
+                    return;
+                }
+                // Defaults: use env overrides if provided
+                const width = Number(process.env.LTX2F_WIDTH || 1920);
+                const height = Number(process.env.LTX2F_HEIGHT || 1080);
+                const duration = Number(process.env.LTX2F_DURATION || 8);
+                const generateAudio = String(process.env.LTX2F_AUDIO || "true") === "true";
+                // 2) Create videoInference task (lightricks:2@1)
+                const createdTaskUUID = (0, crypto_1.randomUUID)();
+                const task = {
+                    taskType: "videoInference",
+                    taskUUID: createdTaskUUID,
+                    model: "lightricks:2@1",
+                    positivePrompt: prompt || "",
+                    duration,
+                    width,
+                    height,
+                    frameImages: [{ inputImage: firstUUID, frame: "first" }],
+                    providerSettings: { lightricks: { generateAudio } },
+                };
+                console.log("[LTX2F] Created task", {
+                    taskUUID: createdTaskUUID,
+                    width,
+                    height,
+                    duration,
+                    generateAudio,
+                });
+                const createResp = yield axios_1.default.post("https://api.runware.ai/v1", [task], {
+                    headers: runwareHeaders,
+                    timeout: 180000,
+                });
+                const data = createResp.data;
+                const ackItem = Array.isArray(data === null || data === void 0 ? void 0 : data.data)
+                    ? data.data.find((d) => (d === null || d === void 0 ? void 0 : d.taskType) === "videoInference") ||
+                        data.data[0]
+                    : data === null || data === void 0 ? void 0 : data.data;
+                let videoUrl = (ackItem === null || ackItem === void 0 ? void 0 : ackItem.videoURL) ||
+                    (ackItem === null || ackItem === void 0 ? void 0 : ackItem.url) ||
+                    (ackItem === null || ackItem === void 0 ? void 0 : ackItem.video) ||
+                    (Array.isArray(ackItem === null || ackItem === void 0 ? void 0 : ackItem.videos) ? ackItem.videos[0] : null);
+                let pollTaskUUID = (ackItem === null || ackItem === void 0 ? void 0 : ackItem.taskUUID) || createdTaskUUID;
+                console.log("[LTX2F] Ack response", {
+                    ackTaskUUID: ackItem === null || ackItem === void 0 ? void 0 : ackItem.taskUUID,
+                    createdTaskUUID,
+                    chosenPollTaskUUID: pollTaskUUID,
+                    immediateVideo: !!videoUrl,
+                    status: (ackItem === null || ackItem === void 0 ? void 0 : ackItem.status) || (ackItem === null || ackItem === void 0 ? void 0 : ackItem.taskStatus),
+                });
+                // 3) Poll for completion if needed
+                if (!videoUrl && pollTaskUUID) {
+                    const maxAttempts = 100;
+                    const delay = (ms) => new Promise((r) => setTimeout(r, ms));
+                    let consecutive400 = 0;
+                    let switched = false;
+                    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+                        yield delay(3000);
+                        const pollPayload = [
+                            { taskType: "getResponse", taskUUID: pollTaskUUID },
+                        ];
+                        console.log("[LTX2F] Poll attempt", {
+                            attempt,
+                            pollPayload: pollPayload[0],
+                        });
+                        try {
+                            const poll = yield axios_1.default.post("https://api.runware.ai/v1", pollPayload, {
+                                headers: runwareHeaders,
+                                timeout: 60000,
+                            });
+                            const pd = poll.data;
+                            const item = Array.isArray(pd === null || pd === void 0 ? void 0 : pd.data)
+                                ? pd.data.find((d) => (d === null || d === void 0 ? void 0 : d.taskUUID) === pollTaskUUID || (d === null || d === void 0 ? void 0 : d.videoURL)) || pd.data[0]
+                                : pd === null || pd === void 0 ? void 0 : pd.data;
+                            const status = (item === null || item === void 0 ? void 0 : item.status) || (item === null || item === void 0 ? void 0 : item.taskStatus);
+                            if (status)
+                                console.log("[LTX2F] Poll status", { attempt, status });
+                            if (status === "success" || (item === null || item === void 0 ? void 0 : item.videoURL) || (item === null || item === void 0 ? void 0 : item.url)) {
+                                videoUrl =
+                                    (item === null || item === void 0 ? void 0 : item.videoURL) ||
+                                        (item === null || item === void 0 ? void 0 : item.url) ||
+                                        (item === null || item === void 0 ? void 0 : item.video) ||
+                                        (Array.isArray(item === null || item === void 0 ? void 0 : item.videos) ? item.videos[0] : null);
+                                if (videoUrl)
+                                    break;
+                            }
+                            if (status === "error" || status === "failed") {
+                                res.status(502).json({
+                                    success: false,
+                                    error: "LTX-2 Fast generation failed during polling",
+                                    details: pd,
+                                });
+                                return;
+                            }
+                            consecutive400 = 0;
+                        }
+                        catch (e) {
+                            const statusCode = (_k = e === null || e === void 0 ? void 0 : e.response) === null || _k === void 0 ? void 0 : _k.status;
+                            const body = (_l = e === null || e === void 0 ? void 0 : e.response) === null || _l === void 0 ? void 0 : _l.data;
+                            console.log("[LTX2F] Poll error", {
+                                attempt,
+                                statusCode,
+                                body: typeof body === "object"
+                                    ? JSON.stringify(body).slice(0, 500)
+                                    : body,
+                            });
+                            if (statusCode === 400) {
+                                consecutive400++;
+                                if (!switched &&
+                                    pollTaskUUID !== createdTaskUUID &&
+                                    consecutive400 >= 2) {
+                                    console.log("[LTX2F] Switching poll taskUUID to created one due to repeated 400", { from: pollTaskUUID, to: createdTaskUUID });
+                                    pollTaskUUID = createdTaskUUID;
+                                    switched = true;
+                                    consecutive400 = 0;
+                                }
+                                if (consecutive400 >= 5) {
+                                    res.status(502).json({
+                                        success: false,
+                                        error: "LTX-2 Fast polling returned repeated 400 errors",
+                                        details: body || serializeError(e),
+                                    });
+                                    return;
+                                }
+                            }
+                            continue;
+                        }
+                    }
+                }
+                if (!videoUrl) {
+                    console.log("[LTX2F] Timeout - no video URL returned after polling");
+                    res.status(502).json({
+                        success: false,
+                        error: "LTX-2 Fast did not return a video URL (timeout or missing)",
+                        details: data,
+                    });
+                    return;
+                }
+                // 4) Download and upload to S3
+                let ltxStream;
+                try {
+                    ltxStream = yield axios_1.default.get(videoUrl, {
+                        responseType: "stream",
+                        timeout: 600000,
+                    });
+                }
+                catch (e) {
+                    res.status(500).json({
+                        success: false,
+                        error: "Failed to download LTX-2 Fast video",
+                        details: serializeError(e),
+                    });
+                    return;
+                }
+                let uploaded;
+                try {
+                    uploaded = yield uploadGeneratedVideo(feature, "ltx2-fast", ltxStream.data);
+                }
+                catch (e) {
+                    res.status(500).json({
+                        success: false,
+                        error: "Failed to upload LTX-2 Fast video to S3",
+                        details: serializeError(e),
+                    });
+                    return;
+                }
+                res.status(200).json({
+                    success: true,
+                    video: {
+                        url: uploaded.signedUrl,
+                        signedUrl: uploaded.signedUrl,
+                        key: uploaded.key,
+                    },
+                    s3Key: uploaded.key,
+                    model: selectedModel,
+                    defaultApplied: selectedModel === DEFAULT_VIDEO_MODEL && !userModel,
+                });
+                return;
+            }
+            catch (err) {
+                console.error("[LTX2F] Fatal error:", ((_m = err === null || err === void 0 ? void 0 : err.response) === null || _m === void 0 ? void 0 : _m.data) || err);
+                res.status(500).json({
+                    success: false,
+                    error: "LTX-2 Fast generation failed",
+                    details: serializeError(err),
+                });
+                return;
+            }
+        }
+        // Runware Vidu Q2 Turbo (Image-to-Video, first/optional last frame)
+        if (isRunwareViduQ2Turbo) {
+            try {
+                console.log("[VIDUQ2] Start generation", {
+                    feature,
+                    rawModel,
+                    imageCloudUrlInitial: imageCloudUrl === null || imageCloudUrl === void 0 ? void 0 : imageCloudUrl.slice(0, 120),
+                    lastFrameProvided: !!lastFrameCloudUrl,
+                });
+                const runwareHeaders = {
+                    Authorization: `Bearer ${process.env.RUNWARE_API_KEY || process.env.RUNWARE_KEY}`,
+                    "Content-Type": "application/json",
+                };
+                // 1) Upload frame images to Runware to obtain imageUUIDs
+                const uploadOne = (imgUrl) => __awaiter(void 0, void 0, void 0, function* () {
+                    const payload = [
+                        {
+                            taskType: "imageUpload",
+                            taskUUID: (0, crypto_1.randomUUID)(),
+                            image: imgUrl,
+                        },
+                    ];
+                    const r = yield axios_1.default.post("https://api.runware.ai/v1", payload, {
+                        headers: runwareHeaders,
+                        timeout: 180000,
+                    });
+                    const d = r.data;
+                    const obj = Array.isArray(d === null || d === void 0 ? void 0 : d.data) ? d.data[0] : d === null || d === void 0 ? void 0 : d.data;
+                    return (obj === null || obj === void 0 ? void 0 : obj.imageUUID) || (obj === null || obj === void 0 ? void 0 : obj.imageUuid);
+                });
+                let firstUUID;
+                try {
+                    firstUUID = yield uploadOne(imageCloudUrl);
+                    console.log("[VIDUQ2] imageUpload first success", { firstUUID });
+                }
+                catch (e) {
+                    console.error("[VIDUQ2] imageUpload first failed:", ((_o = e === null || e === void 0 ? void 0 : e.response) === null || _o === void 0 ? void 0 : _o.data) || (e === null || e === void 0 ? void 0 : e.message) || e);
+                    res.status(400).json({
+                        success: false,
+                        error: "Failed to upload first frame to Runware (Vidu Q2)",
+                        details: serializeError(e),
+                    });
+                    return;
+                }
+                if (!firstUUID) {
+                    res.status(400).json({
+                        success: false,
+                        error: "Runware imageUpload did not return imageUUID",
+                    });
+                    return;
+                }
+                let lastUUID;
+                if (lastFrameCloudUrl) {
+                    try {
+                        lastUUID = yield uploadOne(lastFrameCloudUrl);
+                        console.log("[VIDUQ2] imageUpload last success", { lastUUID });
+                    }
+                    catch (e) {
+                        console.warn("[VIDUQ2] imageUpload last failed (continuing as single frame)", ((_p = e === null || e === void 0 ? void 0 : e.response) === null || _p === void 0 ? void 0 : _p.data) || (e === null || e === void 0 ? void 0 : e.message) || e);
+                    }
+                }
+                // Model-specific params
+                const duration = Number(process.env.VIDUQ2_DURATION || 5);
+                const movementAmplitude = process.env.VIDUQ2_MOVEMENT_AMPLITUDE || "medium"; // low|medium|large
+                const bgm = String(process.env.VIDUQ2_BGM || "false") === "true";
+                // 2) Create videoInference task (omit width/height when using frameImages)
+                const createdTaskUUID = (0, crypto_1.randomUUID)();
+                const frameImages = [
+                    { inputImage: firstUUID, frame: "first" },
+                ];
+                if (lastUUID)
+                    frameImages.push({ inputImage: lastUUID, frame: "last" });
+                const task = {
+                    taskType: "videoInference",
+                    taskUUID: createdTaskUUID,
+                    model: "vidu:3@2",
+                    positivePrompt: prompt || "",
+                    duration,
+                    frameImages,
+                    providerSettings: { vidu: { movementAmplitude, bgm } },
+                };
+                console.log("[VIDUQ2] Created task", {
+                    taskUUID: createdTaskUUID,
+                    duration,
+                    movementAmplitude,
+                    bgm,
+                    frames: frameImages.length,
+                });
+                const createResp = yield axios_1.default.post("https://api.runware.ai/v1", [task], { headers: runwareHeaders, timeout: 180000 });
+                const data = createResp.data;
+                const ackItem = Array.isArray(data === null || data === void 0 ? void 0 : data.data)
+                    ? data.data.find((d) => (d === null || d === void 0 ? void 0 : d.taskType) === "videoInference") ||
+                        data.data[0]
+                    : data === null || data === void 0 ? void 0 : data.data;
+                let videoUrl = (ackItem === null || ackItem === void 0 ? void 0 : ackItem.videoURL) ||
+                    (ackItem === null || ackItem === void 0 ? void 0 : ackItem.url) ||
+                    (ackItem === null || ackItem === void 0 ? void 0 : ackItem.video) ||
+                    (Array.isArray(ackItem === null || ackItem === void 0 ? void 0 : ackItem.videos) ? ackItem.videos[0] : null);
+                let pollTaskUUID = (ackItem === null || ackItem === void 0 ? void 0 : ackItem.taskUUID) || createdTaskUUID;
+                console.log("[VIDUQ2] Ack response", {
+                    ackTaskUUID: ackItem === null || ackItem === void 0 ? void 0 : ackItem.taskUUID,
+                    createdTaskUUID,
+                    chosenPollTaskUUID: pollTaskUUID,
+                    immediateVideo: !!videoUrl,
+                    status: (ackItem === null || ackItem === void 0 ? void 0 : ackItem.status) || (ackItem === null || ackItem === void 0 ? void 0 : ackItem.taskStatus),
+                });
+                // 3) Poll for completion if needed
+                if (!videoUrl && pollTaskUUID) {
+                    const maxAttempts = 100;
+                    const delay = (ms) => new Promise((r) => setTimeout(r, ms));
+                    let consecutive400 = 0;
+                    let switched = false;
+                    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+                        yield delay(3000);
+                        const pollPayload = [
+                            { taskType: "getResponse", taskUUID: pollTaskUUID },
+                        ];
+                        console.log("[VIDUQ2] Poll attempt", {
+                            attempt,
+                            pollPayload: pollPayload[0],
+                        });
+                        try {
+                            const poll = yield axios_1.default.post("https://api.runware.ai/v1", pollPayload, { headers: runwareHeaders, timeout: 60000 });
+                            const pd = poll.data;
+                            const item = Array.isArray(pd === null || pd === void 0 ? void 0 : pd.data)
+                                ? pd.data.find((d) => (d === null || d === void 0 ? void 0 : d.taskUUID) === pollTaskUUID || (d === null || d === void 0 ? void 0 : d.videoURL)) || pd.data[0]
+                                : pd === null || pd === void 0 ? void 0 : pd.data;
+                            const status = (item === null || item === void 0 ? void 0 : item.status) || (item === null || item === void 0 ? void 0 : item.taskStatus);
+                            if (status)
+                                console.log("[VIDUQ2] Poll status", { attempt, status });
+                            if (status === "success" || (item === null || item === void 0 ? void 0 : item.videoURL) || (item === null || item === void 0 ? void 0 : item.url)) {
+                                videoUrl =
+                                    (item === null || item === void 0 ? void 0 : item.videoURL) ||
+                                        (item === null || item === void 0 ? void 0 : item.url) ||
+                                        (item === null || item === void 0 ? void 0 : item.video) ||
+                                        (Array.isArray(item === null || item === void 0 ? void 0 : item.videos) ? item.videos[0] : null);
+                                if (videoUrl)
+                                    break;
+                            }
+                            if (status === "error" || status === "failed") {
+                                res.status(502).json({
+                                    success: false,
+                                    error: "Vidu Q2 Turbo generation failed during polling",
+                                    details: pd,
+                                });
+                                return;
+                            }
+                            consecutive400 = 0;
+                        }
+                        catch (e) {
+                            const statusCode = (_q = e === null || e === void 0 ? void 0 : e.response) === null || _q === void 0 ? void 0 : _q.status;
+                            const body = (_r = e === null || e === void 0 ? void 0 : e.response) === null || _r === void 0 ? void 0 : _r.data;
+                            console.log("[VIDUQ2] Poll error", {
+                                attempt,
+                                statusCode,
+                                body: typeof body === "object"
+                                    ? JSON.stringify(body).slice(0, 500)
+                                    : body,
+                            });
+                            if (statusCode === 400) {
+                                consecutive400++;
+                                if (!switched &&
+                                    pollTaskUUID !== createdTaskUUID &&
+                                    consecutive400 >= 2) {
+                                    console.log("[VIDUQ2] Switching poll taskUUID to created one due to repeated 400", { from: pollTaskUUID, to: createdTaskUUID });
+                                    pollTaskUUID = createdTaskUUID;
+                                    switched = true;
+                                    consecutive400 = 0;
+                                }
+                                if (consecutive400 >= 5) {
+                                    res.status(502).json({
+                                        success: false,
+                                        error: "Vidu Q2 Turbo polling returned repeated 400 errors",
+                                        details: body || serializeError(e),
+                                    });
+                                    return;
+                                }
+                            }
+                            continue;
+                        }
+                    }
+                }
+                if (!videoUrl) {
+                    console.log("[VIDUQ2] Timeout - no video URL returned after polling");
+                    res.status(502).json({
+                        success: false,
+                        error: "Vidu Q2 Turbo did not return a video URL (timeout or missing)",
+                        details: data,
+                    });
+                    return;
+                }
+                // 4) Download and upload to S3
+                let vq2Stream;
+                try {
+                    vq2Stream = yield axios_1.default.get(videoUrl, {
+                        responseType: "stream",
+                        timeout: 600000,
+                    });
+                }
+                catch (e) {
+                    res.status(500).json({
+                        success: false,
+                        error: "Failed to download Vidu Q2 Turbo video",
+                        details: serializeError(e),
+                    });
+                    return;
+                }
+                let uploaded;
+                try {
+                    uploaded = yield uploadGeneratedVideo(feature, "viduq2-turbo", vq2Stream.data);
+                }
+                catch (e) {
+                    res.status(500).json({
+                        success: false,
+                        error: "Failed to upload Vidu Q2 Turbo video to S3",
+                        details: serializeError(e),
+                    });
+                    return;
+                }
+                res.status(200).json({
+                    success: true,
+                    video: {
+                        url: uploaded.signedUrl,
+                        signedUrl: uploaded.signedUrl,
+                        key: uploaded.key,
+                    },
+                    s3Key: uploaded.key,
+                });
+                return;
+            }
+            catch (err) {
+                console.error("[VIDUQ2] Fatal error:", ((_s = err === null || err === void 0 ? void 0 : err.response) === null || _s === void 0 ? void 0 : _s.data) || err);
+                res.status(500).json({
+                    success: false,
+                    error: "Vidu Q2 Turbo generation failed",
+                    details: serializeError(err),
+                });
+                return;
+            }
+        }
+        // Runware Google Veo 3.1 (with audio) Image-to-Video
+        if (isRunwareVeo31) {
+            try {
+                const runwareHeaders = {
+                    Authorization: `Bearer ${process.env.RUNWARE_API_KEY || process.env.RUNWARE_KEY}`,
+                    "Content-Type": "application/json",
+                };
+                console.log("Runware API KEY: ", process.env.RUNWARE_API_KEY || process.env.RUNWARE_KEY);
+                // Helper to upload an image url and get imageUUID
+                const uploadToRunware = (img) => __awaiter(void 0, void 0, void 0, function* () {
+                    var _a;
+                    try {
+                        const uploadPayload = [
+                            { taskType: "imageUpload", taskUUID: (0, crypto_1.randomUUID)(), image: img },
+                        ];
+                        const r = yield axios_1.default.post("https://api.runware.ai/v1", uploadPayload, {
+                            headers: runwareHeaders,
+                            timeout: 180000,
+                            maxBodyLength: Infinity,
+                            maxContentLength: Infinity,
+                        });
+                        const d = r.data;
+                        const obj = Array.isArray(d === null || d === void 0 ? void 0 : d.data) ? d.data[0] : d === null || d === void 0 ? void 0 : d.data;
+                        return (obj === null || obj === void 0 ? void 0 : obj.imageUUID) || (obj === null || obj === void 0 ? void 0 : obj.imageUuid);
+                    }
+                    catch (e) {
+                        console.warn("Runware imageUpload failed (Veo3.1):", ((_a = e === null || e === void 0 ? void 0 : e.response) === null || _a === void 0 ? void 0 : _a.data) || (e === null || e === void 0 ? void 0 : e.message) || e);
+                        return undefined;
+                    }
+                });
+                // Build frameImages array
+                const frameImages = [];
+                if (imageCloudUrl) {
+                    const firstUUID = yield uploadToRunware(imageCloudUrl);
+                    if (!firstUUID) {
+                        throw new Error("Runware imageUpload did not return imageUUID for the first frame (Veo3.1)");
+                    }
+                    frameImages.push({ inputImage: firstUUID, frame: "first" });
+                }
+                if (lastFrameCloudUrl) {
+                    const lastUUID = yield uploadToRunware(lastFrameCloudUrl);
+                    if (!lastUUID) {
+                        throw new Error("Runware imageUpload did not return imageUUID for the last frame (Veo3.1)");
+                    }
+                    frameImages.push({ inputImage: lastUUID, frame: "last" });
+                }
+                const width = Number(process.env.VEO31_WIDTH || 1280);
+                const height = Number(process.env.VEO31_HEIGHT || 720);
+                const duration = Number(process.env.VEO31_DURATION || 8);
+                const createdTaskUUID = (0, crypto_1.randomUUID)();
+                const task = {
+                    taskType: "videoInference",
+                    taskUUID: createdTaskUUID,
+                    model: "google:3@2",
+                    positivePrompt: prompt || "",
+                    width,
+                    height,
+                    duration,
+                    deliveryMethod: "async",
+                    providerSettings: { google: { generateAudio: true } },
+                    frameImages,
+                };
+                console.log("veo 3.1 task:", task);
+                const runwareResp = yield axios_1.default.post("https://api.runware.ai/v1", [task], {
+                    headers: runwareHeaders,
+                    timeout: 180000,
+                });
+                const data = runwareResp.data;
+                console.log("veo 3.1 resp data: ", data);
+                const ackItem = Array.isArray(data === null || data === void 0 ? void 0 : data.data)
+                    ? data.data.find((d) => (d === null || d === void 0 ? void 0 : d.taskType) === "videoInference") ||
+                        data.data[0]
+                    : data === null || data === void 0 ? void 0 : data.data;
+                let videoUrl = (ackItem === null || ackItem === void 0 ? void 0 : ackItem.videoURL) ||
+                    (ackItem === null || ackItem === void 0 ? void 0 : ackItem.url) ||
+                    (ackItem === null || ackItem === void 0 ? void 0 : ackItem.video) ||
+                    (Array.isArray(ackItem === null || ackItem === void 0 ? void 0 : ackItem.videos) ? ackItem.videos[0] : null);
+                let pollTaskUUID = (ackItem === null || ackItem === void 0 ? void 0 : ackItem.taskUUID) || createdTaskUUID;
+                // Poll using getResponse with 400 fallback
+                if (!videoUrl && pollTaskUUID) {
+                    const maxAttempts = 100;
+                    const delay = (ms) => new Promise((r) => setTimeout(r, ms));
+                    let consecutive400 = 0;
+                    let switched = false;
+                    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+                        yield delay(3000);
+                        const pollPayload = [
+                            {
+                                taskType: "getResponse",
+                                taskUUID: pollTaskUUID,
+                            },
+                        ];
+                        try {
+                            const poll = yield axios_1.default.post("https://api.runware.ai/v1", pollPayload, { headers: runwareHeaders, timeout: 60000 });
+                            console.log("poll payload:", pollPayload);
+                            const pd = poll.data;
+                            console.log("poll data: ", pd);
+                            const item = Array.isArray(pd === null || pd === void 0 ? void 0 : pd.data)
+                                ? pd.data.find((d) => (d === null || d === void 0 ? void 0 : d.taskUUID) === pollTaskUUID || (d === null || d === void 0 ? void 0 : d.videoURL)) || pd.data[0]
+                                : pd === null || pd === void 0 ? void 0 : pd.data;
+                            const status = (item === null || item === void 0 ? void 0 : item.status) || (item === null || item === void 0 ? void 0 : item.taskStatus);
+                            if (status === "success" || (item === null || item === void 0 ? void 0 : item.videoURL) || (item === null || item === void 0 ? void 0 : item.url)) {
+                                videoUrl =
+                                    (item === null || item === void 0 ? void 0 : item.videoURL) ||
+                                        (item === null || item === void 0 ? void 0 : item.url) ||
+                                        (item === null || item === void 0 ? void 0 : item.video) ||
+                                        (Array.isArray(item === null || item === void 0 ? void 0 : item.videos) ? item.videos[0] : null);
+                                if (videoUrl)
+                                    break;
+                            }
+                            if (status === "error" || status === "failed") {
+                                const providerErr = extractRunwareError(pd) || {};
+                                res.status(422).json({
+                                    success: false,
+                                    error: providerErr.responseContent ||
+                                        providerErr.message ||
+                                        "Runware Veo 3.1 returned error during polling",
+                                    providerError: providerErr,
+                                    details: pd,
+                                });
+                                return;
+                            }
+                            consecutive400 = 0;
+                        }
+                        catch (e) {
+                            const statusCode = (_t = e === null || e === void 0 ? void 0 : e.response) === null || _t === void 0 ? void 0 : _t.status;
+                            const body = (_u = e === null || e === void 0 ? void 0 : e.response) === null || _u === void 0 ? void 0 : _u.data;
+                            console.log("Veo 3.1 poll error", {
+                                attempt,
+                                statusCode,
+                                body: typeof body === "object"
+                                    ? JSON.stringify(body).slice(0, 500)
+                                    : body,
+                            });
+                            if (statusCode === 400) {
+                                consecutive400++;
+                                if (!switched &&
+                                    pollTaskUUID !== createdTaskUUID &&
+                                    consecutive400 >= 2) {
+                                    pollTaskUUID = createdTaskUUID;
+                                    switched = true;
+                                    consecutive400 = 0;
+                                }
+                                if (consecutive400 >= 5) {
+                                    const providerErr = extractRunwareError(body) || {};
+                                    res.status(422).json({
+                                        success: false,
+                                        error: providerErr.responseContent ||
+                                            providerErr.message ||
+                                            "Runware Veo 3.1 polling returned repeated 400 errors",
+                                        providerError: providerErr,
+                                        details: body || (e === null || e === void 0 ? void 0 : e.message),
+                                    });
+                                    return;
+                                }
+                            }
+                            continue;
+                        }
+                    }
+                }
+                if (!videoUrl) {
+                    res.status(502).json({
+                        success: false,
+                        error: "Runware Veo 3.1 did not return video URL (timeout or missing)",
+                        details: data,
+                    });
+                    return;
+                }
+                // Download & upload to S3
+                let rwStream;
+                try {
+                    rwStream = yield axios_1.default.get(videoUrl, {
+                        responseType: "stream",
+                        timeout: 600000,
+                    });
+                }
+                catch (e) {
+                    res.status(500).json({
+                        success: false,
+                        error: "Failed to download Runware Veo 3.1 video",
+                        details: serializeError(e),
+                    });
+                    return;
+                }
+                let uploaded;
+                try {
+                    uploaded = yield uploadGeneratedVideo(feature, "veo31", rwStream.data);
+                }
+                catch (e) {
+                    res.status(500).json({
+                        success: false,
+                        error: "Failed to upload Veo 3.1 video to S3",
+                        details: serializeError(e),
+                    });
+                    return;
+                }
+                res.status(200).json({
+                    success: true,
+                    video: {
+                        url: uploaded.signedUrl,
+                        signedUrl: uploaded.signedUrl,
+                        key: uploaded.key,
+                    },
+                    s3Key: uploaded.key,
+                });
+                return;
+            }
+            catch (err) {
+                console.error("Runware Veo 3.1 error:", ((_v = err === null || err === void 0 ? void 0 : err.response) === null || _v === void 0 ? void 0 : _v.data) || err);
+                res.status(500).json({
+                    success: false,
+                    error: "Runware Veo 3.1 generation failed",
+                    details: serializeError(err),
+                });
+                return;
+            }
+        }
+        // Runware Google Veo 3.1 Fast (with audio) Image-to-Video
+        if (isRunwareVeo31Fast) {
+            try {
+                console.log("[VEO31F] Start generation", {
+                    feature,
+                    rawModel,
+                    imageCloudUrlInitial: imageCloudUrl === null || imageCloudUrl === void 0 ? void 0 : imageCloudUrl.slice(0, 120),
+                    lastFrameProvided: !!lastFrameCloudUrl,
+                });
+                const runwareHeaders = {
+                    Authorization: `Bearer ${process.env.RUNWARE_API_KEY || process.env.RUNWARE_KEY}`,
+                    "Content-Type": "application/json",
+                };
+                // Helper upload
+                const uploadToRunware = (img) => __awaiter(void 0, void 0, void 0, function* () {
+                    var _a;
+                    try {
+                        const uploadPayload = [
+                            { taskType: "imageUpload", taskUUID: (0, crypto_1.randomUUID)(), image: img },
+                        ];
+                        const r = yield axios_1.default.post("https://api.runware.ai/v1", uploadPayload, {
+                            headers: runwareHeaders,
+                            timeout: 180000,
+                            maxBodyLength: Infinity,
+                            maxContentLength: Infinity,
+                        });
+                        const d = r.data;
+                        const obj = Array.isArray(d === null || d === void 0 ? void 0 : d.data) ? d.data[0] : d === null || d === void 0 ? void 0 : d.data;
+                        return (obj === null || obj === void 0 ? void 0 : obj.imageUUID) || (obj === null || obj === void 0 ? void 0 : obj.imageUuid);
+                    }
+                    catch (e) {
+                        console.warn("Runware imageUpload failed (Veo3.1 Fast):", ((_a = e === null || e === void 0 ? void 0 : e.response) === null || _a === void 0 ? void 0 : _a.data) || (e === null || e === void 0 ? void 0 : e.message) || e);
+                        return undefined;
+                    }
+                });
+                const frameImages = [];
+                if (imageCloudUrl) {
+                    const firstUUID = yield uploadToRunware(imageCloudUrl);
+                    if (!firstUUID) {
+                        throw new Error("Runware imageUpload did not return imageUUID for the first frame (Veo3.1 Fast)");
+                    }
+                    frameImages.push({ inputImage: firstUUID, frame: "first" });
+                }
+                if (lastFrameCloudUrl) {
+                    const lastUUID = yield uploadToRunware(lastFrameCloudUrl);
+                    if (!lastUUID) {
+                        throw new Error("Runware imageUpload did not return imageUUID for the last frame (Veo3.1 Fast)");
+                    }
+                    frameImages.push({ inputImage: lastUUID, frame: "last" });
+                }
+                const width = Number(process.env.VEO31F_WIDTH || 1280);
+                const height = Number(process.env.VEO31F_HEIGHT || 720);
+                const duration = Number(process.env.VEO31F_DURATION || 8);
+                const createdTaskUUID = (0, crypto_1.randomUUID)();
+                const task = {
+                    taskType: "videoInference",
+                    taskUUID: createdTaskUUID,
+                    model: "google:3@3",
+                    positivePrompt: prompt || "",
+                    width,
+                    height,
+                    duration,
+                    deliveryMethod: "async",
+                    providerSettings: { google: { generateAudio: true } },
+                    frameImages,
+                };
+                console.log("[VEO31F] Created task", {
+                    taskUUID: createdTaskUUID,
+                    width,
+                    height,
+                    duration,
+                    frames: frameImages.length,
+                });
+                const runwareResp = yield axios_1.default.post("https://api.runware.ai/v1", [task], { headers: runwareHeaders, timeout: 180000 });
+                const data = runwareResp.data;
+                const ackItem = Array.isArray(data === null || data === void 0 ? void 0 : data.data)
+                    ? data.data.find((d) => (d === null || d === void 0 ? void 0 : d.taskType) === "videoInference") ||
+                        data.data[0]
+                    : data === null || data === void 0 ? void 0 : data.data;
+                let videoUrl = (ackItem === null || ackItem === void 0 ? void 0 : ackItem.videoURL) ||
+                    (ackItem === null || ackItem === void 0 ? void 0 : ackItem.url) ||
+                    (ackItem === null || ackItem === void 0 ? void 0 : ackItem.video) ||
+                    (Array.isArray(ackItem === null || ackItem === void 0 ? void 0 : ackItem.videos) ? ackItem.videos[0] : null);
+                let pollTaskUUID = (ackItem === null || ackItem === void 0 ? void 0 : ackItem.taskUUID) || createdTaskUUID;
+                console.log("[VEO31F] Ack response", {
+                    ackTaskUUID: ackItem === null || ackItem === void 0 ? void 0 : ackItem.taskUUID,
+                    createdTaskUUID,
+                    chosenPollTaskUUID: pollTaskUUID,
+                    immediateVideo: !!videoUrl,
+                    status: (ackItem === null || ackItem === void 0 ? void 0 : ackItem.status) || (ackItem === null || ackItem === void 0 ? void 0 : ackItem.taskStatus),
+                });
+                if (!videoUrl && pollTaskUUID) {
+                    const maxAttempts = 100;
+                    const delay = (ms) => new Promise((r) => setTimeout(r, ms));
+                    let consecutive400 = 0;
+                    let switched = false;
+                    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+                        yield delay(3000);
+                        const pollPayload = [
+                            { taskType: "getResponse", taskUUID: pollTaskUUID },
+                        ];
+                        console.log("[VEO31F] Poll attempt", {
+                            attempt,
+                            pollTaskUUID,
+                        });
+                        try {
+                            const poll = yield axios_1.default.post("https://api.runware.ai/v1", pollPayload, { headers: runwareHeaders, timeout: 60000 });
+                            const pd = poll.data;
+                            const item = Array.isArray(pd === null || pd === void 0 ? void 0 : pd.data)
+                                ? pd.data.find((d) => (d === null || d === void 0 ? void 0 : d.taskUUID) === pollTaskUUID || (d === null || d === void 0 ? void 0 : d.videoURL)) || pd.data[0]
+                                : pd === null || pd === void 0 ? void 0 : pd.data;
+                            const status = (item === null || item === void 0 ? void 0 : item.status) || (item === null || item === void 0 ? void 0 : item.taskStatus);
+                            if (status)
+                                console.log("[VEO31F] Poll status", { attempt, status });
+                            if (status === "success" || (item === null || item === void 0 ? void 0 : item.videoURL) || (item === null || item === void 0 ? void 0 : item.url)) {
+                                videoUrl =
+                                    (item === null || item === void 0 ? void 0 : item.videoURL) ||
+                                        (item === null || item === void 0 ? void 0 : item.url) ||
+                                        (item === null || item === void 0 ? void 0 : item.video) ||
+                                        (Array.isArray(item === null || item === void 0 ? void 0 : item.videos) ? item.videos[0] : null);
+                                if (videoUrl)
+                                    break;
+                            }
+                            if (status === "error" || status === "failed") {
+                                const providerErr = extractRunwareError(pd) || {};
+                                res.status(422).json({
+                                    success: false,
+                                    error: providerErr.responseContent ||
+                                        providerErr.message ||
+                                        "Runware Veo 3.1 Fast returned error during polling",
+                                    providerError: providerErr,
+                                    details: pd,
+                                });
+                                return;
+                            }
+                            consecutive400 = 0;
+                        }
+                        catch (e) {
+                            const statusCode = (_w = e === null || e === void 0 ? void 0 : e.response) === null || _w === void 0 ? void 0 : _w.status;
+                            const body = (_x = e === null || e === void 0 ? void 0 : e.response) === null || _x === void 0 ? void 0 : _x.data;
+                            console.log("[VEO31F] Poll error", {
+                                attempt,
+                                statusCode,
+                                body: typeof body === "object"
+                                    ? JSON.stringify(body).slice(0, 500)
+                                    : body,
+                            });
+                            if (statusCode === 400) {
+                                consecutive400++;
+                                if (!switched &&
+                                    pollTaskUUID !== createdTaskUUID &&
+                                    consecutive400 >= 2) {
+                                    console.log("[VEO31F] Switching poll taskUUID to created one due to repeated 400", { from: pollTaskUUID, to: createdTaskUUID });
+                                    pollTaskUUID = createdTaskUUID;
+                                    switched = true;
+                                    consecutive400 = 0;
+                                }
+                                if (consecutive400 >= 5) {
+                                    console.log("[VEO31F] Aborting after repeated 400s during polling");
+                                    const providerErr = extractRunwareError(body) || {};
+                                    res.status(422).json({
+                                        success: false,
+                                        error: providerErr.responseContent ||
+                                            providerErr.message ||
+                                            "Runware Veo 3.1 Fast polling returned repeated 400 errors",
+                                        providerError: providerErr,
+                                        details: body || (e === null || e === void 0 ? void 0 : e.message),
+                                    });
+                                    return;
+                                }
+                            }
+                            continue;
+                        }
+                    }
+                }
+                if (!videoUrl) {
+                    res.status(502).json({
+                        success: false,
+                        error: "Runware Veo 3.1 Fast did not return video URL (timeout or missing)",
+                        details: data,
+                    });
+                    return;
+                }
+                let rwStream;
+                try {
+                    rwStream = yield axios_1.default.get(videoUrl, {
+                        responseType: "stream",
+                        timeout: 600000,
+                    });
+                }
+                catch (e) {
+                    res.status(500).json({
+                        success: false,
+                        error: "Failed to download Runware Veo 3.1 Fast video",
+                        details: serializeError(e),
+                    });
+                    return;
+                }
+                let uploaded;
+                try {
+                    uploaded = yield uploadGeneratedVideo(feature, "veo31-fast", rwStream.data);
+                    console.log("[VEO31F] S3 upload success", { key: uploaded.key });
+                }
+                catch (e) {
+                    res.status(500).json({
+                        success: false,
+                        error: "Failed to upload Veo 3.1 Fast video to S3",
+                        details: serializeError(e),
+                    });
+                    return;
+                }
+                res.status(200).json({
+                    success: true,
+                    video: {
+                        url: uploaded.signedUrl,
+                        signedUrl: uploaded.signedUrl,
+                        key: uploaded.key,
+                    },
+                    s3Key: uploaded.key,
+                });
+                return;
+            }
+            catch (err) {
+                console.error("Runware Veo 3.1 Fast error:", ((_y = err === null || err === void 0 ? void 0 : err.response) === null || _y === void 0 ? void 0 : _y.data) || err);
+                res.status(500).json({
+                    success: false,
+                    error: "Runware Veo 3.1 Fast generation failed",
+                    details: serializeError(err),
+                });
+                return;
+            }
+        }
+        if (isRunwareVeo3Fast) {
+            // Expect a Runware-uploaded image URL (already cloudinary if earlier logic succeeded)
+            try {
+                console.log("[VEO3F] Start generation", {
+                    feature,
+                    rawModel,
+                    imageCloudUrlInitial: imageCloudUrl === null || imageCloudUrl === void 0 ? void 0 : imageCloudUrl.slice(0, 120),
+                    lastFrameProvided: !!lastFrameCloudUrl,
+                });
+                // Upload images to Runware to obtain imageUUIDs (more reliable than using plain URLs)
+                const runwareHeaders = {
+                    Authorization: `Bearer ${process.env.RUNWARE_API_KEY || process.env.RUNWARE_KEY}`,
+                    "Content-Type": "application/json",
+                };
+                const uploadToRunware = (img) => __awaiter(void 0, void 0, void 0, function* () {
+                    var _a;
+                    try {
+                        const uploadPayload = [
+                            { taskType: "imageUpload", taskUUID: (0, crypto_1.randomUUID)(), image: img },
+                        ];
+                        const r = yield axios_1.default.post("https://api.runware.ai/v1", uploadPayload, {
+                            headers: runwareHeaders,
+                            timeout: 180000,
+                            maxBodyLength: Infinity,
+                            maxContentLength: Infinity,
+                        });
+                        const d = r.data;
+                        const obj = Array.isArray(d === null || d === void 0 ? void 0 : d.data) ? d.data[0] : d === null || d === void 0 ? void 0 : d.data;
+                        return (obj === null || obj === void 0 ? void 0 : obj.imageUUID) || (obj === null || obj === void 0 ? void 0 : obj.imageUuid);
+                    }
+                    catch (e) {
+                        console.warn("Runware imageUpload failed:", ((_a = e === null || e === void 0 ? void 0 : e.response) === null || _a === void 0 ? void 0 : _a.data) || (e === null || e === void 0 ? void 0 : e.message) || e);
+                        return undefined;
+                    }
+                });
+                // Build frameImages array as objects with UUIDs per Runware spec
+                const frameImages = [];
+                if (imageCloudUrl) {
+                    const firstUUID = yield uploadToRunware(imageCloudUrl);
+                    if (!firstUUID) {
+                        throw new Error("Runware imageUpload did not return imageUUID for the first frame");
+                    }
+                    frameImages.push({ inputImage: firstUUID, frame: "first" });
+                }
+                if (lastFrameCloudUrl) {
+                    const lastUUID = yield uploadToRunware(lastFrameCloudUrl);
+                    if (!lastUUID) {
+                        throw new Error("Runware imageUpload did not return imageUUID for the last frame");
+                    }
+                    frameImages.push({ inputImage: lastUUID, frame: "last" });
+                }
+                const task = {
+                    taskType: "videoInference",
+                    taskUUID: (0, crypto_1.randomUUID)(),
+                    model: "google:3@1", // Runware model AIR ID for Veo 3 Fast (with audio)
+                    // Use user prompt override or feature prompt
+                    positivePrompt: prompt || "",
+                    width: 1280,
+                    height: 720,
+                    duration: 8,
+                    deliveryMethod: "async", // video generation requires async; we'll poll for completion
+                    providerSettings: {
+                        google: { generateAudio: true },
+                    },
+                    // Frame images: first and optional last as objects
+                    frameImages,
+                };
+                console.log("[VEO3F] Created task", {
+                    width: 1280,
+                    height: 720,
+                    duration: 8,
+                    hasLastFrame: !!lastFrameCloudUrl,
+                });
+                const payload = [task];
+                console.log("veo 3 task payload:", payload);
+                const runwareResp = yield axios_1.default.post("https://api.runware.ai/v1", payload, {
+                    headers: runwareHeaders,
+                    timeout: 180000,
+                });
+                const data = runwareResp.data;
+                const ackItem = Array.isArray(data === null || data === void 0 ? void 0 : data.data)
+                    ? data.data.find((d) => (d === null || d === void 0 ? void 0 : d.taskType) === "videoInference") ||
+                        data.data[0]
+                    : data === null || data === void 0 ? void 0 : data.data;
+                let videoUrl = (ackItem === null || ackItem === void 0 ? void 0 : ackItem.videoURL) ||
+                    (ackItem === null || ackItem === void 0 ? void 0 : ackItem.url) ||
+                    (ackItem === null || ackItem === void 0 ? void 0 : ackItem.video) ||
+                    (Array.isArray(ackItem === null || ackItem === void 0 ? void 0 : ackItem.videos) ? ackItem.videos[0] : null);
+                // If URL not directly available (async mode), poll getResponse using taskUUID
+                let taskUUID = ackItem === null || ackItem === void 0 ? void 0 : ackItem.taskUUID;
+                console.log("[VEO3F] Ack response", {
+                    ackTaskUUID: taskUUID,
+                    immediateVideo: !!videoUrl,
+                    status: (ackItem === null || ackItem === void 0 ? void 0 : ackItem.status) || (ackItem === null || ackItem === void 0 ? void 0 : ackItem.taskStatus),
+                });
+                if (!videoUrl && taskUUID) {
+                    const maxAttempts = 80; // ~4 minutes at 3s interval
+                    const delay = (ms) => new Promise((r) => setTimeout(r, ms));
+                    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+                        yield delay(3000);
+                        const pollPayload = [
+                            { taskType: "getResponse", taskUUID: taskUUID },
+                        ];
+                        console.log("veo 3 fast poll payload: ", pollPayload);
+                        let pollResp;
+                        try {
+                            pollResp = yield axios_1.default.post("https://api.runware.ai/v1", pollPayload, { headers: runwareHeaders, timeout: 60000 });
+                        }
+                        catch (e) {
+                            // transient errors: continue polling
+                            console.log("[VEO3F] Poll transient error (continuing)", ((_z = e === null || e === void 0 ? void 0 : e.response) === null || _z === void 0 ? void 0 : _z.status) || (e === null || e === void 0 ? void 0 : e.message));
+                            continue;
+                        }
+                        const pd = pollResp.data;
+                        const item = Array.isArray(pd === null || pd === void 0 ? void 0 : pd.data)
+                            ? pd.data.find((d) => (d === null || d === void 0 ? void 0 : d.taskUUID) === taskUUID || (d === null || d === void 0 ? void 0 : d.videoURL)) || pd.data[0]
+                            : pd === null || pd === void 0 ? void 0 : pd.data;
+                        const status = (item === null || item === void 0 ? void 0 : item.status) || (item === null || item === void 0 ? void 0 : item.taskStatus);
+                        if (status)
+                            console.log("[VEO3F] Poll status", { attempt, status });
+                        if (status === "success" || (item === null || item === void 0 ? void 0 : item.videoURL) || (item === null || item === void 0 ? void 0 : item.url)) {
+                            videoUrl =
+                                (item === null || item === void 0 ? void 0 : item.videoURL) ||
+                                    (item === null || item === void 0 ? void 0 : item.url) ||
+                                    (item === null || item === void 0 ? void 0 : item.video) ||
+                                    (Array.isArray(item === null || item === void 0 ? void 0 : item.videos) ? item.videos[0] : null);
+                            if (videoUrl)
+                                break;
+                        }
+                        if (status === "error" || status === "failed") {
+                            // surface provider error with provider fields
+                            const providerErr = extractRunwareError(pd) || {};
+                            res.status(422).json({
+                                success: false,
+                                error: providerErr.responseContent ||
+                                    providerErr.message ||
+                                    "Runware Veo3@fast returned error during polling",
+                                providerError: providerErr,
+                                details: pd,
+                            });
+                            return;
+                        }
+                    }
+                }
+                if (!videoUrl) {
+                    console.log("[VEO3F] Timeout - no video URL returned after polling");
+                    res.status(502).json({
+                        success: false,
+                        error: "Runware Veo3@fast did not return video URL (timeout or missing)",
+                        details: data,
+                    });
+                    return;
+                }
+                // Download & upload to S3 (normalize hosting)
+                let rwStream;
+                try {
+                    rwStream = yield axios_1.default.get(videoUrl, {
+                        responseType: "stream",
+                        timeout: 600000,
+                    });
+                }
+                catch (e) {
+                    res.status(500).json({
+                        success: false,
+                        error: "Failed to download Runware Veo3@fast video",
+                        details: serializeError(e),
+                    });
+                    return;
+                }
+                let uploaded;
+                try {
+                    uploaded = yield uploadGeneratedVideo(feature, "veo3-fast", rwStream.data);
+                    console.log("[VEO3F] S3 upload success", { key: uploaded.key });
+                }
+                catch (e) {
+                    res.status(500).json({
+                        success: false,
+                        error: "Failed to upload Veo3@fast video to S3",
+                        details: serializeError(e),
+                    });
+                    return;
+                }
+                res.status(200).json({
+                    success: true,
+                    video: {
+                        url: uploaded.signedUrl,
+                        signedUrl: uploaded.signedUrl,
+                        key: uploaded.key,
+                    },
+                    s3Key: uploaded.key,
+                });
+                return;
+            }
+            catch (err) {
+                console.error("Runware Veo3@fast error:", ((_0 = err === null || err === void 0 ? void 0 : err.response) === null || _0 === void 0 ? void 0 : _0.data) || err);
+                res.status(500).json({
+                    success: false,
+                    error: "Runware Veo3@fast generation failed",
+                    details: serializeError(err),
+                });
+                return;
+            }
+        }
+        if (isPixverseTransition || isPixverseImage2Video) {
+            // Ensure 512x512 for Pixverse-compatible inputs for ANY host (S3/Cloudinary/etc)
+            const force512 = (url) => {
+                if (!url)
+                    return url;
+                try {
+                    if (!/res\.cloudinary\.com\//i.test(url))
+                        return url; // only transform Cloudinary inline
+                    if (/\/image\/upload\/c_fill,w_512,h_512\//.test(url))
+                        return url;
+                    return url.replace(/(\/image\/upload\/)(?!c_fill,w_512,h_512\/)/, "$1c_fill,w_512,h_512,q_auto,f_auto/");
+                }
+                catch (_a) {
+                    return url;
+                }
+            };
+            // Normalize any URL to 512x512 by resizing+reuploading to S3 when not Cloudinary
+            const normalizeTo512 = (url) => __awaiter(void 0, void 0, void 0, function* () {
+                if (!url)
+                    return undefined;
+                // If Cloudinary, prefer URL transformation for speed
+                const maybeCloud = force512(url);
+                if (maybeCloud !== url)
+                    return maybeCloud;
+                try {
+                    const ensured = yield (0, s3_1.ensure512SquareImageFromUrl)(url);
+                    const key = (0, s3_1.makeKey)({
+                        type: "image",
+                        feature: "pixverse-512",
+                        ext: "png",
+                    });
+                    yield (0, s3_1.uploadBuffer)(key, ensured.buffer, ensured.contentType);
+                    const signed = yield (0, signedUrl_1.signKey)(key);
+                    return signed;
+                }
+                catch (e) {
+                    console.warn("[Pixverse] 512 resize failed, using original URL", e);
+                    return url;
+                }
+            });
+            const firstFrame512 = yield normalizeTo512(imageCloudUrl);
+            const lastFrame512 = yield normalizeTo512(lastFrameCloudUrl);
+            const pixKey = process.env.PIXVERSE_API_KEY || process.env.EACHLABS_API_KEY;
+            if (!pixKey) {
+                res
+                    .status(500)
+                    .json({ success: false, error: "PIXVERSE_API_KEY not set" });
+                return;
+            }
+            if (isPixverseTransition && !lastFrameCloudUrl) {
+                res.status(400).json({
+                    success: false,
+                    error: "lastFrameUrl is required for pixverse-v4-transition",
+                });
+                return;
+            }
+            // Create prediction (single attempt, simplified)
+            const pixVersion = process.env.PIXVERSE_VERSION || "0.0.1";
+            const commonInput = {
+                motion_mode: process.env.PIXVERSE_MOTION_MODE || "normal",
+                quality: process.env.PIXVERSE_QUALITY || "540p",
+                duration: Number(process.env.PIXVERSE_DURATION || 5),
+                prompt,
+                webhook_url: process.env.PIXVERSE_WEBHOOK_URL || "",
+            };
+            if (isPixverseTransition) {
+                commonInput.last_frame_url = lastFrame512 || lastFrameCloudUrl;
+                commonInput.first_frame_url = firstFrame512 || imageCloudUrl;
+            }
+            else {
+                // image to video uses single image param (docs show image_url)
+                commonInput.image_url = firstFrame512 || imageCloudUrl;
+            }
+            const createPayload = {
+                model: isPixverseTransition
+                    ? "pixverse-v4-transition"
+                    : /kling-v2\.1-pro-image-to-video/i.test(rawModel)
+                        ? "kling-v2-1-pro-image-to-video"
+                        : /kling-v2\.1-standard-image-to-video/i.test(rawModel)
+                            ? "kling-v2-1-standard-image-to-video"
+                            : /kling-v2-master-image-to-video/i.test(rawModel)
+                                ? "kling-v2-master-image-to-video"
+                                : /kling-v1\.6-pro-image-to-video/i.test(rawModel)
+                                    ? "kling-v1-6-pro-image-to-video"
+                                    : /kling-1\.6-standard-image-to-video/i.test(rawModel)
+                                        ? "kling-1-6-standard-image-to-video"
+                                        : /kling-1\.5-pro-image-to-video/i.test(rawModel)
+                                            ? "kling-1-5-pro-image-to-video"
+                                            : /kling-v1-pro-image-to-video/i.test(rawModel)
+                                                ? "kling-v1-pro-image-to-video"
+                                                : /kling-v1-standard-image-to-video/i.test(rawModel)
+                                                    ? "kling-v1-standard-image-to-video"
+                                                    : /pixverse-v5-image-to-video/i.test(rawModel)
+                                                        ? "pixverse-v5-image-to-video"
+                                                        : /pixverse-v4\.5-image-to-video/i.test(rawModel)
+                                                            ? "pixverse-v4-5-image-to-video"
+                                                            : "pixverse-v4-image-to-video",
+                version: pixVersion,
+                input: commonInput,
+            };
+            let predictionId;
+            try {
+                const createResp = yield axios_1.default.post("https://api.eachlabs.ai/v1/prediction/", createPayload, {
+                    headers: {
+                        "X-API-Key": pixKey,
+                        "Content-Type": "application/json",
+                    },
+                });
+                const prediction = createResp.data || {};
+                console.log("Pixverse create response:", prediction);
+                const statusStr = String(prediction.status || "").toLowerCase();
+                if (statusStr !== "success") {
+                    const provider_message = (prediction === null || prediction === void 0 ? void 0 : prediction.message) ||
+                        (prediction === null || prediction === void 0 ? void 0 : prediction.error) ||
+                        (prediction === null || prediction === void 0 ? void 0 : prediction.status) ||
+                        "Unknown status";
+                    res.status(502).json({
+                        success: false,
+                        error: `Pixverse creation failed: ${provider_message}`,
+                        provider: "Pixverse",
+                        provider_status: prediction === null || prediction === void 0 ? void 0 : prediction.status,
+                        provider_message,
+                        details: safeJson(prediction),
+                    });
+                    return;
+                }
+                predictionId =
+                    prediction.predictionID ||
+                        prediction.predictionId ||
+                        prediction.id ||
+                        prediction.task_id;
+                if (!predictionId) {
+                    res.status(502).json({
+                        success: false,
+                        error: "Pixverse response missing prediction id",
+                        details: safeJson(prediction),
+                    });
+                    return;
+                }
+            }
+            catch (err) {
+                const pixErr = err;
+                console.error("Pixverse create error (single attempt):", {
+                    error: pixErr,
+                    payload: createPayload,
+                    serverResponse: (_1 = pixErr === null || pixErr === void 0 ? void 0 : pixErr.response) === null || _1 === void 0 ? void 0 : _1.data,
+                });
+                const e = err;
+                let provider_message = ((_3 = (_2 = e === null || e === void 0 ? void 0 : e.response) === null || _2 === void 0 ? void 0 : _2.data) === null || _3 === void 0 ? void 0 : _3.message) ||
+                    ((_5 = (_4 = e === null || e === void 0 ? void 0 : e.response) === null || _4 === void 0 ? void 0 : _4.data) === null || _5 === void 0 ? void 0 : _5.error) ||
+                    (e === null || e === void 0 ? void 0 : e.message) ||
+                    "Unknown error";
+                res.status(502).json({
+                    success: false,
+                    error: provider_message,
+                    details: serializeError(e),
+                });
+                return;
+            }
+            // Poll prediction (works for both variants)
+            let pixVideoUrl;
+            for (let i = 0; i < 300; i++) {
+                // up to ~5 min (300 *1s) typical runtime 45s
+                yield new Promise((r) => setTimeout(r, 1000));
+                try {
+                    const pollResp = yield axios_1.default.get(`https://api.eachlabs.ai/v1/prediction/${predictionId}`, { headers: { "X-API-Key": pixKey }, timeout: 20000 });
+                    const result = pollResp.data;
+                    console.log(result);
+                    const status = result.status;
+                    const lower = (status || "").toLowerCase();
+                    if (lower === "success" || lower === "completed") {
+                        // Output may be a direct URL string or an object/array
+                        const rawOut = result.output;
+                        if (typeof rawOut === "string") {
+                            pixVideoUrl = rawOut;
+                        }
+                        else if (rawOut) {
+                            const out = rawOut;
+                            pixVideoUrl =
+                                out.video_url ||
+                                    out.video ||
+                                    (Array.isArray(out) ? ((_6 = out[0]) === null || _6 === void 0 ? void 0 : _6.video_url) || out[0] : null) ||
+                                    result.video_url ||
+                                    result.video ||
+                                    out.url ||
+                                    result.url ||
+                                    null;
+                        }
+                        else {
+                            pixVideoUrl =
+                                result.video_url || result.video || result.url || null;
+                        }
+                        break;
+                    }
+                    else if (["error", "failed", "canceled", "cancelled"].includes(lower)) {
+                        const provider_output = result === null || result === void 0 ? void 0 : result.output;
+                        const provider_message = (result === null || result === void 0 ? void 0 : result.error) ||
+                            (result === null || result === void 0 ? void 0 : result.message) ||
+                            (result === null || result === void 0 ? void 0 : result.status) ||
+                            provider_output;
+                        // Prefer the explicit output text when present (e.g., "incorrect image width or height")
+                        const userError = provider_output ||
+                            provider_message ||
+                            "Pixverse prediction failed";
+                        res.status(422).json({
+                            success: false,
+                            error: userError,
+                            provider: "Pixverse",
+                            provider_status: result === null || result === void 0 ? void 0 : result.status,
+                            provider_message,
+                            provider_output,
+                            details: safeJson(result),
+                        });
+                        return;
+                    }
+                    else {
+                        // still processing; continue loop
+                    }
+                }
+                catch (e) {
+                    console.warn("Pixverse poll error (continuing)", (e === null || e === void 0 ? void 0 : e.message) || e);
+                    continue;
+                }
+            }
+            if (!pixVideoUrl) {
+                res.status(504).json({
+                    success: false,
+                    error: "Pixverse prediction timeout",
+                    provider: "Pixverse",
+                    provider_status: "timeout",
+                    provider_message: "Prediction did not complete in allotted time",
+                });
+                return;
+            }
+            // Download & upload to S3
+            let pixStream;
+            try {
+                pixStream = yield axios_1.default.get(pixVideoUrl, {
+                    responseType: "stream",
+                    timeout: 600000,
+                });
+            }
+            catch (e) {
+                res.status(500).json({
+                    success: false,
+                    error: "Failed to download Pixverse video",
+                    details: serializeError(e),
+                });
+                return;
+            }
+            let uploadedPix;
+            try {
+                uploadedPix = yield uploadGeneratedVideo(feature, "pixverse", pixStream.data);
+            }
+            catch (e) {
+                res.status(500).json({
+                    success: false,
+                    error: "Failed to upload Pixverse video to S3",
+                    details: serializeError(e),
+                });
+                return;
+            }
+            res.status(200).json({
+                success: true,
+                video: {
+                    url: uploadedPix.signedUrl,
+                    signedUrl: uploadedPix.signedUrl,
+                    key: uploadedPix.key,
+                },
+                s3Key: uploadedPix.key,
+            });
+            return;
+        }
+        // Eachlabs Vidu Q1 Reference to Video (multi-reference) branch
+        const isViduQ1 = /vidu-q1-reference-to-video/i.test(rawModel);
+        if (isViduQ1) {
+            const eachLabsKey = process.env.PIXVERSE_API_KEY || process.env.EACHLABS_API_KEY;
+            if (!eachLabsKey) {
+                res.status(500).json({
+                    success: false,
+                    error: "EACHLABS / PIXVERSE API key not set",
+                });
+                return;
+            }
+            // Collect up to three reference images. Primary is required (already uploaded to Cloudinary earlier if needed)
+            // We allow client to pass optional image_url2 / image_url3 (already Cloudinary URLs OR public). If not cloudinary, attempt upload.
+            let image2Raw = req.body.image_url2;
+            let image3Raw = req.body.image_url3;
+            const maybeUploadExtra = (raw) => __awaiter(void 0, void 0, void 0, function* () {
+                var _a, _b;
+                if (!raw)
+                    return undefined;
+                if (raw.includes("cloudinary.com"))
+                    return raw; // already hosted
+                const isLikelyPublic = /^https?:\/\//i.test(raw) && !/localhost|127\.|^file:/i.test(raw);
+                try {
+                    if (process.env.CLOUDINARY_UPLOAD_URL &&
+                        process.env.CLOUDINARY_UPLOAD_PRESET) {
+                        const formD = new (require("form-data"))();
+                        formD.append("file", raw);
+                        formD.append("upload_preset", process.env.CLOUDINARY_UPLOAD_PRESET);
+                        const upRes = yield axios_1.default.post(process.env.CLOUDINARY_UPLOAD_URL, formD, { headers: formD.getHeaders(), timeout: 60000 });
+                        return ((_a = upRes.data) === null || _a === void 0 ? void 0 : _a.secure_url) || ((_b = upRes.data) === null || _b === void 0 ? void 0 : _b.url) || raw;
+                    }
+                    if (isLikelyPublic)
+                        return raw; // allow public
+                }
+                catch (e) {
+                    console.warn("Optional reference image upload failed (ignored)", serializeError(e));
+                    if (isLikelyPublic)
+                        return raw;
+                }
+                return undefined;
+            });
+            const image2 = yield maybeUploadExtra(image2Raw);
+            const image3 = yield maybeUploadExtra(image3Raw);
+            const viduVersion = process.env.VIDU_Q1_VERSION || "0.0.1";
+            const duration = Number(process.env.VIDU_Q1_DURATION || 5);
+            const aspect = process.env.VIDU_Q1_ASPECT_RATIO || "16:9";
+            const resolution = process.env.VIDU_Q1_RESOLUTION || "1080p"; // docs show "1080p"
+            const movementAmplitude = process.env.VIDU_Q1_MOVEMENT_AMPLITUDE || "auto"; // auto / low / high
+            const bgm = process.env.VIDU_Q1_BGM || "false"; // "true" / "false"
+            const input = {
+                resolution,
+                prompt, // Use feature prompt or override
+                duration,
+                aspect_ratio: aspect,
+                movement_amplitude: movementAmplitude,
+                bgm,
+            };
+            // Add references in required naming order (image_url1..3)
+            input.image_url = imageCloudUrl;
+            if (lastFrameCloudUrl)
+                input.image_url2 = lastFrameCloudUrl;
+            if (image2)
+                input.image_url2 = image2; // override if user explicitly provided second reference
+            if (image3)
+                input.image_url3 = image3;
+            const createPayload = {
+                model: "vidu-q-1-reference-to-video",
+                version: viduVersion,
+                input,
+                webhook_url: process.env.VIDU_Q1_WEBHOOK_URL || "",
+            };
+            let predictionId;
+            try {
+                const createResp = yield axios_1.default.post("https://api.eachlabs.ai/v1/prediction/", createPayload, {
+                    headers: {
+                        "X-API-Key": eachLabsKey,
+                        "Content-Type": "application/json",
+                    },
+                    timeout: 45000,
+                });
+                const prediction = createResp.data || {};
+                console.log("Vidu Q1 create response:", prediction);
+                const statusStr = String(prediction.status || "").toLowerCase();
+                if (statusStr !== "success") {
+                    const provider_message = (prediction === null || prediction === void 0 ? void 0 : prediction.message) ||
+                        (prediction === null || prediction === void 0 ? void 0 : prediction.error) ||
+                        (prediction === null || prediction === void 0 ? void 0 : prediction.status) ||
+                        "Unknown status";
+                    res.status(502).json({
+                        success: false,
+                        error: `Vidu Q1 creation failed: ${provider_message}`,
+                        provider: "ViduQ1",
+                        provider_status: prediction === null || prediction === void 0 ? void 0 : prediction.status,
+                        provider_message,
+                        details: safeJson(prediction),
+                    });
+                    return;
+                }
+                predictionId =
+                    prediction.predictionID ||
+                        prediction.predictionId ||
+                        prediction.id ||
+                        prediction.task_id;
+                if (!predictionId) {
+                    res.status(502).json({
+                        success: false,
+                        error: "Vidu Q1 response missing prediction id",
+                        details: safeJson(prediction),
+                    });
+                    return;
+                }
+            }
+            catch (err) {
+                const viduQ1Err = err;
+                console.error("Vidu Q1 create error:", {
+                    error: viduQ1Err,
+                    payload: createPayload,
+                    serverResponse: (_7 = viduQ1Err === null || viduQ1Err === void 0 ? void 0 : viduQ1Err.response) === null || _7 === void 0 ? void 0 : _7.data,
+                });
+                res.status(502).json({
+                    success: false,
+                    error: "Failed to create Vidu Q1 prediction",
+                    details: serializeError(err),
+                });
+                return;
+            }
+            // Poll
+            let viduVideoUrl;
+            for (let i = 0; i < 300; i++) {
+                // up to ~5 min
+                yield new Promise((r) => setTimeout(r, 1000));
+                try {
+                    const pollResp = yield axios_1.default.get(`https://api.eachlabs.ai/v1/prediction/${predictionId}`, { headers: { "X-API-Key": eachLabsKey }, timeout: 20000 });
+                    const result = pollResp.data || {};
+                    const lower = String(result.status || "").toLowerCase();
+                    if (lower === "success" || lower === "completed") {
+                        const rawOut = result.output;
+                        if (typeof rawOut === "string")
+                            viduVideoUrl = rawOut;
+                        else if (rawOut) {
+                            const out = rawOut;
+                            viduVideoUrl =
+                                out.video_url ||
+                                    out.video ||
+                                    (Array.isArray(out) ? ((_8 = out[0]) === null || _8 === void 0 ? void 0 : _8.video_url) || out[0] : null) ||
+                                    result.video_url ||
+                                    result.video ||
+                                    out.url ||
+                                    result.url ||
+                                    null;
+                        }
+                        else {
+                            viduVideoUrl =
+                                result.video_url || result.video || result.url || null;
+                        }
+                        break;
+                    }
+                    else if (["error", "failed", "canceled", "cancelled"].includes(lower)) {
+                        const provider_message = (result === null || result === void 0 ? void 0 : result.error) ||
+                            (result === null || result === void 0 ? void 0 : result.message) ||
+                            (result === null || result === void 0 ? void 0 : result.status);
+                        res.status(500).json({
+                            success: false,
+                            error: provider_message
+                                ? `Vidu Q1 prediction failed: ${provider_message}`
+                                : "Vidu Q1 prediction failed",
+                            provider: "ViduQ1",
+                            provider_status: result === null || result === void 0 ? void 0 : result.status,
+                            provider_message,
+                            details: safeJson(result),
+                        });
+                        return;
+                    }
+                }
+                catch (e) {
+                    console.warn("Vidu Q1 poll error (continuing)", (e === null || e === void 0 ? void 0 : e.message) || e);
+                    continue;
+                }
+            }
+            if (!viduVideoUrl) {
+                res.status(504).json({
+                    success: false,
+                    error: "Vidu Q1 prediction timeout",
+                    provider: "ViduQ1",
+                    provider_status: "timeout",
+                    provider_message: "Prediction did not complete in allotted time",
+                });
+                return;
+            }
+            // Download & upload to S3
+            let viduStream;
+            try {
+                viduStream = yield axios_1.default.get(viduVideoUrl, {
+                    responseType: "stream",
+                    timeout: 600000,
+                });
+            }
+            catch (e) {
+                res.status(500).json({
+                    success: false,
+                    error: "Failed to download Vidu Q1 video",
+                    details: serializeError(e),
+                });
+                return;
+            }
+            let uploadedViduQ1;
+            try {
+                uploadedViduQ1 = yield uploadGeneratedVideo(feature, "viduq1-ref", viduStream.data);
+            }
+            catch (e) {
+                res.status(500).json({
+                    success: false,
+                    error: "Failed to upload Vidu Q1 video to S3",
+                    details: serializeError(e),
+                });
+                return;
+            }
+            res.status(200).json({
+                success: true,
+                video: {
+                    url: uploadedViduQ1.signedUrl,
+                    signedUrl: uploadedViduQ1.signedUrl,
+                    key: uploadedViduQ1.key,
+                },
+                s3Key: uploadedViduQ1.key,
+            });
+            return;
+        }
+        // Eachlabs Vidu 1.5 Image to Video branch
+        const isVidu15Image2Video = /vidu-1\.5-image-to-video/i.test(rawModel);
+        if (isVidu15Image2Video) {
+            const eachLabsKey = process.env.EACHLABS_API_KEY;
+            if (!eachLabsKey) {
+                res.status(500).json({
+                    success: false,
+                    error: "EACHLABS API key not set",
+                });
+                return;
+            }
+            const viduVersion = "0.0.1";
+            const duration = 4;
+            const resolution = "720p";
+            const input = {
+                image_url: imageCloudUrl,
+                prompt: prompt,
+                duration: duration,
+                resolution: resolution,
+            };
+            const createPayload = {
+                model: "vidu-1-5-image-to-video",
+                version: viduVersion,
+                input,
+            };
+            let createResp;
+            let predictionId;
+            try {
+                createResp = yield axios_1.default.post("https://api.eachlabs.ai/v1/prediction/", createPayload, {
+                    headers: {
+                        "X-API-Key": eachLabsKey,
+                        "Content-Type": "application/json",
+                    },
+                    timeout: 30000,
+                });
+                const prediction = createResp.data || {};
+                console.log("Vidu 1.5 create response:", prediction);
+                const statusStr = String(prediction.status || "").toLowerCase();
+                if (statusStr !== "success") {
+                    const provider_message = (prediction === null || prediction === void 0 ? void 0 : prediction.error) ||
+                        (prediction === null || prediction === void 0 ? void 0 : prediction.message) ||
+                        "Unknown status";
+                    res.status(502).json({
+                        success: false,
+                        error: `Vidu 1.5 creation failed: ${provider_message}`,
+                        provider: "Vidu15",
+                        provider_status: prediction === null || prediction === void 0 ? void 0 : prediction.status,
+                        provider_message,
+                        details: safeJson(prediction),
+                    });
+                    return;
+                }
+                predictionId = prediction === null || prediction === void 0 ? void 0 : prediction.predictionID;
+                if (!predictionId) {
+                    res.status(502).json({
+                        success: false,
+                        error: "Vidu 1.5 response missing prediction id",
+                        details: safeJson(prediction),
+                    });
+                    return;
+                }
+            }
+            catch (err) {
+                const vidu15Err = err;
+                console.error("Vidu 1.5 create error:", {
+                    error: vidu15Err,
+                    payload: createPayload,
+                    serverResponse: (_9 = vidu15Err === null || vidu15Err === void 0 ? void 0 : vidu15Err.response) === null || _9 === void 0 ? void 0 : _9.data,
+                });
+                res.status(502).json({
+                    success: false,
+                    error: (_10 = vidu15Err === null || vidu15Err === void 0 ? void 0 : vidu15Err.response) === null || _10 === void 0 ? void 0 : _10.data.details,
+                    details: serializeError(err),
+                });
+                return;
+            }
+            // Poll
+            let viduVideoUrl;
+            for (let i = 0; i < 300; i++) {
+                // up to ~5 min
+                yield new Promise((r) => setTimeout(r, 1000));
+                try {
+                    const pollResp = yield axios_1.default.get(`https://api.eachlabs.ai/v1/prediction/${predictionId}`, { headers: { "X-API-Key": eachLabsKey }, timeout: 20000 });
+                    const result = pollResp.data || {};
+                    const lower = String(result.status || "").toLowerCase();
+                    if (lower === "success" || lower === "completed") {
+                        const rawOut = result.output;
+                        if (typeof rawOut === "string")
+                            viduVideoUrl = rawOut;
+                        else if (rawOut) {
+                            const out = rawOut;
+                            viduVideoUrl =
+                                out.video_url ||
+                                    out.video ||
+                                    (Array.isArray(out) ? ((_11 = out[0]) === null || _11 === void 0 ? void 0 : _11.video_url) || out[0] : null) ||
+                                    result.video_url ||
+                                    result.video ||
+                                    out.url ||
+                                    result.url ||
+                                    null;
+                        }
+                        else {
+                            viduVideoUrl =
+                                result.video_url || result.video || result.url || null;
+                        }
+                        break;
+                    }
+                    else if (["error", "failed", "canceled", "cancelled"].includes(lower)) {
+                        const provider_message = (result === null || result === void 0 ? void 0 : result.error) ||
+                            (result === null || result === void 0 ? void 0 : result.message) ||
+                            (result === null || result === void 0 ? void 0 : result.status);
+                        res.status(500).json({
+                            success: false,
+                            error: provider_message
+                                ? `Vidu Q1 prediction failed: ${provider_message}`
+                                : "Vidu Q1 prediction failed",
+                            provider: "ViduQ1",
+                            provider_status: result === null || result === void 0 ? void 0 : result.status,
+                            provider_message,
+                            details: safeJson(result),
+                        });
+                        return;
+                    }
+                }
+                catch (e) {
+                    console.warn("Vidu Q1 poll error (continuing)", (e === null || e === void 0 ? void 0 : e.message) || e);
+                    continue;
+                }
+            }
+            if (!viduVideoUrl) {
+                res.status(504).json({
+                    success: false,
+                    error: "Vidu Q1 prediction timeout",
+                    provider: "ViduQ1",
+                    provider_status: "timeout",
+                    provider_message: "Prediction did not complete in allotted time",
+                });
+                return;
+            }
+            // Download & upload to S3
+            let viduStream;
+            try {
+                viduStream = yield axios_1.default.get(viduVideoUrl, {
+                    responseType: "stream",
+                    timeout: 600000,
+                });
+            }
+            catch (e) {
+                res.status(500).json({
+                    success: false,
+                    error: "Failed to download Vidu 1.5 video",
+                    details: serializeError(e),
+                });
+                return;
+            }
+            let uploadedVidu15;
+            try {
+                uploadedVidu15 = yield uploadGeneratedVideo(feature, "vidu15", viduStream.data);
+            }
+            catch (e) {
+                res.status(500).json({
+                    success: false,
+                    error: "Failed to upload Vidu 1.5 video to S3",
+                    details: serializeError(e),
+                });
+                return;
+            }
+            res.status(200).json({
+                success: true,
+                video: {
+                    url: uploadedVidu15.signedUrl,
+                    signedUrl: uploadedVidu15.signedUrl,
+                    key: uploadedVidu15.key,
+                },
+                s3Key: uploadedVidu15.key,
+            });
+            return;
+        }
+        // Eachlabs Vidu Q1 Image to Video branch
+        const isViduQ1Image2Video = /vidu-q1-image-to-video/i.test(rawModel);
+        if (isViduQ1Image2Video) {
+            const eachLabsKey = process.env.PIXVERSE_API_KEY || process.env.EACHLABS_API_KEY;
+            if (!eachLabsKey) {
+                res.status(500).json({
+                    success: false,
+                    error: "EACHLABS / PIXVERSE API key not set",
+                });
+                return;
+            }
+            const viduVersion = process.env.VIDU_Q1_I2V_VERSION || "0.0.1";
+            const duration = Number(process.env.VIDU_Q1_I2V_DURATION || 5);
+            const aspect = process.env.VIDU_Q1_I2V_ASPECT_RATIO || "16:9";
+            const resolution = process.env.VIDU_Q1_I2V_RESOLUTION || "1080p";
+            const input = {
+                image_url: imageCloudUrl,
+                prompt: prompt,
+                duration: duration,
+                aspect_ratio: aspect,
+                resolution: resolution,
+            };
+            const createPayload = {
+                model: "vidu-q-1-image-to-video",
+                version: viduVersion,
+                input,
+                webhook_url: process.env.VIDU_Q1_I2V_WEBHOOK_URL || "",
+            };
+            let createResp;
+            let predictionId;
+            try {
+                createResp = yield axios_1.default.post("https://api.eachlabs.ai/v1/prediction/", createPayload, {
+                    headers: {
+                        "x-api-key": eachLabsKey,
+                        "Content-Type": "application/json",
+                    },
+                    timeout: 30000,
+                });
+                const prediction = createResp.data || {};
+                console.log("Vidu Q1 I2V create response:", prediction);
+                const statusStr = String(prediction.status || "").toLowerCase();
+                if (statusStr !== "success") {
+                    const provider_message = (prediction === null || prediction === void 0 ? void 0 : prediction.error) ||
+                        (prediction === null || prediction === void 0 ? void 0 : prediction.message) ||
+                        "Unknown status";
+                    res.status(502).json({
+                        success: false,
+                        error: `Vidu Q1 I2V creation failed: ${provider_message}`,
+                        provider: "ViduQ1I2V",
+                        provider_status: prediction === null || prediction === void 0 ? void 0 : prediction.status,
+                        provider_message,
+                        details: safeJson(prediction),
+                    });
+                    return;
+                }
+                predictionId = prediction === null || prediction === void 0 ? void 0 : prediction.predictionID;
+                if (!predictionId) {
+                    res.status(502).json({
+                        success: false,
+                        error: "Vidu Q1 I2V response missing prediction id",
+                        details: safeJson(prediction),
+                    });
+                    return;
+                }
+            }
+            catch (err) {
+                const viduQ1I2VErr = err;
+                console.error("Vidu Q1 I2V create error:", {
+                    error: viduQ1I2VErr,
+                    payload: createPayload,
+                    serverResponse: (_12 = viduQ1I2VErr === null || viduQ1I2VErr === void 0 ? void 0 : viduQ1I2VErr.response) === null || _12 === void 0 ? void 0 : _12.data,
+                });
+                res.status(502).json({
+                    success: false,
+                    error: "Failed to create Vidu Q1 I2V prediction",
+                    details: serializeError(err),
+                });
+                return;
+            }
+            // Poll
+            let viduVideoUrl;
+            for (let i = 0; i < 300; i++) {
+                // up to ~5 min
+                yield new Promise((r) => setTimeout(r, 1000));
+                try {
+                    const result = yield axios_1.default.get(`https://api.eachlabs.ai/v1/prediction/${predictionId}`, {
+                        headers: { "x-api-key": eachLabsKey },
+                        timeout: 10000,
+                    });
+                    const lower = String(result.data.status || "").toLowerCase();
+                    if (lower === "success" || lower === "completed") {
+                        const rawOut = result.data.output;
+                        if (typeof rawOut === "string")
+                            viduVideoUrl = rawOut;
+                        else if (rawOut) {
+                            const out = rawOut;
+                            viduVideoUrl =
+                                out.video_url ||
+                                    out.video ||
+                                    (Array.isArray(out) ? ((_13 = out[0]) === null || _13 === void 0 ? void 0 : _13.video_url) || out[0] : null) ||
+                                    out.url ||
+                                    result.data.url ||
+                                    null;
+                        }
+                        else {
+                            viduVideoUrl =
+                                result.data.video_url ||
+                                    result.data.video ||
+                                    result.data.url ||
+                                    null;
+                        }
+                        break;
+                    }
+                    else if (lower === "failed" || lower === "error") {
+                        const provider_message = result.data.error || result.data.message || "Unknown error";
+                        res.status(500).json({
+                            success: false,
+                            error: provider_message
+                                ? `Vidu Q1 I2V prediction failed: ${provider_message}`
+                                : "Vidu Q1 I2V prediction failed",
+                            provider: "ViduQ1I2V",
+                            provider_status: (_14 = result.data) === null || _14 === void 0 ? void 0 : _14.status,
+                            provider_message,
+                            details: safeJson(result.data),
+                        });
+                        return;
+                    }
+                }
+                catch (e) {
+                    console.warn("Vidu Q1 I2V poll error (continuing)", (e === null || e === void 0 ? void 0 : e.message) || e);
+                    continue;
+                }
+            }
+            if (!viduVideoUrl) {
+                res.status(504).json({
+                    success: false,
+                    error: "Vidu Q1 I2V prediction timeout",
+                    provider: "ViduQ1I2V",
+                    provider_status: "timeout",
+                    provider_message: "Prediction did not complete in allotted time",
+                });
+                return;
+            }
+            // Download & upload to S3
+            let viduStream;
+            try {
+                viduStream = yield axios_1.default.get(viduVideoUrl, {
+                    responseType: "stream",
+                    timeout: 600000,
+                });
+            }
+            catch (e) {
+                res.status(500).json({
+                    success: false,
+                    error: "Failed to download Vidu Q1 I2V video",
+                    details: serializeError(e),
+                });
+                return;
+            }
+            let uploadedViduQ1I2V;
+            try {
+                uploadedViduQ1I2V = yield uploadGeneratedVideo(feature, "viduq1-i2v", viduStream.data);
+            }
+            catch (e) {
+                res.status(500).json({
+                    success: false,
+                    error: "Failed to upload Vidu Q1 I2V video to S3",
+                    details: serializeError(e),
+                });
+                return;
+            }
+            res.status(200).json({
+                success: true,
+                video: {
+                    url: uploadedViduQ1I2V.signedUrl,
+                    signedUrl: uploadedViduQ1I2V.signedUrl,
+                    key: uploadedViduQ1I2V.key,
+                },
+                s3Key: uploadedViduQ1I2V.key,
+            });
+            return;
+        }
+        // Eachlabs Vidu 2.0 Image to Video branch
+        const isVidu20Image2Video = /vidu-2\.0-image-to-video/i.test(rawModel);
+        if (isVidu20Image2Video) {
+            const eachLabsKey = process.env.PIXVERSE_API_KEY || process.env.EACHLABS_API_KEY;
+            if (!eachLabsKey) {
+                res.status(500).json({
+                    success: false,
+                    error: "EACHLABS / PIXVERSE API key not set",
+                });
+                return;
+            }
+            const viduVersion = process.env.VIDU_20_VERSION || "0.0.1";
+            const duration = Number(process.env.VIDU_20_DURATION || 4);
+            const resolution = "720p";
+            const input = {
+                image_url: imageCloudUrl,
+                prompt: prompt,
+                duration: duration,
+                resolution: resolution,
+            };
+            const createPayload = {
+                model: "vidu-2-0-image-to-video",
+                version: viduVersion,
+                input,
+                webhook_url: process.env.VIDU_20_WEBHOOK_URL || "",
+            };
+            let createResp;
+            let predictionId;
+            try {
+                createResp = yield axios_1.default.post("https://api.eachlabs.ai/v1/prediction/", createPayload, {
+                    headers: {
+                        "x-api-key": eachLabsKey,
+                        "Content-Type": "application/json",
+                    },
+                    timeout: 30000,
+                });
+                const prediction = createResp.data || {};
+                console.log("Vidu 2.0 create response:", prediction);
+                const statusStr = String(prediction.status || "").toLowerCase();
+                if (statusStr !== "success") {
+                    const provider_message = (prediction === null || prediction === void 0 ? void 0 : prediction.message) ||
+                        (prediction === null || prediction === void 0 ? void 0 : prediction.error) ||
+                        (prediction === null || prediction === void 0 ? void 0 : prediction.status) ||
+                        "Unknown status";
+                    res.status(502).json({
+                        success: false,
+                        error: `Vidu 2.0 creation failed: ${provider_message}`,
+                        provider: "Vidu20",
+                        provider_status: prediction === null || prediction === void 0 ? void 0 : prediction.status,
+                        provider_message,
+                        details: safeJson(prediction),
+                    });
+                    return;
+                }
+                predictionId = prediction === null || prediction === void 0 ? void 0 : prediction.predictionID;
+                if (!predictionId) {
+                    res.status(502).json({
+                        success: false,
+                        error: "Vidu 2.0 response missing prediction id",
+                        details: safeJson(prediction),
+                    });
+                    return;
+                }
+            }
+            catch (err) {
+                const vidu20Err = err;
+                console.error("Vidu 2.0 create error:", {
+                    error: vidu20Err,
+                    payload: createPayload,
+                    serverResponse: (_15 = vidu20Err === null || vidu20Err === void 0 ? void 0 : vidu20Err.response) === null || _15 === void 0 ? void 0 : _15.data,
+                });
+                res.status(502).json({
+                    success: false,
+                    error: "Failed to create Vidu 2.0 prediction",
+                    details: serializeError(err),
+                });
+                return;
+            }
+            // Poll
+            let viduVideoUrl;
+            for (let i = 0; i < 300; i++) {
+                // up to ~5 min
+                yield new Promise((r) => setTimeout(r, 1000));
+                try {
+                    const pollResp = yield axios_1.default.get(`https://api.eachlabs.ai/v1/prediction/${predictionId}`, {
+                        headers: { "x-api-key": eachLabsKey },
+                        timeout: 20000,
+                    });
+                    const result = pollResp.data || {};
+                    const lower = String(result.status || "").toLowerCase();
+                    if (lower === "success" || lower === "completed") {
+                        const rawOut = result.output;
+                        if (typeof rawOut === "string") {
+                            viduVideoUrl = rawOut;
+                        }
+                        else if (rawOut) {
+                            const out = rawOut;
+                            viduVideoUrl =
+                                out.video_url ||
+                                    out.video ||
+                                    (Array.isArray(out) ? ((_16 = out[0]) === null || _16 === void 0 ? void 0 : _16.video_url) || out[0] : null) ||
+                                    result.video_url ||
+                                    result.video ||
+                                    out.url ||
+                                    result.url ||
+                                    null;
+                        }
+                        else {
+                            viduVideoUrl =
+                                result.video_url || result.video || result.url || null;
+                        }
+                        break;
+                    }
+                    else if (["error", "failed", "canceled", "cancelled"].includes(lower)) {
+                        const provider_message = (result === null || result === void 0 ? void 0 : result.error) ||
+                            (result === null || result === void 0 ? void 0 : result.message) ||
+                            (result === null || result === void 0 ? void 0 : result.status);
+                        res.status(500).json({
+                            success: false,
+                            error: provider_message
+                                ? `Vidu 2.0 prediction failed: ${provider_message}`
+                                : "Vidu 2.0 prediction failed",
+                            provider: "Vidu20",
+                            provider_status: result === null || result === void 0 ? void 0 : result.status,
+                            provider_message,
+                            details: safeJson(result),
+                        });
+                        return;
+                    }
+                }
+                catch (e) {
+                    console.warn("Vidu 2.0 poll error (continuing)", (e === null || e === void 0 ? void 0 : e.message) || e);
+                    continue;
+                }
+            }
+            if (!viduVideoUrl) {
+                res.status(504).json({
+                    success: false,
+                    error: "Vidu 2.0 prediction timeout",
+                    provider: "Vidu20",
+                    provider_status: "timeout",
+                    provider_message: "Prediction did not complete in allotted time",
+                });
+                return;
+            }
+            // Download & upload to S3
+            let viduStream;
+            try {
+                viduStream = yield axios_1.default.get(viduVideoUrl, {
+                    responseType: "stream",
+                    timeout: 600000,
+                });
+            }
+            catch (e) {
+                res.status(500).json({
+                    success: false,
+                    error: "Failed to download Vidu 2.0 video",
+                    details: serializeError(e),
+                });
+                return;
+            }
+            let uploadedVidu20;
+            try {
+                uploadedVidu20 = yield uploadGeneratedVideo(feature, "vidu20", viduStream.data);
+            }
+            catch (e) {
+                res.status(500).json({
+                    success: false,
+                    error: "Failed to upload Vidu 2.0 video to S3",
+                    details: serializeError(e),
+                });
+                return;
+            }
+            res.status(200).json({
+                success: true,
+                video: {
+                    url: uploadedVidu20.signedUrl,
+                    signedUrl: uploadedVidu20.signedUrl,
+                    key: uploadedVidu20.key,
+                },
+                s3Key: uploadedVidu20.key,
+            });
+            return;
+        }
+        // Eachlabs Veo 2 Image to Video branch
+        const isVeo2Image2Video = /veo-2-image-to-video/i.test(rawModel);
+        if (isVeo2Image2Video) {
+            const eachLabsKey = process.env.EACHLABS_API_KEY;
+            if (!eachLabsKey) {
+                res.status(500).json({
+                    success: false,
+                    error: "EACHLABS API key not set",
+                });
+                return;
+            }
+            const veoVersion = process.env.VEO_2_VERSION || "0.0.1";
+            const duration = Number(process.env.VEO_2_DURATION || 5);
+            const aspect = process.env.VEO_2_ASPECT_RATIO || "auto";
+            const resolution = process.env.VEO_2_RESOLUTION || "720p";
+            const input = {
+                image_url: imageCloudUrl,
+                prompt: prompt,
+                duration: duration,
+                aspect_ratio: aspect,
+                resolution: resolution,
+            };
+            const createPayload = {
+                model: "veo-2-image-to-video",
+                version: veoVersion,
+                input,
+                webhook_url: process.env.VEO_2_WEBHOOK_URL || "",
+            };
+            let createResp;
+            let predictionId;
+            try {
+                createResp = yield axios_1.default.post("https://api.eachlabs.ai/v1/prediction/", createPayload, {
+                    headers: {
+                        "X-API-Key": eachLabsKey,
+                        "Content-Type": "application/json",
+                    },
+                    timeout: 30000,
+                });
+                const prediction = createResp.data || {};
+                console.log("Veo 2 Image to Video create response:", prediction);
+                const statusStr = String(prediction.status || "").toLowerCase();
+                if (statusStr !== "success") {
+                    const provider_message = (prediction === null || prediction === void 0 ? void 0 : prediction.message) ||
+                        (prediction === null || prediction === void 0 ? void 0 : prediction.error) ||
+                        (prediction === null || prediction === void 0 ? void 0 : prediction.status) ||
+                        "Unknown status";
+                    res.status(502).json({
+                        success: false,
+                        error: `Veo 2 Image to Video creation failed: ${provider_message}`,
+                        provider: "Veo2Image2Video",
+                        provider_status: prediction === null || prediction === void 0 ? void 0 : prediction.status,
+                        provider_message,
+                        details: safeJson(prediction),
+                    });
+                    return;
+                }
+                predictionId = prediction === null || prediction === void 0 ? void 0 : prediction.predictionID;
+                if (!predictionId) {
+                    res.status(502).json({
+                        success: false,
+                        error: "Veo 2 Image to Video response missing prediction id",
+                        details: safeJson(prediction),
+                    });
+                    return;
+                }
+            }
+            catch (err) {
+                const veo2Err = err;
+                console.error("Veo 2 Image to Video create error:", {
+                    error: veo2Err,
+                    payload: createPayload,
+                    serverResponse: (_17 = veo2Err === null || veo2Err === void 0 ? void 0 : veo2Err.response) === null || _17 === void 0 ? void 0 : _17.data,
+                });
+                res.status(502).json({
+                    success: false,
+                    error: "Failed to create Veo 2 Image to Video prediction",
+                    details: serializeError(err),
+                });
+                return;
+            }
+            // Poll
+            let veoVideoUrl;
+            for (let i = 0; i < 300; i++) {
+                // up to ~5 min
+                yield new Promise((r) => setTimeout(r, 1000));
+                try {
+                    const pollResp = yield axios_1.default.get(`https://api.eachlabs.ai/v1/prediction/${predictionId}`, {
+                        headers: { "x-api-key": eachLabsKey },
+                        timeout: 20000,
+                    });
+                    const result = pollResp.data || {};
+                    const lower = String(result.status || "").toLowerCase();
+                    if (lower === "success" || lower === "completed") {
+                        const rawOut = result.output;
+                        if (typeof rawOut === "string") {
+                            veoVideoUrl = rawOut;
+                        }
+                        else if (rawOut) {
+                            const out = rawOut;
+                            veoVideoUrl =
+                                out.video_url ||
+                                    out.video ||
+                                    (Array.isArray(out) ? ((_18 = out[0]) === null || _18 === void 0 ? void 0 : _18.video_url) || out[0] : null) ||
+                                    result.video_url ||
+                                    result.video ||
+                                    out.url ||
+                                    result.url ||
+                                    null;
+                        }
+                        else {
+                            veoVideoUrl =
+                                result.video_url || result.video || result.url || null;
+                        }
+                        break;
+                    }
+                    else if (["error", "failed", "canceled", "cancelled"].includes(lower)) {
+                        const provider_message = (result === null || result === void 0 ? void 0 : result.error) ||
+                            (result === null || result === void 0 ? void 0 : result.message) ||
+                            (result === null || result === void 0 ? void 0 : result.status);
+                        res.status(500).json({
+                            success: false,
+                            error: provider_message
+                                ? `Veo 2 Image to Video prediction failed: ${provider_message}`
+                                : "Veo 2 Image to Video prediction failed",
+                            provider: "Veo2Image2Video",
+                            provider_status: result === null || result === void 0 ? void 0 : result.status,
+                            provider_message,
+                            details: safeJson(result),
+                        });
+                        return;
+                    }
+                }
+                catch (e) {
+                    console.warn("Veo 2 Image to Video poll error (continuing)", (e === null || e === void 0 ? void 0 : e.message) || e);
+                    continue;
+                }
+            }
+            if (!veoVideoUrl) {
+                res.status(504).json({
+                    success: false,
+                    error: "Veo 2 Image to Video prediction timeout",
+                    provider: "Veo2Image2Video",
+                    provider_status: "timeout",
+                    provider_message: "Prediction did not complete in allotted time",
+                });
+                return;
+            }
+            // Download & upload to S3
+            let veoStream;
+            try {
+                veoStream = yield axios_1.default.get(veoVideoUrl, {
+                    responseType: "stream",
+                    timeout: 600000,
+                });
+            }
+            catch (e) {
+                res.status(500).json({
+                    success: false,
+                    error: "Failed to download Veo 2 Image to Video video",
+                    details: serializeError(e),
+                });
+                return;
+            }
+            let uploadedVeo2I2V;
+            try {
+                uploadedVeo2I2V = yield uploadGeneratedVideo(feature, "veo2-i2v", veoStream.data);
+            }
+            catch (e) {
+                res.status(500).json({
+                    success: false,
+                    error: "Failed to upload Veo 2 Image to Video video to S3",
+                    details: serializeError(e),
+                });
+                return;
+            }
+            res.status(200).json({
+                success: true,
+                video: {
+                    url: uploadedVeo2I2V.signedUrl,
+                    signedUrl: uploadedVeo2I2V.signedUrl,
+                    key: uploadedVeo2I2V.key,
+                },
+                s3Key: uploadedVeo2I2V.key,
+            });
+            return;
+        }
+        // Eachlabs Veo 3 Image to Video branch
+        const isVeo3Image2Video = /veo-3-image-to-video/i.test(rawModel);
+        if (isVeo3Image2Video) {
+            const eachLabsKey = process.env.EACHLABS_API_KEY;
+            if (!eachLabsKey) {
+                res.status(500).json({
+                    success: false,
+                    error: "EACHLABS API key not set",
+                });
+                return;
+            }
+            const veoVersion = process.env.VEO_3_VERSION || "0.0.1";
+            const duration = Number(process.env.VEO_3_DURATION || 8);
+            const resolution = process.env.VEO_3_RESOLUTION || "720p";
+            const input = {
+                image_url: imageCloudUrl,
+                prompt: prompt,
+                duration: duration,
+                resolution: resolution,
+            };
+            const createPayload = {
+                model: "veo-3-image-to-video",
+                version: veoVersion,
+                input,
+                webhook_url: process.env.VEO_3_WEBHOOK_URL || "",
+            };
+            let createResp;
+            let predictionId;
+            try {
+                createResp = yield axios_1.default.post("https://api.eachlabs.ai/v1/prediction/", createPayload, {
+                    headers: {
+                        "x-api-key": eachLabsKey,
+                        "Content-Type": "application/json",
+                    },
+                    timeout: 30000,
+                });
+                const prediction = createResp.data || {};
+                console.log("Veo 3 Image to Video create response:", prediction);
+                const statusStr = String(prediction.status || "").toLowerCase();
+                if (statusStr !== "success") {
+                    const provider_message = (prediction === null || prediction === void 0 ? void 0 : prediction.message) ||
+                        (prediction === null || prediction === void 0 ? void 0 : prediction.error) ||
+                        (prediction === null || prediction === void 0 ? void 0 : prediction.status) ||
+                        "Unknown status";
+                    res.status(502).json({
+                        success: false,
+                        error: `Veo 3 Image to Video creation failed: ${provider_message}`,
+                        provider: "Veo3Image2Video",
+                        provider_status: prediction === null || prediction === void 0 ? void 0 : prediction.status,
+                        provider_message,
+                        details: safeJson(prediction),
+                    });
+                    return;
+                }
+                predictionId = prediction === null || prediction === void 0 ? void 0 : prediction.predictionID;
+                if (!predictionId) {
+                    res.status(502).json({
+                        success: false,
+                        error: "Veo 3 Image to Video response missing prediction id",
+                        details: safeJson(prediction),
+                    });
+                    return;
+                }
+            }
+            catch (err) {
+                const veo3Err = err;
+                console.error("Veo 3 Image to Video create error:", {
+                    error: veo3Err,
+                    payload: createPayload,
+                    serverResponse: (_19 = veo3Err === null || veo3Err === void 0 ? void 0 : veo3Err.response) === null || _19 === void 0 ? void 0 : _19.data,
+                });
+                res.status(502).json({
+                    success: false,
+                    error: "Failed to create Veo 3 Image to Video prediction",
+                    details: serializeError(err),
+                });
+                return;
+            }
+            // Poll
+            let veoVideoUrl;
+            for (let i = 0; i < 300; i++) {
+                // up to ~5 min
+                yield new Promise((r) => setTimeout(r, 1000));
+                try {
+                    const pollResp = yield axios_1.default.get(`https://api.eachlabs.ai/v1/prediction/${predictionId}`, {
+                        headers: { "x-api-key": eachLabsKey },
+                        timeout: 20000,
+                    });
+                    const result = pollResp.data || {};
+                    const lower = String(result.status || "").toLowerCase();
+                    if (lower === "success" || lower === "completed") {
+                        const rawOut = result.output;
+                        if (typeof rawOut === "string") {
+                            veoVideoUrl = rawOut;
+                        }
+                        else if (rawOut) {
+                            const out = rawOut;
+                            veoVideoUrl =
+                                out.video_url ||
+                                    out.video ||
+                                    (Array.isArray(out) ? ((_20 = out[0]) === null || _20 === void 0 ? void 0 : _20.video_url) || out[0] : null) ||
+                                    result.video_url ||
+                                    result.video ||
+                                    out.url ||
+                                    result.url ||
+                                    null;
+                        }
+                        else {
+                            veoVideoUrl =
+                                result.video_url || result.video || result.url || null;
+                        }
+                        break;
+                    }
+                    else if (["error", "failed", "canceled", "cancelled"].includes(lower)) {
+                        const provider_message = (result === null || result === void 0 ? void 0 : result.error) ||
+                            (result === null || result === void 0 ? void 0 : result.message) ||
+                            (result === null || result === void 0 ? void 0 : result.status);
+                        res.status(500).json({
+                            success: false,
+                            error: provider_message
+                                ? `Veo 3 Image to Video prediction failed: ${provider_message}`
+                                : "Veo 3 Image to Video prediction failed",
+                            provider: "Veo3Image2Video",
+                            provider_status: result === null || result === void 0 ? void 0 : result.status,
+                            provider_message,
+                            details: safeJson(result),
+                        });
+                        return;
+                    }
+                }
+                catch (e) {
+                    console.warn("Veo 3 Image to Video poll error (continuing)", (e === null || e === void 0 ? void 0 : e.message) || e);
+                    continue;
+                }
+            }
+            if (!veoVideoUrl) {
+                res.status(504).json({
+                    success: false,
+                    error: "Veo 3 Image to Video prediction timeout",
+                    provider: "Veo3Image2Video",
+                    provider_status: "timeout",
+                    provider_message: "Prediction did not complete in allotted time",
+                });
+                return;
+            }
+            // Download & upload to S3
+            let veoStream;
+            try {
+                veoStream = yield axios_1.default.get(veoVideoUrl, {
+                    responseType: "stream",
+                    timeout: 600000,
+                });
+            }
+            catch (e) {
+                res.status(500).json({
+                    success: false,
+                    error: "Failed to download Veo 3 Image to Video video",
+                    details: serializeError(e),
+                });
+                return;
+            }
+            let uploadedVeo3I2V;
+            try {
+                uploadedVeo3I2V = yield uploadGeneratedVideo(feature, "veo3-i2v", veoStream.data);
+            }
+            catch (e) {
+                res.status(500).json({
+                    success: false,
+                    error: "Failed to upload Veo 3 Image to Video video to S3",
+                    details: serializeError(e),
+                });
+                return;
+            }
+            res.status(200).json({
+                success: true,
+                video: {
+                    url: uploadedVeo3I2V.signedUrl,
+                    signedUrl: uploadedVeo3I2V.signedUrl,
+                    key: uploadedVeo3I2V.key,
+                },
+                s3Key: uploadedVeo3I2V.key,
+            });
+            return;
+        }
+        // Check for Bytedance | Omnihuman or Seeddance V1 Pro model
+        const isBytedanceOmnihuman = /bytedance-omnihuman/i.test(rawModel);
+        const isBytedanceSeeddance = /bytedance-seeddance-v1-pro-image-to-video/i.test(rawModel);
+        if (isBytedanceOmnihuman || isBytedanceSeeddance) {
+            console.log("[Bytedance] Starting video generation for model:", isBytedanceOmnihuman
+                ? "bytedance-omnihuman"
+                : "seedance-v1-pro-image-to-video");
+            console.log("[Bytedance] Feature endpoint:", feature);
+            console.log("[Bytedance] Image URL:", imageCloudUrl);
+            const bytedanceKey = process.env.EACHLABS_API_KEY;
+            if (!bytedanceKey) {
+                res
+                    .status(500)
+                    .json({ success: false, error: "EACHLABS_API_KEY not set" });
+                return;
+            }
+            // If audio file is present, upload to S3 and get signed URL
+            let audioUrl = null;
+            if (req.file) {
+                console.log("[Bytedance] Audio file detected, uploading to S3...");
+                // Only accept files up to ~1MB (30s mp3/wav)
+                if (req.file.size > 2 * 1024 * 1024) {
+                    res.status(400).json({
+                        success: false,
+                        error: "Audio file too large (max 2MB)",
+                    });
+                    return;
+                }
+                try {
+                    const audioExt = (req.file.originalname || "mp3").split(".").pop() || "mp3";
+                    const audioKey = (0, s3_1.makeKey)({
+                        type: "audio",
+                        feature,
+                        ext: audioExt,
+                    });
+                    yield (0, s3_1.uploadBuffer)(audioKey, req.file.buffer, req.file.mimetype || "audio/mpeg");
+                    try {
+                        audioUrl = yield (0, signedUrl_1.signKey)(audioKey);
+                    }
+                    catch (_64) {
+                        audioUrl = (0, s3_1.publicUrlFor)(audioKey); // fallback (may be private)
+                    }
+                }
+                catch (e) {
+                    console.error("[Bytedance] Audio S3 upload failed", e);
+                    res.status(500).json({
+                        success: false,
+                        error: "Failed to upload audio file",
+                        details: serializeError(e),
+                    });
+                    return;
+                }
+            }
+            // Build payload for Omnihuman or Seeddance
+            const bytedanceInput = {
+                image_url: imageCloudUrl,
+            };
+            if (audioUrl) {
+                bytedanceInput.audio_url = audioUrl;
+            }
+            let bytedancePayload;
+            if (isBytedanceOmnihuman) {
+                bytedancePayload = {
+                    model: "bytedance-omnihuman",
+                    version: "0.0.1",
+                    input: bytedanceInput,
+                    webhook_url: "",
+                };
+            }
+            else {
+                // Seeddance V1 Pro
+                bytedancePayload = {
+                    model: "seedance-v1-pro-image-to-video",
+                    version: "0.0.1",
+                    input: Object.assign(Object.assign(Object.assign({}, bytedanceInput), { camera_fixed: false, duration: "5", resolution: "720p" }), (prompt ? { prompt } : {})),
+                    webhook_url: "",
+                };
+            }
+            console.log("[Bytedance] Payload:", JSON.stringify(bytedancePayload, null, 2));
+            let taskId;
+            try {
+                const createResp = yield axios_1.default.post("https://api.eachlabs.ai/v1/prediction/", bytedancePayload, {
+                    headers: {
+                        "X-API-Key": bytedanceKey,
+                        "Content-Type": "application/json",
+                    },
+                    timeout: 45000,
+                });
+                const data = createResp.data || {};
+                console.log("[Bytedance] Creation response:", JSON.stringify(data, null, 2));
+                if (data.status !== "success") {
+                    const provider_message = data.message || data.error || data.status || "Unknown error";
+                    console.error("[Bytedance] Creation failed:", provider_message, data);
+                    res.status(502).json({
+                        success: false,
+                        error: `Bytedance creation failed: ${provider_message}`,
+                        provider: "Bytedance",
+                        provider_status: data.status,
+                        provider_message,
+                        details: safeJson(data),
+                    });
+                    return;
+                }
+                taskId =
+                    data.predictionID || data.predictionId || data.id || data.task_id;
+                if (!taskId) {
+                    console.error("[Bytedance] No prediction id in response:", data);
+                    res.status(502).json({
+                        success: false,
+                        error: "Bytedance response missing prediction id",
+                        provider: "Bytedance",
+                        details: safeJson(data),
+                    });
+                    return;
+                }
+            }
+            catch (e) {
+                console.error("[Bytedance] Creation error:", serializeError(e));
+                const provider_message = ((_22 = (_21 = e === null || e === void 0 ? void 0 : e.response) === null || _21 === void 0 ? void 0 : _21.data) === null || _22 === void 0 ? void 0 : _22.message) ||
+                    ((_24 = (_23 = e === null || e === void 0 ? void 0 : e.response) === null || _23 === void 0 ? void 0 : _23.data) === null || _24 === void 0 ? void 0 : _24.error) ||
+                    (e === null || e === void 0 ? void 0 : e.message) ||
+                    "Unknown error";
+                res.status(502).json({
+                    success: false,
+                    error: `Bytedance creation failed: ${provider_message}`,
+                    provider: "Bytedance",
+                    details: serializeError(e),
+                });
+                return;
+            }
+            // Poll for completion
+            let bytedanceVideoUrl = null;
+            for (let i = 0; i < 120; i++) {
+                // up to ~8 minutes (120 * 4s)
+                yield new Promise((r) => setTimeout(r, 4000));
+                try {
+                    const pollResp = yield axios_1.default.get(`https://api.eachlabs.ai/v1/prediction/${taskId}`, {
+                        headers: {
+                            "X-API-Key": bytedanceKey,
+                            "Content-Type": "application/json",
+                        },
+                        timeout: 20000,
+                    });
+                    const pollData = pollResp.data || {};
+                    console.log(`[Bytedance] Poll #${i + 1}:`, JSON.stringify(pollData, null, 2));
+                    if (pollData.status === "succeeded" ||
+                        pollData.status === "success") {
+                        bytedanceVideoUrl = pollData.output;
+                        if (bytedanceVideoUrl) {
+                            console.log("[Bytedance] Generation completed. Video URL:", bytedanceVideoUrl);
+                            break;
+                        }
+                    }
+                    if (pollData.status === "failed" || pollData.status === "error") {
+                        const provider_message = pollData.output || pollData.error || pollData.status;
+                        console.error(`[Bytedance] Generation failed:`, provider_message, pollData);
+                        res.status(500).json({
+                            success: false,
+                            error: `${provider_message}`,
+                            provider: "Bytedance",
+                            provider_status: pollData.status,
+                            provider_message,
+                            details: safeJson(pollData),
+                        });
+                        return;
+                    }
+                }
+                catch (e) {
+                    console.warn(`[Bytedance] Poll error (continuing):`, (e === null || e === void 0 ? void 0 : e.message) || e);
+                    continue;
+                }
+            }
+            if (!bytedanceVideoUrl) {
+                console.error("[Bytedance] Generation timeout: No video URL after polling");
+                res.status(504).json({
+                    success: false,
+                    error: "Bytedance Omnihuman generation timeout",
+                    provider: "Bytedance",
+                    provider_status: "timeout",
+                    provider_message: "Generation did not complete in allotted time",
+                });
+                return;
+            }
+            // Download video from Bytedance URL
+            let bytedanceStream;
+            try {
+                bytedanceStream = yield axios_1.default.get(bytedanceVideoUrl, {
+                    responseType: "stream",
+                    timeout: 600000,
+                });
+            }
+            catch (e) {
+                console.error("[Bytedance] Download error:", serializeError(e));
+                res.status(500).json({
+                    success: false,
+                    error: "Failed to download Bytedance Omnihuman video",
+                    provider: "Bytedance",
+                    details: serializeError(e),
+                });
+                return;
+            }
+            // Upload to S3
+            let uploadedBytedance;
+            try {
+                uploadedBytedance = yield uploadGeneratedVideo(feature, isBytedanceOmnihuman ? "bytedance-omnihuman" : "seedance-v1-pro", bytedanceStream.data);
+            }
+            catch (e) {
+                console.error("[Bytedance] S3 upload error", serializeError(e));
+                res.status(500).json({
+                    success: false,
+                    error: "Failed to upload Bytedance video to S3",
+                    provider: "Bytedance",
+                    details: serializeError(e),
+                });
+                return;
+            }
+            res.json({
+                success: true,
+                video: {
+                    url: uploadedBytedance.signedUrl,
+                    signedUrl: uploadedBytedance.signedUrl,
+                    key: uploadedBytedance.key,
+                },
+                s3Key: uploadedBytedance.key,
+                provider: "Bytedance",
+            });
+            return;
+        }
+        const isMiniMax = /MiniMax-Hailuo-02|I2V-01-Director|I2V-01-live|I2V-01/i.test(rawModel);
+        if (isMiniMax) {
+            const miniMaxKey = process.env.MINIMAX_API_KEY;
+            if (!miniMaxKey) {
+                res
+                    .status(500)
+                    .json({ success: false, error: "MINIMAX_API_KEY not set" });
+                return;
+            }
+            // Build payload per docs
+            const duration = Number(process.env.MINIMAX_DURATION || 6); // MiniMax supports 6 or 10 for some models
+            // Map frontend model names to correct MiniMax API model names
+            let minimaxModel = rawModel;
+            if (/MiniMax-Hailuo-02/i.test(rawModel)) {
+                minimaxModel = "MiniMax-Hailuo-02";
+            }
+            else if (/I2V-01-Director/i.test(rawModel)) {
+                minimaxModel = "I2V-01-Director";
+            }
+            else if (/I2V-01-live/i.test(rawModel)) {
+                minimaxModel = "I2V-01-live";
+            }
+            else if (/I2V-01/i.test(rawModel)) {
+                minimaxModel = "I2V-01";
+            }
+            const resolution = process.env.MINIMAX_RESOLUTION ||
+                (minimaxModel === "MiniMax-Hailuo-02" ? "768P" : "720P");
+            const mmPayload = {
+                model: minimaxModel,
+                prompt: prompt, // MiniMax requires prompt
+                duration,
+                resolution,
+            };
+            // first_frame_image required for I2V models (and Hailuo at some resolutions)
+            mmPayload.first_frame_image = imageCloudUrl;
+            let taskId;
+            try {
+                const createResp = yield axios_1.default.post("https://api.minimax.io/v1/video_generation", mmPayload, {
+                    headers: {
+                        Authorization: `Bearer ${miniMaxKey}`,
+                        "Content-Type": "application/json",
+                    },
+                    timeout: 45000,
+                });
+                const data = createResp.data || {};
+                console.log("Minimax response: ", data);
+                const base = data.base_resp || {};
+                const provider_code = base.status_code;
+                const provider_message = base.status_msg;
+                taskId = data === null || data === void 0 ? void 0 : data.task_id;
+                // If provider returns an error code (non-zero) or no task id, treat as failure and expose provider message
+                if ((provider_code !== undefined && provider_code !== 0) || !taskId) {
+                    res.status(400).json({
+                        success: false,
+                        error: provider_message || "MiniMax creation failed",
+                        provider: "MiniMax",
+                        provider_code,
+                        provider_message: provider_message ||
+                            (taskId ? undefined : "Missing task_id in response"),
+                        details: safeJson(data),
+                    });
+                    return;
+                }
+            }
+            catch (e) {
+                // already using e as any here, so no change needed
+                const respData = (_25 = e === null || e === void 0 ? void 0 : e.response) === null || _25 === void 0 ? void 0 : _25.data;
+                const base = (respData === null || respData === void 0 ? void 0 : respData.base_resp) || {};
+                const provider_code = base === null || base === void 0 ? void 0 : base.status_code;
+                const provider_message = (base === null || base === void 0 ? void 0 : base.status_msg) || (respData === null || respData === void 0 ? void 0 : respData.message) || (e === null || e === void 0 ? void 0 : e.message);
+                res.status(502).json({
+                    success: false,
+                    error: provider_message
+                        ? `MiniMax creation failed: ${provider_message}`
+                        : "Failed to create MiniMax generation",
+                    provider: "MiniMax",
+                    provider_code,
+                    provider_message,
+                    details: serializeError(e),
+                });
+                return;
+            }
+            // Poll task status
+            let mmVideoUrl = null;
+            let mmFileId = null;
+            for (let i = 0; i < 90; i++) {
+                // up to ~6 min (90 * 4s)
+                yield new Promise((r) => setTimeout(r, 4000));
+                try {
+                    const pollResp = yield axios_1.default.get("https://api.minimax.io/v1/query/video_generation", {
+                        headers: { Authorization: `Bearer ${miniMaxKey}` },
+                        params: { task_id: taskId },
+                        timeout: 20000,
+                    });
+                    const status = (_26 = pollResp.data) === null || _26 === void 0 ? void 0 : _26.status;
+                    if (status === "Success" || status === "success") {
+                        // Assume file_id -> downloadable endpoint
+                        const fileId = (_27 = pollResp.data) === null || _27 === void 0 ? void 0 : _27.file_id;
+                        console.log("MiniMax generation success payload:", safeJson(pollResp.data));
+                        mmFileId = fileId || null;
+                        // If API already provides a direct downloadable URL use it, else will fetch below
+                        mmVideoUrl =
+                            ((_28 = pollResp.data) === null || _28 === void 0 ? void 0 : _28.video_url) || ((_29 = pollResp.data) === null || _29 === void 0 ? void 0 : _29.file_url) || null;
+                        break; // exit loop, will handle retrieval next
+                    }
+                    if (status === "Fail" ||
+                        status === "failed" ||
+                        status === "error") {
+                        const base = ((_30 = pollResp.data) === null || _30 === void 0 ? void 0 : _30.base_resp) || {};
+                        const provider_code = base === null || base === void 0 ? void 0 : base.status_code;
+                        const provider_message = (base === null || base === void 0 ? void 0 : base.status_msg) ||
+                            ((_31 = pollResp.data) === null || _31 === void 0 ? void 0 : _31.status_reason) ||
+                            ((_32 = pollResp.data) === null || _32 === void 0 ? void 0 : _32.message) ||
+                            ((_33 = pollResp.data) === null || _33 === void 0 ? void 0 : _33.status);
+                        res.status(500).json({
+                            success: false,
+                            error: provider_message
+                                ? `MiniMax generation failed: ${provider_message}`
+                                : "MiniMax generation failed",
+                            provider: "MiniMax",
+                            provider_code,
+                            provider_message,
+                            provider_status: (_34 = pollResp.data) === null || _34 === void 0 ? void 0 : _34.status,
+                            details: safeJson(pollResp.data),
+                        });
+                        return;
+                    }
+                }
+                catch (e) {
+                    console.warn("MiniMax poll error (continuing):", (e === null || e === void 0 ? void 0 : e.message) || e);
+                    continue;
+                }
+            }
+            if (!mmVideoUrl && !mmFileId) {
+                res.status(504).json({
+                    success: false,
+                    error: "MiniMax generation timeout",
+                    provider: "MiniMax",
+                    provider_status: "timeout",
+                    provider_message: "Generation did not complete in allotted time",
+                });
+                return;
+            }
+            // If we only have file id, call official retrieve endpoint per docs
+            if (!mmVideoUrl && mmFileId) {
+                try {
+                    const retrieveResp = yield axios_1.default.get("https://api.minimax.io/v1/files/retrieve", {
+                        headers: {
+                            Authorization: `Bearer ${miniMaxKey}`,
+                            "Content-Type": "application/json",
+                        },
+                        params: { file_id: mmFileId },
+                        timeout: 30000,
+                    });
+                    mmVideoUrl =
+                        ((_36 = (_35 = retrieveResp.data) === null || _35 === void 0 ? void 0 : _35.file) === null || _36 === void 0 ? void 0 : _36.download_url) ||
+                            ((_37 = retrieveResp.data) === null || _37 === void 0 ? void 0 : _37.download_url) ||
+                            null;
+                    if (!mmVideoUrl) {
+                        console.error("MiniMax retrieve missing download_url", safeJson(retrieveResp.data));
+                        res.status(502).json({
+                            success: false,
+                            error: "MiniMax retrieve missing download_url",
+                            provider: "MiniMax",
+                            provider_message: "retrieve missing download_url",
+                            details: safeJson(retrieveResp.data),
+                        });
+                        return;
+                    }
+                }
+                catch (e) {
+                    console.error("MiniMax retrieve error:", serializeError(e));
+                    const respData = (_38 = e === null || e === void 0 ? void 0 : e.response) === null || _38 === void 0 ? void 0 : _38.data;
+                    const base = (respData === null || respData === void 0 ? void 0 : respData.base_resp) || {};
+                    const provider_code = base === null || base === void 0 ? void 0 : base.status_code;
+                    const provider_message = (base === null || base === void 0 ? void 0 : base.status_msg) || (respData === null || respData === void 0 ? void 0 : respData.message) || (e === null || e === void 0 ? void 0 : e.message);
+                    res.status(502).json({
+                        success: false,
+                        error: provider_message
+                            ? `MiniMax retrieve failed: ${provider_message}`
+                            : "Failed to retrieve MiniMax video file",
+                        provider: "MiniMax",
+                        provider_code,
+                        provider_message,
+                        details: serializeError(e),
+                    });
+                    return;
+                }
+            }
+            if (!mmVideoUrl) {
+                res.status(500).json({
+                    success: false,
+                    error: "MiniMax video URL unresolved",
+                    provider: "MiniMax",
+                    provider_message: "Video URL not provided by API",
+                });
+                return;
+            }
+            // Download video
+            let mmStream;
+            try {
+                mmStream = yield axios_1.default.get(mmVideoUrl, {
+                    responseType: "stream",
+                    timeout: 600000,
+                });
+            }
+            catch (e) {
+                const respData = (_39 = e === null || e === void 0 ? void 0 : e.response) === null || _39 === void 0 ? void 0 : _39.data;
+                const base = (respData === null || respData === void 0 ? void 0 : respData.base_resp) || {};
+                const provider_code = base === null || base === void 0 ? void 0 : base.status_code;
+                const provider_message = (base === null || base === void 0 ? void 0 : base.status_msg) || (respData === null || respData === void 0 ? void 0 : respData.message) || (e === null || e === void 0 ? void 0 : e.message);
+                res.status(500).json({
+                    success: false,
+                    error: provider_message
+                        ? `MiniMax download failed: ${provider_message}`
+                        : "Failed to download MiniMax video",
+                    provider: "MiniMax",
+                    provider_code,
+                    provider_message,
+                    details: serializeError(e),
+                });
+                return;
+            }
+            // Upload to S3
+            let uploadedMiniMax;
+            try {
+                uploadedMiniMax = yield uploadGeneratedVideo(feature, "minimax", mmStream.data);
+            }
+            catch (e) {
+                res.status(500).json({
+                    success: false,
+                    error: "Failed to upload MiniMax video to S3",
+                    provider: "MiniMax",
+                    details: serializeError(e),
+                });
+                return;
+            }
+            res.status(200).json({
+                success: true,
+                video: {
+                    url: uploadedMiniMax.signedUrl,
+                    signedUrl: uploadedMiniMax.signedUrl,
+                    key: uploadedMiniMax.key,
+                },
+                s3Key: uploadedMiniMax.key,
+                provider: "MiniMax",
+            });
+            return;
+        }
+        // Step 3 (fallback): Generate video using LumaLabs Dream Machine (Ray 2 - Image to Video)
+        const lumaApiKey = process.env.LUMA_API_KEY;
+        if (!lumaApiKey) {
+            throw new Error("LUMA_API_KEY not set in environment");
+        }
+        // Map friendly model names to Luma identifiers
+        const resolveLumaModel = (val) => {
+            const v = (val || process.env.LUMA_MODE || "ray 2")
+                .toString()
+                .toLowerCase();
+            if (v.includes("1.6"))
+                return "ray-1-6";
+            if (v.includes("flash"))
+                return "ray-flash-2"; // fast Ray 2
+            return "ray-2"; // default
+        };
+        // Avoid shadowing earlier selectedModel; use distinct name here
+        const lumaModel = resolveLumaModel(userModel);
+        // Build payload per docs: POST https://api.lumalabs.ai/dream-machine/v1/generations
+        const lumaPayload = {
+            prompt,
+            model: lumaModel,
+            keyframes: {
+                frame0: {
+                    type: "image",
+                    url: imageCloudUrl,
+                },
+            },
+        };
+        if (process.env.LUMA_RESOLUTION)
+            lumaPayload.resolution = process.env.LUMA_RESOLUTION;
+        if (process.env.LUMA_DURATION)
+            lumaPayload.duration = process.env.LUMA_DURATION;
+        // Networking hardening: prefer IPv4 and retry transient errors
+        const httpsAgent = new https_1.default.Agent({ keepAlive: true, family: 4 });
+        const httpAgent = new http_1.default.Agent({ keepAlive: true, family: 4 });
+        const isTransient = (err) => {
+            var _a;
+            const code = (err === null || err === void 0 ? void 0 : err.code) || ((_a = err === null || err === void 0 ? void 0 : err.cause) === null || _a === void 0 ? void 0 : _a.code);
+            return [
+                "ETIMEDOUT",
+                "ENETUNREACH",
+                "ECONNRESET",
+                "EAI_AGAIN",
+                "ESOCKETTIMEDOUT",
+            ].includes(code);
+        };
+        let createGenRes;
+        for (let attempt = 1; attempt <= 3; attempt++) {
+            try {
+                createGenRes = yield axios_1.default.post("https://api.lumalabs.ai/dream-machine/v1/generations", lumaPayload, {
+                    headers: {
+                        accept: "application/json",
+                        "content-type": "application/json",
+                        authorization: `Bearer ${lumaApiKey}`,
+                    },
+                    timeout: 45000,
+                    httpsAgent,
+                    httpAgent,
+                });
+                break; // success
+            }
+            catch (err) {
+                const e = err;
+                if (attempt < 3 && isTransient(e)) {
+                    const backoff = attempt * 2000;
+                    console.warn(`Luma create generation transient error (attempt ${attempt}/3):`, (e === null || e === void 0 ? void 0 : e.code) || (e === null || e === void 0 ? void 0 : e.message) || e);
+                    yield new Promise((r) => setTimeout(r, backoff));
+                    continue;
+                }
+                console.error("Luma create generation error:", {
+                    error: serializeError(e),
+                    payload: lumaPayload,
+                    serverResponse: (_40 = e === null || e === void 0 ? void 0 : e.response) === null || _40 === void 0 ? void 0 : _40.data,
+                });
+                const respData = (_41 = e === null || e === void 0 ? void 0 : e.response) === null || _41 === void 0 ? void 0 : _41.data;
+                // Prefer detail/message/error from server response for user-facing error
+                const userMessage = (respData === null || respData === void 0 ? void 0 : respData.detail) ||
+                    (respData === null || respData === void 0 ? void 0 : respData.message) ||
+                    (respData === null || respData === void 0 ? void 0 : respData.error) ||
+                    (e === null || e === void 0 ? void 0 : e.message);
+                res.status(503).json({
+                    success: false,
+                    error: userMessage
+                        ? `${userMessage}`
+                        : "Luma API unreachable or timed out",
+                    provider: "Luma",
+                    provider_message: userMessage,
+                    details: serializeError(e),
+                });
+                return;
+            }
+        }
+        // Extract generation id
+        if (!createGenRes) {
+            res.status(503).json({
+                success: false,
+                error: "Failed to contact Luma after retries",
+            });
+            return;
+        }
+        const generationId = ((_42 = createGenRes.data) === null || _42 === void 0 ? void 0 : _42.id) || ((_44 = (_43 = createGenRes.data) === null || _43 === void 0 ? void 0 : _43.data) === null || _44 === void 0 ? void 0 : _44.id);
+        if (!generationId) {
+            res.status(500).json({
+                success: false,
+                error: "No generation id returned from Luma",
+                details: safeJson(createGenRes.data),
+            });
+            return;
+        }
+        // Poll generation status per docs (statuses: dreaming | completed | failed)
+        let videoUrl = null;
+        let state = "";
+        for (let i = 0; i < 90; i++) {
+            // up to ~7.5 minutes (90 * 5s)
+            yield new Promise((r) => setTimeout(r, 5000));
+            let pollRes;
+            try {
+                pollRes = yield axios_1.default.get(`https://api.lumalabs.ai/dream-machine/v1/generations/${generationId}`, {
+                    headers: {
+                        accept: "application/json",
+                        authorization: `Bearer ${lumaApiKey}`,
+                    },
+                    timeout: 25000,
+                    httpsAgent,
+                    httpAgent,
+                });
+            }
+            catch (err) {
+                const e = err;
+                if (isTransient(e)) {
+                    console.warn("Luma poll transient error, continuing:", (e === null || e === void 0 ? void 0 : e.code) || (e === null || e === void 0 ? void 0 : e.message) || e);
+                    continue; // let loop retry after delay
+                }
+                console.error("Luma poll error:", serializeError(e));
+                res.status(500).json({
+                    success: false,
+                    error: "Failed to poll Luma generation",
+                    provider: "Luma",
+                    provider_message: e === null || e === void 0 ? void 0 : e.message,
+                    details: serializeError(e),
+                });
+                return;
+            }
+            // Try to read state/status and the video URL in a robust way
+            state =
+                ((_45 = pollRes.data) === null || _45 === void 0 ? void 0 : _45.state) ||
+                    ((_46 = pollRes.data) === null || _46 === void 0 ? void 0 : _46.status) ||
+                    ((_48 = (_47 = pollRes.data) === null || _47 === void 0 ? void 0 : _47.data) === null || _48 === void 0 ? void 0 : _48.state) ||
+                    "";
+            if (state === "completed") {
+                videoUrl =
+                    ((_50 = (_49 = pollRes.data) === null || _49 === void 0 ? void 0 : _49.assets) === null || _50 === void 0 ? void 0 : _50.video) ||
+                        ((_51 = pollRes.data) === null || _51 === void 0 ? void 0 : _51.video) ||
+                        ((_53 = (_52 = pollRes.data) === null || _52 === void 0 ? void 0 : _52.data) === null || _53 === void 0 ? void 0 : _53.video_url) ||
+                        ((_57 = (_56 = (_55 = (_54 = pollRes.data) === null || _54 === void 0 ? void 0 : _54.assets) === null || _55 === void 0 ? void 0 : _55.mp4) === null || _56 === void 0 ? void 0 : _56[0]) === null || _57 === void 0 ? void 0 : _57.url) ||
+                        null;
+                console.log("Luma poll response:", pollRes.data);
+                break;
+            }
+            if (state === "failed") {
+                console.error("Luma generation failed:", pollRes.data);
+                const provider_message = ((_58 = pollRes.data) === null || _58 === void 0 ? void 0 : _58.failure_reason) ||
+                    ((_59 = pollRes.data) === null || _59 === void 0 ? void 0 : _59.error) ||
+                    ((_60 = pollRes.data) === null || _60 === void 0 ? void 0 : _60.message) ||
+                    ((_61 = pollRes.data) === null || _61 === void 0 ? void 0 : _61.state);
+                res.status(500).json({
+                    success: false,
+                    error: provider_message
+                        ? `Luma generation failed: ${provider_message}`
+                        : "Luma generation failed",
+                    provider: "Luma",
+                    provider_status: (_62 = pollRes.data) === null || _62 === void 0 ? void 0 : _62.state,
+                    provider_message,
+                    details: safeJson(pollRes.data),
+                });
+                return;
+            }
+        }
+        if (!videoUrl) {
+            console.error("Luma video generation did not complete in time");
+            res.status(500).json({
+                success: false,
+                error: "Video generation did not complete in time",
+                provider: "Luma",
+                provider_status: state || "timeout",
+                provider_message: "Generation timed out",
+            });
+            return;
+        }
+        // Download the video as a stream
+        let videoResponse;
+        try {
+            videoResponse = yield axios_1.default.get(videoUrl, {
+                responseType: "stream",
+                timeout: 600000,
+            });
+        }
+        catch (err) {
+            const e = err;
+            console.error("Error downloading Luma video:", ((_63 = e === null || e === void 0 ? void 0 : e.response) === null || _63 === void 0 ? void 0 : _63.data) || e);
+            res.status(500).json({
+                success: false,
+                error: "Failed to download Luma video",
+                provider: "Luma",
+                provider_message: e === null || e === void 0 ? void 0 : e.message,
+                details: serializeError(e),
+            });
+            return;
+        }
+        // Upload the video stream to S3
+        let uploadedLuma;
+        try {
+            const variant = lumaModel.replace(/[^a-z0-9-]/gi, "-");
+            uploadedLuma = yield uploadGeneratedVideo(feature, variant, videoResponse.data);
+        }
+        catch (e) {
+            res.status(500).json({
+                success: false,
+                error: "Failed to upload Luma video to S3",
+                provider: "Luma",
+                details: serializeError(e),
+            });
+            return;
+        }
+        res.status(200).json({
+            success: true,
+            video: {
+                url: uploadedLuma.signedUrl,
+                signedUrl: uploadedLuma.signedUrl,
+                key: uploadedLuma.key,
+            },
+            s3Key: uploadedLuma.key,
+            provider: "Luma",
+        });
+    }
+    catch (error) {
+        console.error("Error generating video:", serializeError(error));
+        const errorMessage = error instanceof Error ? error.message : "Unknown error";
+        res.status(500).json({
+            success: false,
+            error: errorMessage && !/Failed to generate video/.test(errorMessage)
+                ? errorMessage
+                : "Failed to generate video",
+            details: errorMessage,
+        });
+    }
+}));
+exports.default = router;
