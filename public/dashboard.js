@@ -1286,7 +1286,14 @@ function showFeatureDetailPage(endpoint) {
             // Refresh the feature list display to show the new video thumbnail
             displayFeatures();
           } else {
-            throw new Error((data && data.error) || "Failed to generate video");
+            const msg =
+              (data &&
+                (data.error ||
+                  data.provider_output ||
+                  data.provider_message ||
+                  data.message)) ||
+              "Failed to generate video";
+            throw new Error(msg);
           }
         } catch (e) {
           if (genStatus) genStatus.textContent = `Error: ${e.message || e}`;

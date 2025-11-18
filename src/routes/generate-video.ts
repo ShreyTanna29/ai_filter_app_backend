@@ -2116,24 +2116,43 @@ router.post(
       }
 
       if (isPixverseTransition || isPixverseImage2Video) {
-        // Helper: ensure Cloudinary image URLs transformed to 512x512 (fill & crop center)
+        // Ensure 512x512 for Pixverse-compatible inputs for ANY host (S3/Cloudinary/etc)
         const force512 = (url: string | undefined): string | undefined => {
           if (!url) return url;
-          // Only transform Cloudinary urls of pattern /upload/... (avoid double transform)
           try {
-            if (!/res\.cloudinary\.com\//i.test(url)) return url; // skip non-cloudinary
-            if (/\/image\/upload\/c_fill,w_512,h_512\//.test(url)) return url; // already transformed
-            // Insert transformation right after '/upload/' segment
+            if (!/res\.cloudinary\.com\//i.test(url)) return url; // only transform Cloudinary inline
+            if (/\/image\/upload\/c_fill,w_512,h_512\//.test(url)) return url;
             return url.replace(
               /(\/image\/upload\/)(?!c_fill,w_512,h_512\/)/,
               "$1c_fill,w_512,h_512,q_auto,f_auto/"
             );
           } catch {
-            return url; // fallback silently
+            return url;
           }
         };
-        const firstFrame512 = force512(imageCloudUrl);
-        const lastFrame512 = force512(lastFrameCloudUrl);
+
+        // Normalize any URL to 512x512 by resizing+reuploading to S3 when not Cloudinary
+        const normalizeTo512 = async (
+          url?: string
+        ): Promise<string | undefined> => {
+          if (!url) return undefined;
+          // If Cloudinary, prefer URL transformation for speed
+          const maybeCloud = force512(url);
+          if (maybeCloud !== url) return maybeCloud;
+          try {
+            const ensured = await ensure512SquareImageFromUrl(url);
+            const key = makeKey({ type: "image", feature: "pixverse-512", ext: "png" });
+            await uploadBuffer(key, ensured.buffer, ensured.contentType);
+            const signed = await signKey(key);
+            return signed;
+          } catch (e) {
+            console.warn("[Pixverse] 512 resize failed, using original URL", e);
+            return url;
+          }
+        };
+
+        const firstFrame512 = await normalizeTo512(imageCloudUrl);
+        const lastFrame512 = await normalizeTo512(lastFrameCloudUrl);
         const pixKey =
           process.env.PIXVERSE_API_KEY || process.env.EACHLABS_API_KEY;
         if (!pixKey) {
@@ -2296,18 +2315,24 @@ router.post(
             } else if (
               ["error", "failed", "canceled", "cancelled"].includes(lower)
             ) {
+              const provider_output = (result as any)?.output;
               const provider_message =
                 (result as any)?.error ||
                 (result as any)?.message ||
-                (result as any)?.status;
-              res.status(500).json({
+                (result as any)?.status ||
+                provider_output;
+              // Prefer the explicit output text when present (e.g., "incorrect image width or height")
+              const userError =
+                provider_output ||
+                provider_message ||
+                "Pixverse prediction failed";
+              res.status(422).json({
                 success: false,
-                error: provider_message
-                  ? `Pixverse prediction failed: ${provider_message}`
-                  : "Pixverse prediction failed",
+                error: userError,
                 provider: "Pixverse",
                 provider_status: (result as any)?.status,
                 provider_message,
+                provider_output,
                 details: safeJson(result),
               });
               return;
