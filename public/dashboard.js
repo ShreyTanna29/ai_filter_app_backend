@@ -528,6 +528,39 @@ function setStoredApiKey(key) {
   }
 }
 
+// Robust clipboard copy with fallback for non-secure contexts
+async function copyToClipboard(text) {
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch (_) {
+    // will fallback below
+  }
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.setAttribute("readonly", "");
+    ta.style.position = "absolute";
+    ta.style.left = "-9999px";
+    document.body.appendChild(ta);
+    const selection = document.getSelection();
+    const currentRange =
+      selection && selection.rangeCount > 0 ? selection.getRangeAt(0) : null;
+    ta.select();
+    document.execCommand("copy");
+    document.body.removeChild(ta);
+    if (currentRange && selection) {
+      selection.removeAllRanges();
+      selection.addRange(currentRange);
+    }
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
 async function ensureApiKey(interactive = false) {
   let key = getStoredApiKey();
   if (!key && interactive) {
@@ -643,11 +676,13 @@ function renderApps() {
     btn.addEventListener("click", async () => {
       const key = btn.getAttribute("data-key") || "";
       if (!key) return;
-      try {
-        await navigator.clipboard.writeText(key);
+      const ok = await copyToClipboard(key);
+      if (ok) {
         btn.textContent = "Copied";
         setTimeout(() => (btn.textContent = "Copy"), 1200);
-      } catch (_) {}
+      } else {
+        alert("Could not copy to clipboard. Please copy manually.");
+      }
     });
   });
   listEl.querySelectorAll(".reveal-key").forEach((btn) => {
