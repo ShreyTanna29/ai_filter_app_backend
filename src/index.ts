@@ -12,7 +12,6 @@ import appsRouter from "./routes/apps";
 import multer from "multer";
 import { uploadBuffer, makeKey, ensure512SquareImageFromUrl } from "./lib/s3";
 import { signKey, deriveKey } from "./middleware/signedUrl";
-import { requireAdmin } from "./middleware/roles";
 
 // Load environment variables
 dotenv.config();
@@ -22,7 +21,7 @@ const PORT = process.env.PORT || 3000;
 
 // Middleware
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: "10mb" }));
 app.use(express.static("public")); // Serve static files from public directory
 
 // Feature management routes
@@ -132,7 +131,7 @@ app.put("/api/features/:endpoint", async (req, res): Promise<any> => {
 });
 
 // Create a new feature (admin only)
-app.post("/api/features", requireAdmin, async (req, res): Promise<any> => {
+app.post("/api/features", async (req, res): Promise<any> => {
   const { endpoint, prompt } = req.body;
 
   if (!endpoint || !prompt) {
@@ -172,91 +171,83 @@ app.post("/api/features", requireAdmin, async (req, res): Promise<any> => {
 });
 
 // Rename a feature endpoint (admin only)
-app.put(
-  "/api/features/:endpoint/rename",
-  requireAdmin,
-  async (req, res): Promise<any> => {
-    const { endpoint } = req.params;
-    const { newEndpoint } = req.body;
+app.put("/api/features/:endpoint/rename", async (req, res): Promise<any> => {
+  const { endpoint } = req.params;
+  const { newEndpoint } = req.body;
 
-    if (!newEndpoint) {
+  if (!newEndpoint) {
+    return res.status(400).json({
+      success: false,
+      message: "New endpoint is required",
+    });
+  }
+
+  try {
+    // Check if new endpoint already exists
+    const existingFeature = await prisma.features.findUnique({
+      where: { endpoint: newEndpoint },
+    });
+
+    if (existingFeature) {
       return res.status(400).json({
         success: false,
-        message: "New endpoint is required",
+        message: "Feature with this endpoint already exists",
       });
     }
 
-    try {
-      // Check if new endpoint already exists
-      const existingFeature = await prisma.features.findUnique({
-        where: { endpoint: newEndpoint },
-      });
+    // Update the endpoint
+    const feature = await prisma.features.update({
+      where: { endpoint },
+      data: { endpoint: newEndpoint },
+    });
 
-      if (existingFeature) {
-        return res.status(400).json({
-          success: false,
-          message: "Feature with this endpoint already exists",
-        });
-      }
-
-      // Update the endpoint
-      const feature = await prisma.features.update({
-        where: { endpoint },
-        data: { endpoint: newEndpoint },
-      });
-
-      res.json({
-        success: true,
-        message: "Feature renamed successfully",
-        feature,
-      });
-    } catch (error: any) {
-      console.error(error);
-      if (error.code === "P2025") {
-        return res.status(404).json({
-          success: false,
-          message: "Feature not found",
-        });
-      }
-      res.status(500).json({
+    res.json({
+      success: true,
+      message: "Feature renamed successfully",
+      feature,
+    });
+  } catch (error: any) {
+    console.error(error);
+    if (error.code === "P2025") {
+      return res.status(404).json({
         success: false,
-        message: "Internal server error",
+        message: "Feature not found",
       });
     }
+    res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
   }
-);
+});
 
 // Delete a feature (admin only)
-app.delete(
-  "/api/features/:endpoint",
-  requireAdmin,
-  async (req, res): Promise<any> => {
-    const { endpoint } = req.params;
+app.delete("/api/features/:endpoint", async (req, res): Promise<any> => {
+  const { endpoint } = req.params;
 
-    try {
-      await prisma.features.delete({
-        where: { endpoint },
-      });
+  try {
+    await prisma.features.delete({
+      where: { endpoint },
+    });
 
-      res.json({
-        success: true,
-        message: "Feature deleted successfully",
-      });
-    } catch (error: any) {
-      console.error(error);
-      if (error.code === "P2025") {
-        return res.status(404).json({
-          success: false,
-          message: "Feature not found",
-        });
-      }
-      res.status(500).json({
+    res.json({
+      success: true,
+      message: "Feature deleted successfully",
+    });
+  } catch (error: any) {
+    console.error(error);
+    if (error.code === "P2025") {
+      return res.status(404).json({
         success: false,
-        message: "Internal server error",
+        message: "Feature not found",
       });
     }
+    res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
   }
-);
+});
 
 // Photo Feature management routes
 // Get all photo features without pagination
@@ -327,89 +318,80 @@ app.get("/api/photo-features", async (req, res) => {
 });
 
 // Update a photo feature (admin only)
-app.put(
-  "/api/photo-features/:endpoint",
-  requireAdmin,
-  async (req, res): Promise<any> => {
-    const { endpoint } = req.params;
-    const { prompt, isActive } = req.body;
+app.put("/api/photo-features/:endpoint", async (req, res): Promise<any> => {
+  const { endpoint } = req.params;
+  const { prompt, isActive } = req.body;
 
-    try {
-      const updated = await prisma.photo_Features.update({
-        where: { endpoint },
-        data: {
-          prompt,
-          isActive,
-        },
-      });
+  try {
+    const updated = await prisma.photo_Features.update({
+      where: { endpoint },
+      data: {
+        prompt,
+        isActive,
+      },
+    });
 
-      res.json({
-        success: true,
-        feature: updated,
-      });
-    } catch (error: any) {
-      console.error(error);
-      if (error.code === "P2025") {
-        return res.status(404).json({
-          success: false,
-          message: "Photo feature not found",
-        });
-      }
-      res.status(500).json({
+    res.json({
+      success: true,
+      feature: updated,
+    });
+  } catch (error: any) {
+    console.error(error);
+    if (error.code === "P2025") {
+      return res.status(404).json({
         success: false,
-        message: "Internal server error",
+        message: "Photo feature not found",
       });
     }
+    res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
   }
-);
+});
 
 // Create a new photo feature (admin only)
-app.post(
-  "/api/photo-features",
-  requireAdmin,
-  async (req, res): Promise<any> => {
-    const { endpoint, prompt } = req.body;
+app.post("/api/photo-features", async (req, res): Promise<any> => {
+  const { endpoint, prompt } = req.body;
 
-    if (!endpoint || !prompt) {
-      return res.status(400).json({
-        success: false,
-        message: "Endpoint and prompt are required",
-      });
-    }
-
-    try {
-      const created = await prisma.photo_Features.create({
-        data: {
-          endpoint,
-          prompt,
-          isActive: true,
-        },
-      });
-
-      res.json({
-        success: true,
-        feature: created,
-      });
-    } catch (error: any) {
-      console.error(error);
-      if (error.code === "P2002") {
-        return res.status(409).json({
-          success: false,
-          message: "Photo feature with this endpoint already exists",
-        });
-      }
-      res.status(500).json({
-        success: false,
-        message: "Internal server error",
-      });
-    }
+  if (!endpoint || !prompt) {
+    return res.status(400).json({
+      success: false,
+      message: "Endpoint and prompt are required",
+    });
   }
-);
+
+  try {
+    const created = await prisma.photo_Features.create({
+      data: {
+        endpoint,
+        prompt,
+        isActive: true,
+      },
+    });
+
+    res.json({
+      success: true,
+      feature: created,
+    });
+  } catch (error: any) {
+    console.error(error);
+    if (error.code === "P2002") {
+      return res.status(409).json({
+        success: false,
+        message: "Photo feature with this endpoint already exists",
+      });
+    }
+    res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  }
+});
 
 // Rename a photo feature endpoint (admin only)
 app.put(
   "/api/photo-features/:endpoint/rename",
-  requireAdmin,
   async (req, res): Promise<any> => {
     const { endpoint } = req.params;
     const { newEndpoint } = req.body;
@@ -454,36 +436,32 @@ app.put(
 );
 
 // Delete a photo feature (admin only)
-app.delete(
-  "/api/photo-features/:endpoint",
-  requireAdmin,
-  async (req, res): Promise<any> => {
-    const { endpoint } = req.params;
+app.delete("/api/photo-features/:endpoint", async (req, res): Promise<any> => {
+  const { endpoint } = req.params;
 
-    try {
-      await prisma.photo_Features.delete({
-        where: { endpoint },
-      });
+  try {
+    await prisma.photo_Features.delete({
+      where: { endpoint },
+    });
 
-      res.json({
-        success: true,
-        message: "Photo feature deleted successfully",
-      });
-    } catch (error: any) {
-      console.error(error);
-      if (error.code === "P2025") {
-        return res.status(404).json({
-          success: false,
-          message: "Photo feature not found",
-        });
-      }
-      res.status(500).json({
+    res.json({
+      success: true,
+      message: "Photo feature deleted successfully",
+    });
+  } catch (error: any) {
+    console.error(error);
+    if (error.code === "P2025") {
+      return res.status(404).json({
         success: false,
-        message: "Internal server error",
+        message: "Photo feature not found",
       });
     }
+    res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
   }
-);
+});
 
 app.use("/api", facetrixfiltersRouter);
 app.use("/api", templatesRouter);

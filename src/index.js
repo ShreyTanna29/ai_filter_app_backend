@@ -33,7 +33,7 @@ const app = (0, express_1.default)();
 const PORT = process.env.PORT || 3000;
 // Middleware
 app.use((0, cors_1.default)());
-app.use(express_1.default.json());
+app.use(express_1.default.json({ limit: "10mb" }));
 app.use(express_1.default.static("public")); // Serve static files from public directory
 // Feature management routes
 // Get all features without pagination

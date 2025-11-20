@@ -22,6 +22,22 @@ const upload = multer({ storage: multer.memoryStorage() });
 
 const RUNWARE_API_URL = "https://api.runware.ai/v1";
 
+// Riverflow 1.1 supports a fixed catalog of aspect ratios; enforce to avoid 4xx responses
+const RIVERFLOW_MODEL_ID = "sourceful:1@1";
+const RIVERFLOW_SIZES: Array<{ width: number; height: number }> = [
+  { width: 1024, height: 1024 },
+  { width: 1152, height: 864 },
+  { width: 864, height: 1152 },
+  { width: 1280, height: 720 },
+  { width: 720, height: 1280 },
+  { width: 1248, height: 832 },
+  { width: 832, height: 1248 },
+  { width: 1512, height: 648 },
+  { width: 648, height: 1512 },
+  { width: 1152, height: 896 },
+  { width: 896, height: 1152 },
+];
+
 // Reuse a keep-alive agent to improve large POST stability
 const httpsAgent = new https.Agent({ keepAlive: true });
 
@@ -63,6 +79,23 @@ async function postRunwareWithRetry(
     }
   }
   throw lastErr;
+}
+
+function resolveRiverflowSize(
+  width?: number | string,
+  height?: number | string
+): { width: number; height: number } {
+  const parsedWidth = parseInt(String(width || ""), 10);
+  const parsedHeight = parseInt(String(height || ""), 10);
+  if (!Number.isNaN(parsedWidth) && !Number.isNaN(parsedHeight)) {
+    const match = RIVERFLOW_SIZES.find(
+      (dim) => dim.width === parsedWidth && dim.height === parsedHeight
+    );
+    if (match) {
+      return match;
+    }
+  }
+  return RIVERFLOW_SIZES[0];
 }
 
 function getRunwareHeaders() {
@@ -237,7 +270,7 @@ router.post(
       const payload = [task];
       let response;
       try {
-        response = await postRunwareWithRetry(payload, 150_000, 1);
+        response = await postRunwareWithRetry(payload, 180_000, 1);
       } catch (primaryErr: any) {
         // Adaptive fallback on upstream timeout (e.g., 524 from Cloudflare)
         const code = primaryErr?.code || primaryErr?.response?.status;
@@ -255,7 +288,7 @@ router.post(
             smaller.height = Math.min(640, task.height || defaultSize);
             smaller.steps = Math.min(12, task.steps || 12);
             const fallbackPayload = [smaller];
-            response = await postRunwareWithRetry(fallbackPayload, 150_000, 0);
+            response = await postRunwareWithRetry(fallbackPayload, 180_000, 0);
           } catch (fallbackErr) {
             throw primaryErr; // surface original error context
           }
@@ -308,6 +341,110 @@ router.post(
       res.status(500).json({
         success: false,
         error: msg || "Generation failed",
+      });
+      return;
+    }
+  }
+);
+
+// POST /api/runware/riverflow/edit
+// JSON body: { prompt: string, references: string[], width?: number, height?: number, negativePrompt?: string, numberResults?: number, feature?: string }
+router.post(
+  "/runware/riverflow/edit",
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const {
+        prompt,
+        references,
+        width,
+        height,
+        negativePrompt,
+        numberResults,
+        feature,
+      } = req.body || {};
+
+      if (!prompt || typeof prompt !== "string") {
+        res.status(400).json({ success: false, error: "'prompt' is required" });
+        return;
+      }
+
+      const refs = Array.isArray(references)
+        ? references
+            .map((ref) => (typeof ref === "string" ? ref.trim() : ""))
+            .filter(Boolean)
+        : [];
+      if (!refs.length) {
+        res.status(400).json({
+          success: false,
+          error: "'references' must be an array with at least one image UUID",
+        });
+        return;
+      }
+      const limitedRefs = refs.slice(0, 10);
+
+      const { width: resolvedWidth, height: resolvedHeight } =
+        resolveRiverflowSize(width, height);
+
+      const task: any = {
+        taskType: "imageInference",
+        taskUUID: randomUUID(),
+        model: RIVERFLOW_MODEL_ID,
+        outputType: "URL",
+        positivePrompt: prompt,
+        width: resolvedWidth,
+        height: resolvedHeight,
+        numberResults: Math.min(Math.max(parseInt(numberResults) || 1, 1), 4),
+        inputs: { references: limitedRefs },
+      };
+      if (negativePrompt && typeof negativePrompt === "string") {
+        task.negativePrompt = negativePrompt;
+      }
+
+      const payload = [task];
+      const response = await postRunwareWithRetry(payload, 180_000, 1);
+
+      const data = response.data;
+      const resultItem = Array.isArray(data?.data)
+        ? data.data.find((d: any) => d?.taskType === "imageInference") ||
+          data.data[0]
+        : data?.data;
+      const imageURL =
+        resultItem?.imageURL || resultItem?.url || resultItem?.imageDataURI;
+      const imageUUID = resultItem?.imageUUID;
+      if (!imageURL) {
+        res.status(502).json({
+          success: false,
+          error: "Runware did not return an image URL",
+          details: data,
+        });
+        return;
+      }
+
+      try {
+        await prisma.generated_Photo.create({
+          data: {
+            feature: String(feature || "riverflow-edit"),
+            url: imageURL,
+          },
+        });
+      } catch (e) {
+        console.warn(
+          "Failed to persist Riverflow Generated_Photo:",
+          (e as any)?.message || e
+        );
+      }
+
+      res.json({ success: true, image: { url: imageURL, imageUUID } });
+      return;
+    } catch (err: any) {
+      const msg =
+        err?.response?.data?.errors?.[0]?.message ||
+        err?.message ||
+        "Unknown error";
+      console.error("Runware riverflow-edit error:", msg);
+      res.status(500).json({
+        success: false,
+        error: msg || "Riverflow edit failed",
       });
       return;
     }

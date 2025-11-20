@@ -1,3 +1,11 @@
+const PHOTO_MODEL_OPTIONS = [
+  { value: "bfl:2@1", label: "FLUX.1 Schnell" },
+  { value: "bfl:1@8", label: "FLUX.1 Dev" },
+  { value: "bfl:1@4", label: "FLUX.1 Pro" },
+  { value: "sourceful:1@1", label: "Riverflow 1.1 (Runware)" },
+];
+let featureModelSelectVideoOptionsHtml = "";
+
 // Helper to choose playable video URL (prefers signed S3 URL when present)
 function selectPlayableUrl(obj) {
   if (!obj) return null;
@@ -8,6 +16,7 @@ function selectPlayableUrl(obj) {
 }
 // --- Scroll position preservation for template page ---
 let savedTemplateScrollPosition = 0;
+let featureDetailOriginTab = "filters";
 // --- Video Modal for Step Details ---
 if (!document.getElementById("step-video-modal")) {
   const modal = document.createElement("div");
@@ -826,7 +835,12 @@ async function loadAllFeatures() {
     const data = await response.json();
     if (!response.ok) throw new Error(data.message || "Failed");
     // Handle new API response format: { success: true, features: [...] }
-    features = data.features || (Array.isArray(data) ? data : data.items || []);
+    const incomingFeatures =
+      data.features || (Array.isArray(data) ? data : data.items || []);
+    features = incomingFeatures.map((feature) => ({
+      ...feature,
+      featureType: "video",
+    }));
 
     if (features.length === 0) {
       if (grid) {
@@ -865,8 +879,12 @@ async function loadAllPhotoFeatures() {
     const response = await fetch(`/api/photo-features/all`);
     const data = await response.json();
     if (!response.ok) throw new Error(data.message || "Failed");
-    photoFeatures =
+    const incomingPhotoFeatures =
       data.features || (Array.isArray(data) ? data : data.items || []);
+    photoFeatures = incomingPhotoFeatures.map((feature) => ({
+      ...feature,
+      featureType: "photo",
+    }));
 
     if (photoFeatures.length === 0) {
       if (grid) {
@@ -949,7 +967,7 @@ function displayFeatures() {
         const card = btn.closest(".feature-card");
         if (card) {
           const endpoint = card.getAttribute("data-endpoint");
-          if (endpoint) showFeatureDetailPage(endpoint);
+          if (endpoint) showFeatureDetailPage(endpoint, "filters");
         }
       }
     });
@@ -1025,7 +1043,7 @@ function displayPhotoFeatures() {
         const card = btn.closest(".feature-card");
         if (card) {
           const endpoint = card.getAttribute("data-endpoint");
-          if (endpoint) showFeatureDetailPage(endpoint);
+          if (endpoint) showFeatureDetailPage(endpoint, "photo-filters");
         }
       }
     });
@@ -1075,8 +1093,14 @@ if (photoFeatureSearchInput) {
 }
 
 // Show feature detail as a full page (hides all tab content, shows detail page)
-function showFeatureDetailPage(endpoint) {
-  console.log("showFeatureDetailPage called with endpoint:", endpoint);
+function showFeatureDetailPage(endpoint, sourceTab = "filters") {
+  featureDetailOriginTab = sourceTab || "filters";
+  console.log(
+    "showFeatureDetailPage called with endpoint:",
+    endpoint,
+    "from",
+    featureDetailOriginTab
+  );
   console.log("Current features array:", features);
 
   // Save current scroll position before showing detail page
@@ -1094,6 +1118,7 @@ function showFeatureDetailPage(endpoint) {
       console.error("Feature not found for endpoint:", endpoint);
       return;
     }
+    const isPhotoFeature = feature.featureType === "photo";
     // Hide all tab content and modals (but not the page we want to show)
     console.log("Hiding other elements...");
     const elementsToHide = document.querySelectorAll(
@@ -1168,13 +1193,13 @@ function showFeatureDetailPage(endpoint) {
     console.log("Prompt element:", promptEl);
     if (titleEl) titleEl.textContent = feature.endpoint;
     if (promptEl) promptEl.textContent = feature.prompt || "";
-    // Helper to update the video in the modal
+    const featureVideoEl = document.getElementById("featureDetailVideo");
+    const featurePhotoEl = document.getElementById("featureDetailPhoto");
+
     async function updateFeatureDetailVideo() {
-      const videoEl = document.getElementById("featureDetailVideo");
       let videoUrl =
         featureGraphics[feature.endpoint] || latestVideos[feature.endpoint];
       if (!videoUrl) {
-        // Try to fetch latest video from backend if not present
         try {
           const res = await fetch(
             `/api/generate-video/videos/${feature.endpoint}`
@@ -1187,24 +1212,48 @@ function showFeatureDetailPage(endpoint) {
               videos[0].videoUrl ||
               videos[0].video_url ||
               "";
-            // Also update latestVideos cache
             latestVideos[feature.endpoint] = videoUrl;
           }
         } catch (e) {
           videoUrl = "";
         }
       }
-      if (videoEl) {
+      if (featureVideoEl) {
         if (videoUrl) {
-          videoEl.src = videoUrl;
-          videoEl.style.display = "block";
+          featureVideoEl.src = videoUrl;
+          featureVideoEl.style.display = "block";
         } else {
-          videoEl.style.display = "none";
+          featureVideoEl.style.display = "none";
         }
       }
+      if (featurePhotoEl) featurePhotoEl.style.display = "none";
     }
-    // Initial call
-    updateFeatureDetailVideo();
+
+    async function updateFeatureDetailPhoto() {
+      if (featureVideoEl) featureVideoEl.style.display = "none";
+      if (!featurePhotoEl) return;
+      try {
+        const res = await fetch(`/api/photo-graphic/${feature.endpoint}`);
+        const photos = await res.json();
+        const latest =
+          Array.isArray(photos) && photos.length > 0 ? photos[0] : null;
+        const url = latest?.signedUrl || latest?.url;
+        if (url) {
+          featurePhotoEl.src = url;
+          featurePhotoEl.style.display = "block";
+        } else {
+          featurePhotoEl.style.display = "none";
+        }
+      } catch (err) {
+        featurePhotoEl.style.display = "none";
+      }
+    }
+
+    if (isPhotoFeature) {
+      updateFeatureDetailPhoto();
+    } else {
+      updateFeatureDetailVideo();
+    }
 
     // --- Feature video generation logic ---
     let uploadedImageUrl = null;
@@ -1230,9 +1279,18 @@ function showFeatureDetailPage(endpoint) {
     const featureLastFramePreview = document.getElementById(
       "featureLastFramePreview"
     );
+    const featureAudioUploadSection = document.getElementById(
+      "featureAudioUploadSection"
+    );
+    const featureAudioInput = document.getElementById("featureAudioInput");
+    const featureAudioPreview = document.getElementById("featureAudioPreview");
+    const featureAudioStatus = document.getElementById("featureAudioStatus");
     let featureLastFrameUrl = null;
     let featureRef2Url = null;
     let featureRef3Url = null;
+    let featureRunwareImageUUID = null;
+    let featureImageDataUri = null;
+    let featureUploadedImageFile = null;
 
     // Reset UI
     if (preview) {
@@ -1242,6 +1300,9 @@ function showFeatureDetailPage(endpoint) {
     if (uploadStatus) uploadStatus.textContent = "";
     if (genStatus) genStatus.textContent = "";
     uploadedImageUrl = null;
+    featureRunwareImageUUID = null;
+    featureImageDataUri = null;
+    featureUploadedImageFile = null;
 
     // Drag & drop wiring
     if (uploadSection && input) {
@@ -1367,22 +1428,27 @@ function showFeatureDetailPage(endpoint) {
     }
     // Toggle display of last frame uploader based on model selection
     const featureModelSelect = document.getElementById("featureModelSelect");
-    if (featureModelSelect && featureLastFrameWrapper) {
-      const featureAudioUploadSection = document.getElementById(
-        "featureAudioUploadSection"
-      );
-      const featureAudioInput = document.getElementById("featureAudioInput");
-      const featureAudioPreview = document.getElementById(
-        "featureAudioPreview"
-      );
-      const featureAudioStatus = document.getElementById("featureAudioStatus");
+    if (featureModelSelect && !featureModelSelectVideoOptionsHtml) {
+      featureModelSelectVideoOptionsHtml = featureModelSelect.innerHTML;
+    }
+    if (featureModelSelect) {
+      if (isPhotoFeature) {
+        featureModelSelect.innerHTML = PHOTO_MODEL_OPTIONS.map(
+          (opt) => `<option value="${opt.value}">${opt.label}</option>`
+        ).join("");
+        featureModelSelect.value = PHOTO_MODEL_OPTIONS[0]?.value || "";
+      } else if (featureModelSelectVideoOptionsHtml) {
+        featureModelSelect.innerHTML = featureModelSelectVideoOptionsHtml;
+      }
+    }
+
+    if (featureModelSelect && featureLastFrameWrapper && !isPhotoFeature) {
       let uploadedAudioUrl = null;
       let uploadedAudioFile = null;
       const toggleFeatureLastFrame = () => {
         const val = featureModelSelect.value || "";
         const isPixTrans = /pixverse-v4-transition/i.test(val);
         const isVidu = /vidu-q1-reference-to-video/i.test(val);
-        // Only show audio input for Omnihuman, not Seeddance
         const isBytedance = /bytedance-omnihuman/i.test(val);
         featureLastFrameWrapper.style.display = isPixTrans ? "flex" : "none";
         if (!isPixTrans) {
@@ -1390,7 +1456,6 @@ function showFeatureDetailPage(endpoint) {
           if (featureLastFramePreview)
             featureLastFramePreview.style.display = "none";
         }
-        // Toggle vidu extra refs (only for reference-to-video model)
         if (featureRef2Wrapper)
           featureRef2Wrapper.style.display = isVidu ? "flex" : "none";
         if (featureRef3Wrapper)
@@ -1401,7 +1466,6 @@ function showFeatureDetailPage(endpoint) {
           if (featureRef2Preview) featureRef2Preview.style.display = "none";
           if (featureRef3Preview) featureRef3Preview.style.display = "none";
         }
-        // Toggle Bytedance audio upload
         if (featureAudioUploadSection)
           featureAudioUploadSection.style.display = isBytedance
             ? "block"
@@ -1414,12 +1478,10 @@ function showFeatureDetailPage(endpoint) {
         }
       };
       featureModelSelect.addEventListener("change", toggleFeatureLastFrame);
-      // Always run toggle on show
       setTimeout(toggleFeatureLastFrame, 0);
 
-      // Audio file upload/validation
-      if (featureAudioInput) {
-        featureAudioInput.onchange = function (e) {
+      if (featureAudioInput && featureAudioStatus && featureAudioPreview) {
+        featureAudioInput.onchange = function () {
           const file = featureAudioInput.files && featureAudioInput.files[0];
           if (!file) return;
           if (!/^audio\//.test(file.type)) {
@@ -1430,7 +1492,6 @@ function showFeatureDetailPage(endpoint) {
             featureAudioInput.value = "";
             return;
           }
-          // Check duration (max 30s)
           const audioUrl = URL.createObjectURL(file);
           const audio = new Audio();
           audio.src = audioUrl;
@@ -1457,13 +1518,58 @@ function showFeatureDetailPage(endpoint) {
           };
         };
       }
-      // Expose for use in generateVideo
       window._featureAudioFile = () => uploadedAudioFile;
       window._featureAudioUrl = () => uploadedAudioUrl;
+    } else {
+      if (featureLastFrameWrapper)
+        featureLastFrameWrapper.style.display = "none";
+      if (featureRef2Wrapper) featureRef2Wrapper.style.display = "none";
+      if (featureRef3Wrapper) featureRef3Wrapper.style.display = "none";
+      if (featureAudioUploadSection)
+        featureAudioUploadSection.style.display = "none";
+      window._featureAudioFile = () => null;
+      window._featureAudioUrl = () => null;
     }
-    function handleFeatureImageUpload() {
+    async function handleFeatureImageUpload() {
       const file = input.files && input.files[0];
       if (!file) return;
+      featureUploadedImageFile = file;
+      featureImageDataUri = null;
+      featureRunwareImageUUID = null;
+      if (isPhotoFeature) {
+        try {
+          if (uploadStatus) {
+            uploadStatus.textContent = "Processing image...";
+            uploadStatus.className = "upload-status text-sm mt-3 text-center";
+          }
+          const dataUri = await fileToDataUrl(file);
+          if (typeof dataUri === "string") {
+            featureImageDataUri = dataUri;
+            uploadedImageUrl = dataUri;
+            if (preview) {
+              preview.src = dataUri;
+              preview.style.display = "block";
+              preview.classList.add("image-preview");
+            }
+          }
+          if (uploadStatus) {
+            uploadStatus.textContent = "Uploading Runware reference...";
+          }
+          await uploadRunwareReference(file);
+        } catch (err) {
+          featureImageDataUri = null;
+          uploadedImageUrl = null;
+          if (uploadStatus) {
+            uploadStatus.textContent =
+              err?.message || "Failed to process image.";
+            uploadStatus.className =
+              "upload-status error text-sm mt-3 text-center";
+          }
+        } finally {
+          input.value = "";
+        }
+        return;
+      }
       const formData = new FormData();
       formData.append("image", file);
       if (uploadStatus) uploadStatus.textContent = "Uploading...";
@@ -1480,9 +1586,14 @@ function showFeatureDetailPage(endpoint) {
               preview.classList.add("image-preview");
             }
             if (uploadStatus) {
-              uploadStatus.textContent = "Image uploaded!";
+              uploadStatus.textContent = isPhotoFeature
+                ? "Image uploaded. Preparing Runware reference..."
+                : "Image uploaded!";
               uploadStatus.className =
                 "upload-status success text-sm mt-3 text-center";
+            }
+            if (isPhotoFeature) {
+              uploadRunwareReference(file);
             }
           } else {
             if (uploadStatus) {
@@ -1499,115 +1610,257 @@ function showFeatureDetailPage(endpoint) {
         });
     }
 
-    if (typeof genBtn !== "undefined" && genBtn) {
-      genBtn.onclick = async function () {
-        if (!uploadedImageUrl) {
-          if (genStatus)
-            genStatus.textContent = "Please upload an image first.";
-          return;
+    async function uploadRunwareReference(file) {
+      try {
+        const fd = new FormData();
+        fd.append("image", file);
+        const res = await fetch("/api/runware/upload-image", {
+          method: "POST",
+          body: fd,
+        });
+        const data = await res.json();
+        if (!res.ok || !data?.imageUUID) {
+          throw new Error(data?.error || "Runware upload failed");
         }
-        genBtn.disabled = true;
-        if (genStatus) genStatus.textContent = "Generating video...";
-        try {
+        featureRunwareImageUUID = data.imageUUID;
+        if (uploadStatus)
+          uploadStatus.textContent = "Image ready for Runware edits.";
+      } catch (err) {
+        featureRunwareImageUUID = null;
+        if (uploadStatus) {
+          uploadStatus.textContent =
+            err?.message || "Runware upload failed. Please retry.";
+          uploadStatus.className =
+            "upload-status error text-sm mt-3 text-center";
+        }
+      }
+    }
+
+    function fileToDataUrl(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+    }
+
+    if (genBtn) {
+      if (isPhotoFeature) {
+        genBtn.innerHTML = '<i class="fas fa-magic"></i> Generate Photo';
+        genBtn.onclick = async function () {
+          if (!featureUploadedImageFile && !uploadedImageUrl) {
+            if (genStatus)
+              genStatus.textContent = "Please upload an image first.";
+            return;
+          }
           const modelSelect = document.getElementById("featureModelSelect");
-          const selectedModel = modelSelect ? modelSelect.value : undefined;
+          const selectedModel = modelSelect ? modelSelect.value : "";
+          if (!selectedModel) {
+            if (genStatus)
+              genStatus.textContent = "Select a model before generating.";
+            return;
+          }
           const featurePromptEl = document.getElementById(
             "featureDetailPrompt"
           );
-          const promptOverride = featurePromptEl
-            ? featurePromptEl.textContent
-            : undefined;
-          // Audio file logic for Bytedance Omnihuman
-          let audioFile = null;
-          if (window._featureAudioFile) {
-            audioFile = window._featureAudioFile();
+          const promptText =
+            (featurePromptEl && featurePromptEl.textContent) || feature.prompt;
+          genBtn.disabled = true;
+          if (genStatus) {
+            genStatus.textContent = "Generating photo...";
+            genStatus.style.color = "#6b7280";
           }
-          let response, data;
-          if (/bytedance-omnihuman/i.test(selectedModel || "") && audioFile) {
-            // Use FormData for Bytedance Omnihuman/Seeddance with audio
-            const formData = new FormData();
-            formData.append("image_url", uploadedImageUrl);
-            formData.append("model", selectedModel);
-            if (promptOverride) formData.append("prompt", promptOverride);
-            formData.append("audio_file", audioFile);
-            response = await fetch(
-              `/api/generate-video/${encodeURIComponent(feature.endpoint)}`,
-              {
-                method: "POST",
-                body: formData,
+          try {
+            let response;
+            if (selectedModel === "sourceful:1@1") {
+              if (!featureRunwareImageUUID && featureUploadedImageFile) {
+                await uploadRunwareReference(featureUploadedImageFile);
               }
-            );
-            data = await response.json();
-          } else {
-            response = await fetch(
-              `/api/generate-video/${encodeURIComponent(feature.endpoint)}`,
-              {
+              if (!featureRunwareImageUUID) {
+                throw new Error(
+                  "Runware reference missing. Please re-upload the image."
+                );
+              }
+              response = await fetch("/api/runware/riverflow/edit", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(
-                  (() => {
-                    const payload = {
-                      imageUrl: uploadedImageUrl,
-                      model: selectedModel,
-                      prompt: promptOverride,
-                    };
-                    if (
-                      /pixverse-v4-transition/i.test(selectedModel || "") &&
-                      featureLastFrameUrl
-                    ) {
-                      payload.lastFrameUrl = featureLastFrameUrl;
-                    }
-                    if (
-                      /vidu-q1-reference-to-video/i.test(selectedModel || "")
-                    ) {
-                      if (featureRef2Url) payload.image_url2 = featureRef2Url;
-                      if (featureRef3Url) payload.image_url3 = featureRef3Url;
-                    }
-                    return payload;
-                  })()
-                ),
+                body: JSON.stringify({
+                  prompt: promptText,
+                  feature: feature.endpoint,
+                  references: [featureRunwareImageUUID],
+                  width: 1024,
+                  height: 1024,
+                  numberResults: 1,
+                }),
+              });
+            } else {
+              let seedImage = uploadedImageUrl;
+              if (featureUploadedImageFile) {
+                const dataUri =
+                  featureImageDataUri ||
+                  (await fileToDataUrl(featureUploadedImageFile));
+                if (typeof dataUri === "string") {
+                  featureImageDataUri = dataUri;
+                  seedImage = dataUri;
+                }
               }
-            );
-            data = await response.json();
-          }
-          if (response.ok && data && data.video && data.video.url) {
-            const videoUrl = data.video.url;
-
-            // Update the video element immediately with the generated video
-            const vEl = document.getElementById("featureDetailVideo");
-            if (vEl) {
-              vEl.src = videoUrl;
-              vEl.style.display = "block"; // Ensure video is visible
+              if (!seedImage) {
+                throw new Error("Unable to determine reference image.");
+              }
+              response = await fetch("/api/runware/generate-photo", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  feature: feature.endpoint,
+                  prompt: promptText,
+                  model: selectedModel,
+                  seedImage,
+                  width: 1024,
+                  height: 1024,
+                  numberResults: 1,
+                }),
+              });
             }
-
+            const data = await response.json();
+            const imageUrl =
+              data?.image?.url ||
+              (Array.isArray(data?.images) && data.images[0]?.url);
+            if (!response.ok || !imageUrl) {
+              throw new Error(
+                data?.error || data?.message || "Failed to generate photo"
+              );
+            }
+            if (featurePhotoEl) {
+              featurePhotoEl.src = imageUrl;
+              featurePhotoEl.style.display = "block";
+            }
+            featureGraphics[feature.endpoint] = imageUrl;
+            displayPhotoFeatures();
             if (genStatus) {
-              genStatus.textContent = "Video generated!";
+              genStatus.textContent = "Photo generated!";
               genStatus.style.color = "green";
             }
-
-            // Update local cache for this specific endpoint only
-            latestVideos[feature.endpoint] = videoUrl;
-            featureGraphics[feature.endpoint] = videoUrl;
-
-            // Refresh the feature list display to show the new video thumbnail
-            displayFeatures();
-          } else {
-            const msg =
-              (data &&
-                (data.error ||
-                  data.provider_output ||
-                  data.provider_message ||
-                  data.message)) ||
-              "Failed to generate video";
-            throw new Error(msg);
+          } catch (err) {
+            if (genStatus) {
+              genStatus.textContent = `Error: ${err?.message || err}`;
+              genStatus.style.color = "red";
+            }
+          } finally {
+            genBtn.disabled = false;
+            genBtn.innerHTML = '<i class="fas fa-magic"></i> Generate Photo';
           }
-        } catch (e) {
-          if (genStatus) genStatus.textContent = `Error: ${e.message || e}`;
-          if (genStatus) genStatus.style.color = "red";
-        } finally {
-          genBtn.disabled = false;
-        }
-      };
+        };
+      } else {
+        genBtn.onclick = async function () {
+          if (!uploadedImageUrl) {
+            if (genStatus)
+              genStatus.textContent = "Please upload an image first.";
+            return;
+          }
+          genBtn.disabled = true;
+          if (genStatus) genStatus.textContent = "Generating video...";
+          try {
+            const modelSelect = document.getElementById("featureModelSelect");
+            const selectedModel = modelSelect ? modelSelect.value : undefined;
+            const featurePromptEl = document.getElementById(
+              "featureDetailPrompt"
+            );
+            const promptOverride = featurePromptEl
+              ? featurePromptEl.textContent
+              : undefined;
+            // Audio file logic for Bytedance Omnihuman
+            let audioFile = null;
+            if (window._featureAudioFile) {
+              audioFile = window._featureAudioFile();
+            }
+            let response, data;
+            if (/bytedance-omnihuman/i.test(selectedModel || "") && audioFile) {
+              // Use FormData for Bytedance Omnihuman/Seeddance with audio
+              const formData = new FormData();
+              formData.append("image_url", uploadedImageUrl);
+              formData.append("model", selectedModel);
+              if (promptOverride) formData.append("prompt", promptOverride);
+              formData.append("audio_file", audioFile);
+              response = await fetch(
+                `/api/generate-video/${encodeURIComponent(feature.endpoint)}`,
+                {
+                  method: "POST",
+                  body: formData,
+                }
+              );
+              data = await response.json();
+            } else {
+              response = await fetch(
+                `/api/generate-video/${encodeURIComponent(feature.endpoint)}`,
+                {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify(
+                    (() => {
+                      const payload = {
+                        imageUrl: uploadedImageUrl,
+                        model: selectedModel,
+                        prompt: promptOverride,
+                      };
+                      if (
+                        /pixverse-v4-transition/i.test(selectedModel || "") &&
+                        featureLastFrameUrl
+                      ) {
+                        payload.lastFrameUrl = featureLastFrameUrl;
+                      }
+                      if (
+                        /vidu-q1-reference-to-video/i.test(selectedModel || "")
+                      ) {
+                        if (featureRef2Url) payload.image_url2 = featureRef2Url;
+                        if (featureRef3Url) payload.image_url3 = featureRef3Url;
+                      }
+                      return payload;
+                    })()
+                  ),
+                }
+              );
+              data = await response.json();
+            }
+            if (response.ok && data && data.video && data.video.url) {
+              const videoUrl = data.video.url;
+
+              // Update the video element immediately with the generated video
+              const vEl = document.getElementById("featureDetailVideo");
+              if (vEl) {
+                vEl.src = videoUrl;
+                vEl.style.display = "block"; // Ensure video is visible
+              }
+
+              if (genStatus) {
+                genStatus.textContent = "Video generated!";
+                genStatus.style.color = "green";
+              }
+
+              // Update local cache for this specific endpoint only
+              latestVideos[feature.endpoint] = videoUrl;
+              featureGraphics[feature.endpoint] = videoUrl;
+
+              // Refresh the feature list display to show the new video thumbnail
+              displayFeatures();
+            } else {
+              const msg =
+                (data &&
+                  (data.error ||
+                    data.provider_output ||
+                    data.provider_message ||
+                    data.message)) ||
+                "Failed to generate video";
+              throw new Error(msg);
+            }
+          } catch (e) {
+            if (genStatus) genStatus.textContent = `Error: ${e.message || e}`;
+            if (genStatus) genStatus.style.color = "red";
+          } finally {
+            genBtn.disabled = false;
+          }
+        };
+      }
     }
     // Inline edit for feature name (guarded)
     const editNameBtn = document.getElementById("editFeatureNameBtn");
@@ -1817,7 +2070,8 @@ function refreshFeaturesDisplay() {
 // Add a new feature to the beginning of the list (for newly created features)
 function addNewFeatureToList(newFeature) {
   // Add to beginning of features array
-  features.unshift(newFeature);
+  const normalized = { ...newFeature, featureType: "video" };
+  features.unshift(normalized);
   // Refresh display
   displayFeatures();
   updateStats();
@@ -1874,9 +2128,10 @@ function closeFeatureDetailPage() {
       }
     });
 
-  // Use the normal tab switching functionality to show filters tab
-  // This ensures proper tab state management and allows users to switch to other tabs
-  switchTab("filters");
+  // Use the normal tab switching functionality to show the originating tab
+  const targetTab =
+    featureDetailOriginTab === "photo-filters" ? "photo-filters" : "filters";
+  switchTab(targetTab);
 
   // Restore the saved scroll position with multiple attempts to handle DOM updates
   // This ensures scroll restoration works even after long sessions when DOM might be heavy
