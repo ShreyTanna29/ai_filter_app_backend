@@ -4217,62 +4217,6 @@ window.refreshDisplayTest = function () {
     return video;
   }
 
-  function buildPlayOverlay(wrapper, container) {
-    const play = document.createElement("button");
-    play.type = "button";
-    play.textContent = "▶";
-    play.className = "video-play-overlay";
-    play.style.position = "absolute";
-    play.style.left = "50%";
-    play.style.top = "50%";
-    play.style.transform = "translate(-50%, -50%)";
-    play.style.background = "rgba(0,0,0,0.5)";
-    play.style.color = "#fff";
-    play.style.fontSize = "42px";
-    play.style.lineHeight = "42px";
-    play.style.padding = "12px 20px";
-    play.style.borderRadius = "50%";
-    play.style.cursor = "pointer";
-    play.style.border = "none";
-    play.setAttribute("aria-label", "Play video");
-    play.addEventListener("click", () => {
-      if (play.disabled) return; // guard against double clicks
-      play.disabled = true;
-      const thumbVideo = wrapper.querySelector("video");
-      if (thumbVideo) {
-        thumbVideo.setAttribute("controls", "controls");
-        // Unmute on user gesture if desired
-        try {
-          thumbVideo.muted = false;
-        } catch (_) {}
-        // Remove overlay smoothly
-        play.style.transition = "opacity 200ms";
-        play.style.opacity = "0";
-        setTimeout(() => play.remove(), 220);
-        const attemptPlay = () => {
-          const p = thumbVideo.play();
-          if (p && typeof p.then === "function") {
-            p.catch(() => {
-              /* ignore autoplay block errors */
-            });
-          }
-        };
-        attemptPlay();
-        thumbVideo.focus();
-      } else {
-        // Fallback: create a fresh controls video
-        const src = container.getAttribute("data-src");
-        const fullVideo = createControlsVideo(src);
-        wrapper.replaceWith(fullVideo);
-        try {
-          fullVideo.play().catch(() => {});
-        } catch (_) {}
-        fullVideo.focus();
-      }
-    });
-    return play;
-  }
-
   function showThumbnail(container, video, skeleton) {
     // Reuse the decoded video element itself as the thumbnail (paused first frame)
     // Remove off-screen positioning if present
@@ -4284,8 +4228,39 @@ window.refreshDisplayTest = function () {
     const wrapper = document.createElement("div");
     wrapper.className = "video-thumb-wrapper";
     wrapper.style.position = "relative";
+    wrapper.style.cursor = "pointer";
     wrapper.appendChild(video);
-    wrapper.appendChild(buildPlayOverlay(wrapper, container));
+    wrapper.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (wrapper.dataset.playing === "true") return;
+      wrapper.dataset.playing = "true";
+      const thumbVideo = wrapper.querySelector("video");
+      if (thumbVideo) {
+        thumbVideo.setAttribute("controls", "controls");
+        try {
+          thumbVideo.muted = false;
+        } catch (_) {}
+        const attemptPlay = () => {
+          const p = thumbVideo.play();
+          if (p && typeof p.then === "function") {
+            p.catch(() => {
+              /* ignore autoplay block errors */
+            });
+          }
+        };
+        attemptPlay();
+        thumbVideo.focus();
+      } else {
+        const src = container.getAttribute("data-src");
+        const fullVideo = createControlsVideo(src);
+        wrapper.replaceWith(fullVideo);
+        try {
+          fullVideo.play().catch(() => {});
+        } catch (_) {}
+        fullVideo.focus();
+      }
+    });
     skeleton.replaceWith(wrapper);
   }
 

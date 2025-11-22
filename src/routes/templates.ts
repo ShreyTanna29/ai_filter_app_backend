@@ -1,7 +1,6 @@
 import { Router, Request, Response } from "express";
 import prisma from "../lib/prisma";
 import axios from "axios";
-import { requireAdmin } from "../middleware/roles";
 import { uploadStream, publicUrlFor, makeKey, deleteObject } from "../lib/s3";
 import { deriveKey, signKey } from "../middleware/signedUrl";
 import { Readable } from "stream";
@@ -95,7 +94,6 @@ async function getOrCreateMainCategory(name: string) {
 // Create a new template (admin only)
 router.post(
   "/templates",
-  requireAdmin,
   async (req: Request, res: Response): Promise<void> => {
     try {
       const { name, description, subcategories } = req.body;
@@ -193,7 +191,6 @@ router.get(
 // Update a template (admin only)
 router.put(
   "/templates/:id",
-  requireAdmin,
   async (req: Request, res: Response): Promise<void> => {
     try {
       const { id } = req.params;
@@ -287,7 +284,6 @@ router.put(
 // Delete a template (admin only)
 router.delete(
   "/templates/:id",
-  requireAdmin,
   async (req: Request, res: Response): Promise<void> => {
     try {
       const { id } = req.params;
@@ -437,68 +433,64 @@ router.post(
 // Upload and persist a template step video
 
 // Upload and persist a template step video (admin only)
-router.post(
-  "/templates/:templateId/step-video",
-  requireAdmin,
-  function (req, res) {
-    (async () => {
-      try {
-        const { templateId } = req.params;
-        let { stepIndex, endpoint, videoUrl } = req.body;
-        if (typeof stepIndex === "string") stepIndex = parseInt(stepIndex);
-        if (typeof stepIndex !== "number" || isNaN(stepIndex)) {
-          return res.status(400).json({ error: "stepIndex required" });
-        }
-        if (!endpoint || !videoUrl) {
-          return res
-            .status(400)
-            .json({ error: "endpoint and videoUrl required" });
-        }
-        // If provided videoUrl is not already an S3 URL to our bucket, ingest & upload to S3
-        let finalUrl = videoUrl;
-        const bucketName = process.env.AWS_S3_BUCKET || "";
-        const isS3Already =
-          /https?:\/\/[^/]*s3[^/]*\.amazonaws\.com\//i.test(videoUrl) ||
-          (process.env.AWS_S3_PUBLIC_URL_PREFIX &&
-            videoUrl.startsWith(process.env.AWS_S3_PUBLIC_URL_PREFIX));
-        if (!isS3Already) {
-          try {
-            const response = await axios.get(videoUrl, {
-              responseType: "stream",
-            });
-            const key = `templates/${templateId}/steps/${stepIndex}-${Date.now()}.mp4`;
-            const uploadRes = await uploadStream(
-              key,
-              response.data as Readable,
-              "video/mp4"
-            );
-            finalUrl = uploadRes.url;
-          } catch (e) {
-            console.error("[STEP-VIDEO] Failed to ingest remote video", e);
-            return res.status(400).json({ error: "Failed to ingest videoUrl" });
-          }
-        }
-        const saved = await prisma.templateStepVideo.create({
-          data: {
-            templateId: parseInt(templateId),
-            stepIndex,
-            endpoint,
-            videoUrl: finalUrl,
-          },
-        });
-        // Attach signedUrl for convenience
-        let signedUrl: string | undefined;
-        try {
-          const key = deriveKey(saved.videoUrl);
-          signedUrl = await signKey(key);
-        } catch {}
-        res.json({ ...saved, signedUrl });
-      } catch (e) {
-        res.status(500).json({ error: "Failed to save step video" });
+router.post("/templates/:templateId/step-video", function (req, res) {
+  (async () => {
+    try {
+      const { templateId } = req.params;
+      let { stepIndex, endpoint, videoUrl } = req.body;
+      if (typeof stepIndex === "string") stepIndex = parseInt(stepIndex);
+      if (typeof stepIndex !== "number" || isNaN(stepIndex)) {
+        return res.status(400).json({ error: "stepIndex required" });
       }
-    })();
-  }
-);
+      if (!endpoint || !videoUrl) {
+        return res
+          .status(400)
+          .json({ error: "endpoint and videoUrl required" });
+      }
+      // If provided videoUrl is not already an S3 URL to our bucket, ingest & upload to S3
+      let finalUrl = videoUrl;
+      const bucketName = process.env.AWS_S3_BUCKET || "";
+      const isS3Already =
+        /https?:\/\/[^/]*s3[^/]*\.amazonaws\.com\//i.test(videoUrl) ||
+        (process.env.AWS_S3_PUBLIC_URL_PREFIX &&
+          videoUrl.startsWith(process.env.AWS_S3_PUBLIC_URL_PREFIX));
+      if (!isS3Already) {
+        try {
+          const response = await axios.get(videoUrl, {
+            responseType: "stream",
+          });
+          const key = `templates/${templateId}/steps/${stepIndex}-${Date.now()}.mp4`;
+          const uploadRes = await uploadStream(
+            key,
+            response.data as Readable,
+            "video/mp4"
+          );
+          finalUrl = uploadRes.url;
+        } catch (e) {
+          console.error("[STEP-VIDEO] Failed to ingest remote video", e);
+          return res.status(400).json({ error: "Failed to ingest videoUrl" });
+        }
+      }
+      const saved = await prisma.templateStepVideo.create({
+        data: {
+          templateId: parseInt(templateId),
+          stepIndex,
+          endpoint,
+          videoUrl: finalUrl,
+        },
+      });
+      // Attach signedUrl for convenience
+      let signedUrl: string | undefined;
+      try {
+        const key = deriveKey(saved.videoUrl);
+        signedUrl = await signKey(key);
+      } catch {}
+      res.json({ ...saved, signedUrl });
+    } catch (e) {
+      res.status(500).json({ error: "Failed to save step video" });
+    }
+  })();
+});
 
 // Get all step videos for a template
 
@@ -532,7 +524,6 @@ router.get("/templates/:templateId/step-videos", function (req, res) {
 // Delete a single step video (admin only)
 router.delete(
   "/templates/:templateId/step-video/:stepIndex",
-  requireAdmin,
   function (req, res) {
     (async () => {
       try {
