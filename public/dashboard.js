@@ -2,6 +2,7 @@ const PHOTO_MODEL_OPTIONS = [
   { value: "bfl:2@1", label: "FLUX.1 Schnell" },
   { value: "bfl:1@8", label: "FLUX.1 Dev" },
   { value: "bfl:1@4", label: "FLUX.1 Pro" },
+  { value: "bytedance:5@0", label: "Seeddream 4.0 (Runware)" },
   { value: "sourceful:1@1", label: "Riverflow 1.1 (Runware)" },
 ];
 let featureModelSelectVideoOptionsHtml = "";

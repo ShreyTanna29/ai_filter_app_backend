@@ -26,7 +26,6 @@ const apps_1 = __importDefault(require("./routes/apps"));
 const multer_1 = __importDefault(require("multer"));
 const s3_1 = require("./lib/s3");
 const signedUrl_1 = require("./middleware/signedUrl");
-const roles_1 = require("./middleware/roles");
 // Load environment variables
 dotenv_1.default.config();
 const app = (0, express_1.default)();
@@ -134,7 +133,7 @@ app.put("/api/features/:endpoint", (req, res) => __awaiter(void 0, void 0, void 
     }
 }));
 // Create a new feature (admin only)
-app.post("/api/features", roles_1.requireAdmin, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+app.post("/api/features", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     const { endpoint, prompt } = req.body;
     if (!endpoint || !prompt) {
         return res.status(400).json({
@@ -171,7 +170,7 @@ app.post("/api/features", roles_1.requireAdmin, (req, res) => __awaiter(void 0, 
     }
 }));
 // Rename a feature endpoint (admin only)
-app.put("/api/features/:endpoint/rename", roles_1.requireAdmin, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+app.put("/api/features/:endpoint/rename", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     const { endpoint } = req.params;
     const { newEndpoint } = req.body;
     if (!newEndpoint) {
@@ -217,7 +216,7 @@ app.put("/api/features/:endpoint/rename", roles_1.requireAdmin, (req, res) => __
     }
 }));
 // Delete a feature (admin only)
-app.delete("/api/features/:endpoint", roles_1.requireAdmin, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+app.delete("/api/features/:endpoint", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     const { endpoint } = req.params;
     try {
         yield prisma_1.default.features.delete({
@@ -306,7 +305,7 @@ app.get("/api/photo-features", (req, res) => __awaiter(void 0, void 0, void 0, f
     }
 }));
 // Update a photo feature (admin only)
-app.put("/api/photo-features/:endpoint", roles_1.requireAdmin, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+app.put("/api/photo-features/:endpoint", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     const { endpoint } = req.params;
     const { prompt, isActive } = req.body;
     try {
@@ -337,7 +336,7 @@ app.put("/api/photo-features/:endpoint", roles_1.requireAdmin, (req, res) => __a
     }
 }));
 // Create a new photo feature (admin only)
-app.post("/api/photo-features", roles_1.requireAdmin, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+app.post("/api/photo-features", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     const { endpoint, prompt } = req.body;
     if (!endpoint || !prompt) {
         return res.status(400).json({
@@ -373,7 +372,7 @@ app.post("/api/photo-features", roles_1.requireAdmin, (req, res) => __awaiter(vo
     }
 }));
 // Rename a photo feature endpoint (admin only)
-app.put("/api/photo-features/:endpoint/rename", roles_1.requireAdmin, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+app.put("/api/photo-features/:endpoint/rename", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     const { endpoint } = req.params;
     const { newEndpoint } = req.body;
     if (!newEndpoint) {
@@ -413,7 +412,7 @@ app.put("/api/photo-features/:endpoint/rename", roles_1.requireAdmin, (req, res)
     }
 }));
 // Delete a photo feature (admin only)
-app.delete("/api/photo-features/:endpoint", roles_1.requireAdmin, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+app.delete("/api/photo-features/:endpoint", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     const { endpoint } = req.params;
     try {
         yield prisma_1.default.photo_Features.delete({

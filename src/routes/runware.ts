@@ -38,6 +38,27 @@ const RIVERFLOW_SIZES: Array<{ width: number; height: number }> = [
   { width: 896, height: 1152 },
 ];
 
+const SEEDDREAM_MODEL_ID = "bytedance:5@0";
+const SEEDDREAM_DIMENSIONS: Array<{ width: number; height: number }> = [
+  { width: 1024, height: 1024 },
+  { width: 2048, height: 2048 },
+  { width: 2304, height: 1728 },
+  { width: 1728, height: 2304 },
+  { width: 2560, height: 1440 },
+  { width: 1440, height: 2560 },
+  { width: 2496, height: 1664 },
+  { width: 1664, height: 2496 },
+  { width: 3024, height: 1296 },
+  { width: 4096, height: 4096 },
+  { width: 4608, height: 3456 },
+  { width: 3456, height: 4608 },
+  { width: 5120, height: 2880 },
+  { width: 2880, height: 5120 },
+  { width: 4992, height: 3328 },
+  { width: 3328, height: 4992 },
+  { width: 6048, height: 2592 },
+];
+
 // Reuse a keep-alive agent to improve large POST stability
 const httpsAgent = new https.Agent({ keepAlive: true });
 
@@ -96,6 +117,21 @@ function resolveRiverflowSize(
     }
   }
   return RIVERFLOW_SIZES[0];
+}
+
+function resolveSeeddreamSize(
+  width?: number | string,
+  height?: number | string
+): { width: number; height: number } {
+  const parsedWidth = parseInt(String(width || ""), 10);
+  const parsedHeight = parseInt(String(height || ""), 10);
+  if (!Number.isNaN(parsedWidth) && !Number.isNaN(parsedHeight)) {
+    const match = SEEDDREAM_DIMENSIONS.find(
+      (dim) => dim.width === parsedWidth && dim.height === parsedHeight
+    );
+    if (match) return match;
+  }
+  return SEEDDREAM_DIMENSIONS[0];
 }
 
 function getRunwareHeaders() {
@@ -234,16 +270,41 @@ router.post(
 
       // Model normalization: map friendly aliases to known model IDs when possible
       const clientModel = (model && String(model)) || "";
+      const normalizedModel = clientModel.trim().toLowerCase();
       let chosenModel = clientModel || "bfl:2@1"; // default to a stable FLUX variant
       if (/^flux[-_\s]*schnell$/i.test(clientModel)) {
-        // Use a fast FLUX variant if user asked for schnell; keep an internal default if exact ID unknown
-        // If you know the precise Runware model ID for FLUX Schnell, place it here instead of bfl:2@1
         chosenModel = "bfl:2@1";
+      } else if (
+        normalizedModel === "seeddream" ||
+        normalizedModel === "seeddream4" ||
+        normalizedModel === "seeddream 4" ||
+        normalizedModel === "seeddream 4.0"
+      ) {
+        chosenModel = SEEDDREAM_MODEL_ID;
+      }
+      if (clientModel === SEEDDREAM_MODEL_ID) {
+        chosenModel = SEEDDREAM_MODEL_ID;
       }
 
-      // Conservative defaults to avoid upstream timeouts
-      const defaultSize =
-        /^bfl:/.test(chosenModel) && /schnell/i.test(clientModel) ? 768 : 768; // use 768 for now across the board for reliability
+      const isSeeddream = chosenModel === SEEDDREAM_MODEL_ID;
+
+      // Conservative defaults
+      const defaultSize = 768;
+      let resolvedWidth = parseInt(width) || defaultSize;
+      let resolvedHeight = parseInt(height) || defaultSize;
+      if (isSeeddream) {
+        const dims = resolveSeeddreamSize(width, height);
+        resolvedWidth = dims.width;
+        resolvedHeight = dims.height;
+      }
+
+      const requestedResults = Math.min(
+        Math.max(parseInt(numberResults) || 1, 1),
+        isSeeddream ? 15 : 4
+      );
+      const seeddreamSequentialResults = isSeeddream
+        ? requestedResults
+        : undefined;
 
       const task: any = {
         taskType: "imageInference",
@@ -251,11 +312,17 @@ router.post(
         outputType: "URL",
         positivePrompt: prompt,
         model: chosenModel,
-        numberResults: Math.min(Math.max(parseInt(numberResults) || 1, 1), 4),
-        // Reasonable defaults
-        width: parseInt(width) || defaultSize,
-        height: parseInt(height) || defaultSize,
+        numberResults: isSeeddream ? 1 : requestedResults,
+        width: resolvedWidth,
+        height: resolvedHeight,
       };
+      if (isSeeddream && seeddreamSequentialResults) {
+        task.providerSettings = {
+          bytedance: {
+            maxSequentialImages: seeddreamSequentialResults,
+          },
+        };
+      }
       if (negativePrompt && typeof negativePrompt === "string") {
         task.negativePrompt = negativePrompt;
       }
@@ -284,8 +351,14 @@ router.post(
           try {
             const smaller = { ...task };
             // Reduce size and steps for fallback attempt
-            smaller.width = Math.min(640, task.width || defaultSize);
-            smaller.height = Math.min(640, task.height || defaultSize);
+            if (isSeeddream) {
+              const fallbackDims = SEEDDREAM_DIMENSIONS[0];
+              smaller.width = fallbackDims.width;
+              smaller.height = fallbackDims.height;
+            } else {
+              smaller.width = Math.min(640, task.width || defaultSize);
+              smaller.height = Math.min(640, task.height || defaultSize);
+            }
             smaller.steps = Math.min(12, task.steps || 12);
             const fallbackPayload = [smaller];
             response = await postRunwareWithRetry(fallbackPayload, 180_000, 0);

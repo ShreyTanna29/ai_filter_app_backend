@@ -127,6 +127,7 @@ model Features {
   id        Int      @id @default(autoincrement())
   endpoint  String   @unique
   prompt    String
+  model     String?
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

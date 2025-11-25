@@ -172,18 +172,12 @@ function prepareImageForProvider(rawUrl, feature) {
 }
 // Multer setup for audio upload (memory storage)
 const upload = (0, multer_1.default)({ storage: multer_1.default.memoryStorage() });
-// Default model selection (env override or fallback). Fallback chosen for broad provider support & speed.
-const DEFAULT_VIDEO_MODEL = process.env.DEFAULT_VIDEO_MODEL || "lightricks:2@1"; // LTX-2 Fast as default
 // Generate video from feature endpoint
 router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
     var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _0, _1, _2, _3, _4, _5, _6, _7, _8, _9, _10, _11, _12, _13, _14, _15, _16, _17, _18, _19, _20, _21, _22, _23, _24, _25, _26, _27, _28, _29, _30, _31, _32, _33, _34, _35, _36, _37, _38, _39, _40, _41, _42, _43, _44, _45, _46, _47, _48, _49, _50, _51, _52, _53, _54, _55, _56, _57, _58, _59, _60, _61, _62, _63;
     try {
         const { feature } = req.params;
-        // Accept model from body or query; apply default if absent
-        const userModel = req.body.model || req.query.model;
-        const selectedModel = typeof userModel === "string" && userModel.trim().length > 0
-            ? userModel.trim()
-            : DEFAULT_VIDEO_MODEL;
+        const userModel = req.body.model;
         const promptOverride = req.body.prompt;
         const imageUrl = req.body.imageUrl || req.body.image_url;
         if (!imageUrl) {
@@ -217,7 +211,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                 ? featureObj.prompt
                 : "";
         // Step 3: Provider branching (Pixverse transition, then MiniMax, else Luma)
-        const rawModel = selectedModel.toString();
+        const rawModel = (userModel || "").toString();
         const isPixverseTransition = /pixverse-v4-transition/i.test(rawModel);
         // Support v4, v4.5 and v5 image to video variants
         const isPixverseImage2Video = /pixverse-v4(?:\.5)?-image-to-video|pixverse-v5-image-to-video|kling-v1-pro-image-to-video|kling-v1-standard-image-to-video|kling-1\.5-pro-image-to-video|kling-v1\.6-pro-image-to-video|kling-1\.6-standard-image-to-video|kling-v2-master-image-to-video|kling-v2\.1-standard-image-to-video|kling-v2\.1-pro-image-to-video/i.test(rawModel);
@@ -440,8 +434,6 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                         key: uploaded.key,
                     },
                     s3Key: uploaded.key,
-                    model: selectedModel,
-                    defaultApplied: selectedModel === DEFAULT_VIDEO_MODEL && !userModel,
                 });
                 return;
             }
@@ -672,8 +664,6 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                         key: uploaded.key,
                     },
                     s3Key: uploaded.key,
-                    model: selectedModel,
-                    defaultApplied: selectedModel === DEFAULT_VIDEO_MODEL && !userModel,
                 });
                 return;
             }
@@ -904,8 +894,6 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                         key: uploaded.key,
                     },
                     s3Key: uploaded.key,
-                    model: selectedModel,
-                    defaultApplied: selectedModel === DEFAULT_VIDEO_MODEL && !userModel,
                 });
                 return;
             }
@@ -1837,11 +1825,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                     return maybeCloud;
                 try {
                     const ensured = yield (0, s3_1.ensure512SquareImageFromUrl)(url);
-                    const key = (0, s3_1.makeKey)({
-                        type: "image",
-                        feature: "pixverse-512",
-                        ext: "png",
-                    });
+                    const key = (0, s3_1.makeKey)({ type: "image", feature: "pixverse-512", ext: "png" });
                     yield (0, s3_1.uploadBuffer)(key, ensured.buffer, ensured.contentType);
                     const signed = yield (0, signedUrl_1.signKey)(key);
                     return signed;
@@ -3719,12 +3703,11 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                 return "ray-flash-2"; // fast Ray 2
             return "ray-2"; // default
         };
-        // Avoid shadowing earlier selectedModel; use distinct name here
-        const lumaModel = resolveLumaModel(userModel);
+        const selectedModel = resolveLumaModel(userModel);
         // Build payload per docs: POST https://api.lumalabs.ai/dream-machine/v1/generations
         const lumaPayload = {
             prompt,
-            model: lumaModel,
+            model: selectedModel,
             keyframes: {
                 frame0: {
                     type: "image",
@@ -3916,7 +3899,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
         // Upload the video stream to S3
         let uploadedLuma;
         try {
-            const variant = lumaModel.replace(/[^a-z0-9-]/gi, "-");
+            const variant = selectedModel.replace(/[^a-z0-9-]/gi, "-");
             uploadedLuma = yield uploadGeneratedVideo(feature, variant, videoResponse.data);
         }
         catch (e) {
