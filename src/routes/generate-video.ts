@@ -264,6 +264,17 @@ router.post(
         rawModel
       );
       const isRunwareViduQ2Pro = /vidu[\s-]*q?2.*pro|vidu:3@1/i.test(rawModel);
+      const isRunwayGen4Turbo = /runway.*gen[\s-]*4.*turbo|runway:1@1/i.test(
+        rawModel
+      );
+      const isRunwareSora2 = /sora[\s-]*2|openai:3@1/i.test(rawModel);
+      const isRunwareSora2Pro = /sora[\s-]*2.*pro|openai:3@2/i.test(rawModel);
+      const isRunwareHailuo23Fast = /hailuo[\s-]*2\.?3.*fast|minimax:4@2/i.test(
+        rawModel
+      );
+      const isRunwareHailuo23 = /hailuo[\s-]*2\.?3(?!.*fast)|minimax:4@1/i.test(
+        rawModel
+      );
       if (isRunwareSeedanceProFast) {
         try {
           console.log("[Seedance] Start generation", {
@@ -2115,6 +2126,1518 @@ router.post(
         }
       }
 
+      if (isRunwayGen4Turbo) {
+        try {
+          console.log("[Runway Gen4] Start generation", {
+            feature,
+            rawModel,
+            imageCloudUrlInitial: imageCloudUrl?.slice(0, 120),
+            lastFrameProvided: !!lastFrameCloudUrl,
+          });
+
+          const runwareHeaders = {
+            Authorization: `Bearer ${
+              process.env.RUNWARE_API_KEY || process.env.RUNWARE_KEY
+            }`,
+            "Content-Type": "application/json",
+          };
+
+          const uploadFrame = async (imgUrl: string) => {
+            const payload = [
+              {
+                taskType: "imageUpload",
+                taskUUID: randomUUID(),
+                image: imgUrl,
+              },
+            ];
+            const resp = await axios.post(
+              "https://api.runware.ai/v1",
+              payload,
+              {
+                headers: runwareHeaders,
+                timeout: 180000,
+              }
+            );
+            const data = resp.data;
+            const obj = Array.isArray(data?.data) ? data.data[0] : data?.data;
+            return obj?.imageUUID || obj?.imageUuid;
+          };
+
+          let firstUUID: string | undefined;
+          try {
+            firstUUID = await uploadFrame(imageCloudUrl);
+            console.log("[Runway Gen4] imageUpload first success", {
+              firstUUID,
+            });
+          } catch (e: any) {
+            console.error(
+              "[Runway Gen4] imageUpload first failed:",
+              e?.response?.data || e?.message || e
+            );
+            res.status(400).json({
+              success: false,
+              error: "Failed to upload first frame to Runway Gen-4 Turbo",
+              details: serializeError(e),
+            });
+            return;
+          }
+          if (!firstUUID) {
+            res.status(400).json({
+              success: false,
+              error: "Runware imageUpload did not return imageUUID",
+            });
+            return;
+          }
+
+          let lastUUID: string | undefined;
+          if (lastFrameCloudUrl) {
+            try {
+              lastUUID = await uploadFrame(lastFrameCloudUrl);
+              console.log("[Runway Gen4] imageUpload last success", {
+                lastUUID,
+              });
+            } catch (e: any) {
+              console.warn(
+                "[Runway Gen4] imageUpload last failed (continuing with first frame only)",
+                e?.response?.data || e?.message || e
+              );
+            }
+          }
+
+          const clamp = (val: number, min: number, max: number) =>
+            Math.max(min, Math.min(max, val));
+          const supportedDefaults = {
+            width: 1280,
+            height: 720,
+            duration: 10,
+            fps: 24,
+            cfg: 7.5,
+          };
+          const width = clamp(
+            Number(process.env.RUNWAY_TURBO_WIDTH || supportedDefaults.width),
+            256,
+            1920
+          );
+          const height = clamp(
+            Number(process.env.RUNWAY_TURBO_HEIGHT || supportedDefaults.height),
+            256,
+            1080
+          );
+          const duration = clamp(
+            Number(
+              process.env.RUNWAY_TURBO_DURATION || supportedDefaults.duration
+            ),
+            2,
+            10
+          );
+          const fps = clamp(
+            Number(process.env.RUNWAY_TURBO_FPS || supportedDefaults.fps),
+            15,
+            60
+          );
+          const cfgScale = clamp(
+            Number(process.env.RUNWAY_TURBO_CFG || supportedDefaults.cfg),
+            1,
+            20
+          );
+          const publicFigureThreshold =
+            process.env.RUNWAY_TURBO_PUBLIC_FIGURE_THRESHOLD || undefined;
+
+          const createdTaskUUID = randomUUID();
+          const frameImages: any[] = [
+            { inputImage: firstUUID, frame: "first" },
+          ];
+          if (lastUUID)
+            frameImages.push({ inputImage: lastUUID, frame: "last" });
+
+          const task: any = {
+            taskType: "videoInference",
+            taskUUID: createdTaskUUID,
+            model: "runway:1@1",
+            positivePrompt: prompt || "",
+            duration,
+            fps,
+            width,
+            height,
+            CFGScale: cfgScale,
+            deliveryMethod: "async",
+            frameImages,
+          };
+
+          if (publicFigureThreshold) {
+            task.providerSettings = {
+              runway: {
+                contentModeration: {
+                  publicFigureThreshold,
+                },
+              },
+            };
+          }
+
+          console.log("[Runway Gen4] Created task", {
+            taskUUID: createdTaskUUID,
+            duration,
+            fps,
+            width,
+            height,
+            cfgScale,
+            frames: frameImages.length,
+            moderation: publicFigureThreshold,
+          });
+
+          const createResp = await axios.post(
+            "https://api.runware.ai/v1",
+            [task],
+            {
+              headers: runwareHeaders,
+              timeout: 180000,
+            }
+          );
+          const data = createResp.data;
+          const ackItem = Array.isArray(data?.data)
+            ? data.data.find((d: any) => d?.taskType === "videoInference") ||
+              data.data[0]
+            : data?.data;
+          let videoUrl =
+            ackItem?.videoURL ||
+            ackItem?.url ||
+            ackItem?.video ||
+            (Array.isArray(ackItem?.videos) ? ackItem.videos[0] : null);
+          let pollTaskUUID: string = ackItem?.taskUUID || createdTaskUUID;
+          console.log("[Runway Gen4] Ack response", {
+            ackTaskUUID: ackItem?.taskUUID,
+            createdTaskUUID,
+            chosenPollTaskUUID: pollTaskUUID,
+            immediateVideo: !!videoUrl,
+            status: ackItem?.status || ackItem?.taskStatus,
+          });
+
+          if (!videoUrl && pollTaskUUID) {
+            const maxAttempts = 120;
+            const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
+            let consecutive400 = 0;
+            let switched = false;
+            for (let attempt = 0; attempt < maxAttempts; attempt++) {
+              await delay(3000);
+              const pollPayload = [
+                { taskType: "getResponse", taskUUID: pollTaskUUID },
+              ];
+              console.log("[Runway Gen4] Poll attempt", {
+                attempt,
+                pollTaskUUID,
+              });
+              try {
+                const poll = await axios.post(
+                  "https://api.runware.ai/v1",
+                  pollPayload,
+                  { headers: runwareHeaders, timeout: 60000 }
+                );
+                const pd = poll.data;
+                const item = Array.isArray(pd?.data)
+                  ? pd.data.find(
+                      (d: any) => d?.taskUUID === pollTaskUUID || d?.videoURL
+                    ) || pd.data[0]
+                  : pd?.data;
+                const status = item?.status || item?.taskStatus;
+                if (status)
+                  console.log("[Runway Gen4] Poll status", { attempt, status });
+                if (status === "success" || item?.videoURL || item?.url) {
+                  videoUrl =
+                    item?.videoURL ||
+                    item?.url ||
+                    item?.video ||
+                    (Array.isArray(item?.videos) ? item.videos[0] : null);
+                  if (videoUrl) break;
+                }
+                if (status === "error" || status === "failed") {
+                  res.status(502).json({
+                    success: false,
+                    error:
+                      "Runway Gen-4 Turbo generation failed during polling",
+                    details: pd,
+                  });
+                  return;
+                }
+                consecutive400 = 0;
+              } catch (e: any) {
+                const statusCode = e?.response?.status;
+                const body = e?.response?.data;
+                console.log("[Runway Gen4] Poll error", {
+                  attempt,
+                  statusCode,
+                  body:
+                    typeof body === "object"
+                      ? JSON.stringify(body).slice(0, 500)
+                      : body,
+                });
+                if (statusCode === 400) {
+                  consecutive400++;
+                  if (
+                    !switched &&
+                    pollTaskUUID !== createdTaskUUID &&
+                    consecutive400 >= 2
+                  ) {
+                    console.log(
+                      "[Runway Gen4] Switching poll UUID due to repeated 400",
+                      { from: pollTaskUUID, to: createdTaskUUID }
+                    );
+                    pollTaskUUID = createdTaskUUID;
+                    switched = true;
+                    consecutive400 = 0;
+                  }
+                  if (consecutive400 >= 5) {
+                    res.status(502).json({
+                      success: false,
+                      error:
+                        "Runway Gen-4 Turbo polling returned repeated 400 errors",
+                      details: body || serializeError(e),
+                    });
+                    return;
+                  }
+                }
+                continue;
+              }
+            }
+          }
+
+          if (!videoUrl) {
+            res.status(502).json({
+              success: false,
+              error: "Runway Gen-4 Turbo did not return a video URL",
+              details: data,
+            });
+            return;
+          }
+
+          let runwayStream;
+          try {
+            runwayStream = await axios.get(videoUrl, {
+              responseType: "stream",
+              timeout: 600000,
+            });
+          } catch (e) {
+            res.status(500).json({
+              success: false,
+              error: "Failed to download Runway Gen-4 Turbo video",
+              details: serializeError(e),
+            });
+            return;
+          }
+
+          let uploadedRunway;
+          try {
+            uploadedRunway = await uploadGeneratedVideo(
+              feature,
+              "runway-gen4-turbo",
+              runwayStream.data as Readable
+            );
+          } catch (e) {
+            res.status(500).json({
+              success: false,
+              error: "Failed to upload Runway Gen-4 Turbo video to S3",
+              details: serializeError(e),
+            });
+            return;
+          }
+
+          res.status(200).json({
+            success: true,
+            video: {
+              url: uploadedRunway.signedUrl,
+              signedUrl: uploadedRunway.signedUrl,
+              key: uploadedRunway.key,
+            },
+            s3Key: uploadedRunway.key,
+          });
+          return;
+        } catch (err: any) {
+          console.error(
+            "Runway Gen-4 Turbo error:",
+            err?.response?.data || err
+          );
+          res.status(500).json({
+            success: false,
+            error: "Runway Gen-4 Turbo generation failed",
+            details: serializeError(err),
+          });
+          return;
+        }
+      }
+
+      if (isRunwareSora2) {
+        try {
+          console.log("[Sora2] Start generation", {
+            feature,
+            rawModel,
+            imageCloudUrlInitial: imageCloudUrl?.slice(0, 120),
+            lastFrameProvided: !!lastFrameCloudUrl,
+          });
+
+          if (!prompt || !prompt.trim()) {
+            res.status(400).json({
+              success: false,
+              error: "Prompt is required for Sora 2",
+            });
+            return;
+          }
+
+          if (lastFrameCloudUrl) {
+            console.warn(
+              "[Sora2] last frame provided but ignored (model supports first frame only)"
+            );
+          }
+
+          const runwareHeaders = {
+            Authorization: `Bearer ${
+              process.env.RUNWARE_API_KEY || process.env.RUNWARE_KEY
+            }`,
+            "Content-Type": "application/json",
+          };
+
+          const uploadFrame = async (imgUrl: string) => {
+            const payload = [
+              {
+                taskType: "imageUpload",
+                taskUUID: randomUUID(),
+                image: imgUrl,
+              },
+            ];
+            const resp = await axios.post(
+              "https://api.runware.ai/v1",
+              payload,
+              {
+                headers: runwareHeaders,
+                timeout: 180000,
+              }
+            );
+            const data = resp.data;
+            const obj = Array.isArray(data?.data) ? data.data[0] : data?.data;
+            return obj?.imageUUID || obj?.imageUuid;
+          };
+
+          let firstUUID: string | undefined;
+          try {
+            firstUUID = await uploadFrame(imageCloudUrl);
+            console.log("[Sora2] imageUpload success", { firstUUID });
+          } catch (e: any) {
+            console.error(
+              "[Sora2] imageUpload failed:",
+              e?.response?.data || e?.message || e
+            );
+            res.status(400).json({
+              success: false,
+              error: "Failed to upload image to Runware (Sora 2)",
+              details: serializeError(e),
+            });
+            return;
+          }
+          if (!firstUUID) {
+            res.status(400).json({
+              success: false,
+              error: "Runware imageUpload did not return imageUUID",
+            });
+            return;
+          }
+
+          const pickDuration = () => {
+            const allowed = [4, 8, 12];
+            const envVal = Number(process.env.SORA2_DURATION);
+            if (allowed.includes(envVal)) return envVal;
+            return 8;
+          };
+          const duration = pickDuration();
+          const orientation = (
+            process.env.SORA2_ORIENTATION ||
+            process.env.SORA2_ASPECT ||
+            ""
+          ).toLowerCase();
+          const usePortrait = /portrait|vertical|9[:x]16|720x1280/.test(
+            orientation
+          );
+          const width = usePortrait ? 720 : 1280;
+          const height = usePortrait ? 1280 : 720;
+
+          const createdTaskUUID = randomUUID();
+          const frameImages: any[] = [
+            { inputImage: firstUUID, frame: "first" },
+          ];
+
+          const task: any = {
+            taskType: "videoInference",
+            taskUUID: createdTaskUUID,
+            model: "openai:3@1",
+            positivePrompt: prompt,
+            duration,
+            width,
+            height,
+            deliveryMethod: "async",
+            frameImages,
+          };
+          console.log("[Sora2] Created task", {
+            taskUUID: createdTaskUUID,
+            duration,
+            width,
+            height,
+          });
+
+          const createResp = await axios.post(
+            "https://api.runware.ai/v1",
+            [task],
+            {
+              headers: runwareHeaders,
+              timeout: 180000,
+            }
+          );
+          const data = createResp.data;
+          const ackItem = Array.isArray(data?.data)
+            ? data.data.find((d: any) => d?.taskType === "videoInference") ||
+              data.data[0]
+            : data?.data;
+          let videoUrl =
+            ackItem?.videoURL ||
+            ackItem?.url ||
+            ackItem?.video ||
+            (Array.isArray(ackItem?.videos) ? ackItem.videos[0] : null);
+          let pollTaskUUID: string = ackItem?.taskUUID || createdTaskUUID;
+          console.log("[Sora2] Ack response", {
+            ackTaskUUID: ackItem?.taskUUID,
+            createdTaskUUID,
+            chosenPollTaskUUID: pollTaskUUID,
+            immediateVideo: !!videoUrl,
+            status: ackItem?.status || ackItem?.taskStatus,
+          });
+
+          if (!videoUrl && pollTaskUUID) {
+            const maxAttempts = 120;
+            const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
+            let consecutive400 = 0;
+            let switched = false;
+            for (let attempt = 0; attempt < maxAttempts; attempt++) {
+              await delay(3000);
+              const pollPayload = [
+                { taskType: "getResponse", taskUUID: pollTaskUUID },
+              ];
+              console.log("[Sora2] Poll attempt", {
+                attempt,
+                pollTaskUUID,
+              });
+              try {
+                const poll = await axios.post(
+                  "https://api.runware.ai/v1",
+                  pollPayload,
+                  { headers: runwareHeaders, timeout: 60000 }
+                );
+                const pd = poll.data;
+                const item = Array.isArray(pd?.data)
+                  ? pd.data.find(
+                      (d: any) => d?.taskUUID === pollTaskUUID || d?.videoURL
+                    ) || pd.data[0]
+                  : pd?.data;
+                const status = item?.status || item?.taskStatus;
+                if (status)
+                  console.log("[Sora2] Poll status", { attempt, status });
+                if (status === "success" || item?.videoURL || item?.url) {
+                  videoUrl =
+                    item?.videoURL ||
+                    item?.url ||
+                    item?.video ||
+                    (Array.isArray(item?.videos) ? item.videos[0] : null);
+                  if (videoUrl) break;
+                }
+                if (status === "error" || status === "failed") {
+                  res.status(502).json({
+                    success: false,
+                    error: "Sora 2 generation failed during polling",
+                    details: pd,
+                  });
+                  return;
+                }
+                consecutive400 = 0;
+              } catch (e: any) {
+                const statusCode = e?.response?.status;
+                const body = e?.response?.data;
+                console.log("[Sora2] Poll error", {
+                  attempt,
+                  statusCode,
+                  body:
+                    typeof body === "object"
+                      ? JSON.stringify(body).slice(0, 500)
+                      : body,
+                });
+                if (statusCode === 400) {
+                  consecutive400++;
+                  if (
+                    !switched &&
+                    pollTaskUUID !== createdTaskUUID &&
+                    consecutive400 >= 2
+                  ) {
+                    console.log(
+                      "[Sora2] Switching poll UUID due to repeated 400",
+                      { from: pollTaskUUID, to: createdTaskUUID }
+                    );
+                    pollTaskUUID = createdTaskUUID;
+                    switched = true;
+                    consecutive400 = 0;
+                  }
+                  if (consecutive400 >= 5) {
+                    res.status(502).json({
+                      success: false,
+                      error: "Sora 2 polling returned repeated 400 errors",
+                      details: body || serializeError(e),
+                    });
+                    return;
+                  }
+                }
+                continue;
+              }
+            }
+          }
+
+          if (!videoUrl) {
+            res.status(502).json({
+              success: false,
+              error: "Sora 2 did not return a video URL",
+              details: data,
+            });
+            return;
+          }
+
+          let soraStream;
+          try {
+            soraStream = await axios.get(videoUrl, {
+              responseType: "stream",
+              timeout: 600000,
+            });
+          } catch (e) {
+            res.status(500).json({
+              success: false,
+              error: "Failed to download Sora 2 video",
+              details: serializeError(e),
+            });
+            return;
+          }
+
+          let uploadedSora;
+          try {
+            uploadedSora = await uploadGeneratedVideo(
+              feature,
+              "sora-2",
+              soraStream.data as Readable
+            );
+          } catch (e) {
+            res.status(500).json({
+              success: false,
+              error: "Failed to upload Sora 2 video to S3",
+              details: serializeError(e),
+            });
+            return;
+          }
+
+          res.status(200).json({
+            success: true,
+            video: {
+              url: uploadedSora.signedUrl,
+              signedUrl: uploadedSora.signedUrl,
+              key: uploadedSora.key,
+            },
+            s3Key: uploadedSora.key,
+          });
+          return;
+        } catch (err: any) {
+          console.error("Sora 2 error:", err?.response?.data || err);
+          res.status(500).json({
+            success: false,
+            error: "Sora 2 generation failed",
+            details: serializeError(err),
+          });
+          return;
+        }
+      }
+
+      if (isRunwareSora2Pro) {
+        try {
+          console.log("[Sora2Pro] Start generation", {
+            feature,
+            rawModel,
+            imageCloudUrlInitial: imageCloudUrl?.slice(0, 120),
+            lastFrameProvided: !!lastFrameCloudUrl,
+          });
+
+          if (!prompt || !prompt.trim()) {
+            res.status(400).json({
+              success: false,
+              error: "Prompt is required for Sora 2 Pro",
+            });
+            return;
+          }
+
+          if (lastFrameCloudUrl) {
+            console.warn(
+              "[Sora2Pro] last frame provided but ignored (model supports first frame only)"
+            );
+          }
+
+          const runwareHeaders = {
+            Authorization: `Bearer ${
+              process.env.RUNWARE_API_KEY || process.env.RUNWARE_KEY
+            }`,
+            "Content-Type": "application/json",
+          };
+
+          const uploadFrame = async (imgUrl: string) => {
+            const payload = [
+              {
+                taskType: "imageUpload",
+                taskUUID: randomUUID(),
+                image: imgUrl,
+              },
+            ];
+            const resp = await axios.post(
+              "https://api.runware.ai/v1",
+              payload,
+              {
+                headers: runwareHeaders,
+                timeout: 180000,
+              }
+            );
+            const data = resp.data;
+            const obj = Array.isArray(data?.data) ? data.data[0] : data?.data;
+            return obj?.imageUUID || obj?.imageUuid;
+          };
+
+          let firstUUID: string | undefined;
+          try {
+            firstUUID = await uploadFrame(imageCloudUrl);
+            console.log("[Sora2Pro] imageUpload success", { firstUUID });
+          } catch (e: any) {
+            console.error(
+              "[Sora2Pro] imageUpload failed:",
+              e?.response?.data || e?.message || e
+            );
+            res.status(400).json({
+              success: false,
+              error: "Failed to upload image to Runware (Sora 2 Pro)",
+              details: serializeError(e),
+            });
+            return;
+          }
+          if (!firstUUID) {
+            res.status(400).json({
+              success: false,
+              error: "Runware imageUpload did not return imageUUID",
+            });
+            return;
+          }
+
+          const allowedDurations = [4, 8, 12];
+          const pickDuration = () => {
+            const envVal = Number(process.env.SORA2PRO_DURATION);
+            if (allowedDurations.includes(envVal)) return envVal;
+            return 12;
+          };
+          const duration = pickDuration();
+
+          const combos = [
+            { width: 1280, height: 720, tag: "16:9" },
+            { width: 720, height: 1280, tag: "9:16" },
+            { width: 1792, height: 1024, tag: "7:4" },
+            { width: 1024, height: 1792, tag: "4:7" },
+          ];
+          const pickDims = () => {
+            const envWidth = Number(process.env.SORA2PRO_WIDTH);
+            const envHeight = Number(process.env.SORA2PRO_HEIGHT);
+            if (envWidth && envHeight) {
+              const match = combos.find(
+                (c) => c.width === envWidth && c.height === envHeight
+              );
+              if (match) return match;
+            }
+            const aspectPref = (
+              process.env.SORA2PRO_ASPECT ||
+              process.env.SORA2PRO_ORIENTATION ||
+              process.env.SORA2_PRO_ASPECT ||
+              ""
+            ).toLowerCase();
+            if (aspectPref) {
+              if (/9[:x]16|portrait|vertical/.test(aspectPref))
+                return combos[1];
+              if (/16[:x]9|landscape|horizontal/.test(aspectPref))
+                return combos[0];
+              if (/7[:x]4|1792x1024|wide/.test(aspectPref)) return combos[2];
+              if (/4[:x]7|1024x1792/.test(aspectPref)) return combos[3];
+            }
+            return combos[2];
+          };
+          const { width, height } = pickDims();
+
+          const createdTaskUUID = randomUUID();
+          const frameImages: any[] = [
+            { inputImage: firstUUID, frame: "first" },
+          ];
+
+          const task: any = {
+            taskType: "videoInference",
+            taskUUID: createdTaskUUID,
+            model: "openai:3@2",
+            positivePrompt: prompt,
+            duration,
+            width,
+            height,
+            deliveryMethod: "async",
+            frameImages,
+          };
+          console.log("[Sora2Pro] Created task", {
+            taskUUID: createdTaskUUID,
+            duration,
+            width,
+            height,
+          });
+
+          const createResp = await axios.post(
+            "https://api.runware.ai/v1",
+            [task],
+            {
+              headers: runwareHeaders,
+              timeout: 180000,
+            }
+          );
+          const data = createResp.data;
+          const ackItem = Array.isArray(data?.data)
+            ? data.data.find((d: any) => d?.taskType === "videoInference") ||
+              data.data[0]
+            : data?.data;
+          let videoUrl =
+            ackItem?.videoURL ||
+            ackItem?.url ||
+            ackItem?.video ||
+            (Array.isArray(ackItem?.videos) ? ackItem.videos[0] : null);
+          let pollTaskUUID: string = ackItem?.taskUUID || createdTaskUUID;
+          console.log("[Sora2Pro] Ack response", {
+            ackTaskUUID: ackItem?.taskUUID,
+            createdTaskUUID,
+            chosenPollTaskUUID: pollTaskUUID,
+            immediateVideo: !!videoUrl,
+            status: ackItem?.status || ackItem?.taskStatus,
+          });
+
+          if (!videoUrl && pollTaskUUID) {
+            const maxAttempts = 120;
+            const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
+            let consecutive400 = 0;
+            let switched = false;
+            for (let attempt = 0; attempt < maxAttempts; attempt++) {
+              await delay(3000);
+              const pollPayload = [
+                { taskType: "getResponse", taskUUID: pollTaskUUID },
+              ];
+              console.log("[Sora2Pro] Poll attempt", {
+                attempt,
+                pollTaskUUID,
+              });
+              try {
+                const poll = await axios.post(
+                  "https://api.runware.ai/v1",
+                  pollPayload,
+                  { headers: runwareHeaders, timeout: 60000 }
+                );
+                const pd = poll.data;
+                const item = Array.isArray(pd?.data)
+                  ? pd.data.find(
+                      (d: any) => d?.taskUUID === pollTaskUUID || d?.videoURL
+                    ) || pd.data[0]
+                  : pd?.data;
+                const status = item?.status || item?.taskStatus;
+                if (status)
+                  console.log("[Sora2Pro] Poll status", { attempt, status });
+                if (status === "success" || item?.videoURL || item?.url) {
+                  videoUrl =
+                    item?.videoURL ||
+                    item?.url ||
+                    item?.video ||
+                    (Array.isArray(item?.videos) ? item.videos[0] : null);
+                  if (videoUrl) break;
+                }
+                if (status === "error" || status === "failed") {
+                  res.status(502).json({
+                    success: false,
+                    error: "Sora 2 Pro generation failed during polling",
+                    details: pd,
+                  });
+                  return;
+                }
+                consecutive400 = 0;
+              } catch (e: any) {
+                const statusCode = e?.response?.status;
+                const body = e?.response?.data;
+                console.log("[Sora2Pro] Poll error", {
+                  attempt,
+                  statusCode,
+                  body:
+                    typeof body === "object"
+                      ? JSON.stringify(body).slice(0, 500)
+                      : body,
+                });
+                if (statusCode === 400) {
+                  consecutive400++;
+                  if (
+                    !switched &&
+                    pollTaskUUID !== createdTaskUUID &&
+                    consecutive400 >= 2
+                  ) {
+                    console.log(
+                      "[Sora2Pro] Switching poll UUID due to repeated 400",
+                      { from: pollTaskUUID, to: createdTaskUUID }
+                    );
+                    pollTaskUUID = createdTaskUUID;
+                    switched = true;
+                    consecutive400 = 0;
+                  }
+                  if (consecutive400 >= 5) {
+                    res.status(502).json({
+                      success: false,
+                      error: "Sora 2 Pro polling returned repeated 400 errors",
+                      details: body || serializeError(e),
+                    });
+                    return;
+                  }
+                }
+                continue;
+              }
+            }
+          }
+
+          if (!videoUrl) {
+            res.status(502).json({
+              success: false,
+              error: "Sora 2 Pro did not return a video URL",
+              details: data,
+            });
+            return;
+          }
+
+          let soraProStream;
+          try {
+            soraProStream = await axios.get(videoUrl, {
+              responseType: "stream",
+              timeout: 600000,
+            });
+          } catch (e) {
+            res.status(500).json({
+              success: false,
+              error: "Failed to download Sora 2 Pro video",
+              details: serializeError(e),
+            });
+            return;
+          }
+
+          let uploadedSoraPro;
+          try {
+            uploadedSoraPro = await uploadGeneratedVideo(
+              feature,
+              "sora-2-pro",
+              soraProStream.data as Readable
+            );
+          } catch (e) {
+            res.status(500).json({
+              success: false,
+              error: "Failed to upload Sora 2 Pro video to S3",
+              details: serializeError(e),
+            });
+            return;
+          }
+
+          res.status(200).json({
+            success: true,
+            video: {
+              url: uploadedSoraPro.signedUrl,
+              signedUrl: uploadedSoraPro.signedUrl,
+              key: uploadedSoraPro.key,
+            },
+            s3Key: uploadedSoraPro.key,
+          });
+          return;
+        } catch (err: any) {
+          console.error("Sora 2 Pro error:", err?.response?.data || err);
+          res.status(500).json({
+            success: false,
+            error: "Sora 2 Pro generation failed",
+            details: serializeError(err),
+          });
+          return;
+        }
+      }
+
+      if (isRunwareHailuo23Fast) {
+        try {
+          console.log("[Hailuo2.3Fast] Start generation", {
+            feature,
+            rawModel,
+            imageCloudUrlInitial: imageCloudUrl?.slice(0, 120),
+            lastFrameProvided: !!lastFrameCloudUrl,
+          });
+
+          if (lastFrameCloudUrl) {
+            console.warn(
+              "[Hailuo2.3Fast] last frame provided but ignored (model uses first frame only)"
+            );
+          }
+
+          const runwareHeaders = {
+            Authorization: `Bearer ${
+              process.env.RUNWARE_API_KEY || process.env.RUNWARE_KEY
+            }`,
+            "Content-Type": "application/json",
+          };
+
+          const uploadFrame = async (imgUrl: string) => {
+            const payload = [
+              {
+                taskType: "imageUpload",
+                taskUUID: randomUUID(),
+                image: imgUrl,
+              },
+            ];
+            const resp = await axios.post(
+              "https://api.runware.ai/v1",
+              payload,
+              {
+                headers: runwareHeaders,
+                timeout: 180000,
+              }
+            );
+            const data = resp.data;
+            const obj = Array.isArray(data?.data) ? data.data[0] : data?.data;
+            return obj?.imageUUID || obj?.imageUuid;
+          };
+
+          let firstUUID: string | undefined;
+          try {
+            firstUUID = await uploadFrame(imageCloudUrl);
+            console.log("[Hailuo2.3Fast] imageUpload success", { firstUUID });
+          } catch (e: any) {
+            console.error(
+              "[Hailuo2.3Fast] imageUpload failed:",
+              e?.response?.data || e?.message || e
+            );
+            res.status(400).json({
+              success: false,
+              error: "Failed to upload image to Runware (Hailuo 2.3 Fast)",
+              details: serializeError(e),
+            });
+            return;
+          }
+          if (!firstUUID) {
+            res.status(400).json({
+              success: false,
+              error: "Runware imageUpload did not return imageUUID",
+            });
+            return;
+          }
+
+          const allowedDurations = [6, 10];
+          const requestedDuration = Number(process.env.HAILUO23_FAST_DURATION);
+          const duration = allowedDurations.includes(requestedDuration)
+            ? requestedDuration
+            : 6;
+          if (duration === 10) {
+            console.log(
+              "[Hailuo2.3Fast] Using 10s duration – ensure input frame is 1366x768 per Runware docs"
+            );
+          }
+
+          const promptOptimizer =
+            String(process.env.HAILUO23_FAST_PROMPT_OPTIMIZER || "false") ===
+            "true";
+
+          const createdTaskUUID = randomUUID();
+          const frameImages: any[] = [
+            { inputImage: firstUUID, frame: "first" },
+          ];
+
+          const providerSettings: Record<string, any> = {};
+          if (promptOptimizer) {
+            providerSettings.minimax = { promptOptimizer: true };
+          }
+
+          const task: any = {
+            taskType: "videoInference",
+            taskUUID: createdTaskUUID,
+            model: "minimax:4@2",
+            positivePrompt: prompt || "",
+            duration,
+            deliveryMethod: "async",
+            frameImages,
+          };
+          if (Object.keys(providerSettings).length > 0) {
+            task.providerSettings = providerSettings;
+          }
+          console.log("[Hailuo2.3Fast] Created task", {
+            taskUUID: createdTaskUUID,
+            duration,
+            promptOptimizer,
+          });
+
+          const createResp = await axios.post(
+            "https://api.runware.ai/v1",
+            [task],
+            {
+              headers: runwareHeaders,
+              timeout: 180000,
+            }
+          );
+          const data = createResp.data;
+          const ackItem = Array.isArray(data?.data)
+            ? data.data.find((d: any) => d?.taskType === "videoInference") ||
+              data.data[0]
+            : data?.data;
+          let videoUrl =
+            ackItem?.videoURL ||
+            ackItem?.url ||
+            ackItem?.video ||
+            (Array.isArray(ackItem?.videos) ? ackItem.videos[0] : null);
+          let pollTaskUUID: string = ackItem?.taskUUID || createdTaskUUID;
+          console.log("[Hailuo2.3Fast] Ack response", {
+            ackTaskUUID: ackItem?.taskUUID,
+            createdTaskUUID,
+            chosenPollTaskUUID: pollTaskUUID,
+            immediateVideo: !!videoUrl,
+            status: ackItem?.status || ackItem?.taskStatus,
+          });
+
+          if (!videoUrl && pollTaskUUID) {
+            const maxAttempts = 100;
+            const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
+            let consecutive400 = 0;
+            let switched = false;
+            for (let attempt = 0; attempt < maxAttempts; attempt++) {
+              await delay(3000);
+              const pollPayload = [
+                { taskType: "getResponse", taskUUID: pollTaskUUID },
+              ];
+              console.log("[Hailuo2.3Fast] Poll attempt", {
+                attempt,
+                pollTaskUUID,
+              });
+              try {
+                const poll = await axios.post(
+                  "https://api.runware.ai/v1",
+                  pollPayload,
+                  { headers: runwareHeaders, timeout: 60000 }
+                );
+                const pd = poll.data;
+                const item = Array.isArray(pd?.data)
+                  ? pd.data.find(
+                      (d: any) => d?.taskUUID === pollTaskUUID || d?.videoURL
+                    ) || pd.data[0]
+                  : pd?.data;
+                const status = item?.status || item?.taskStatus;
+                if (status)
+                  console.log("[Hailuo2.3Fast] Poll status", {
+                    attempt,
+                    status,
+                  });
+                if (status === "success" || item?.videoURL || item?.url) {
+                  videoUrl =
+                    item?.videoURL ||
+                    item?.url ||
+                    item?.video ||
+                    (Array.isArray(item?.videos) ? item.videos[0] : null);
+                  if (videoUrl) break;
+                }
+                if (status === "error" || status === "failed") {
+                  res.status(502).json({
+                    success: false,
+                    error: "Hailuo 2.3 Fast generation failed during polling",
+                    details: pd,
+                  });
+                  return;
+                }
+                consecutive400 = 0;
+              } catch (e: any) {
+                const statusCode = e?.response?.status;
+                const body = e?.response?.data;
+                console.log("[Hailuo2.3Fast] Poll error", {
+                  attempt,
+                  statusCode,
+                  body:
+                    typeof body === "object"
+                      ? JSON.stringify(body).slice(0, 500)
+                      : body,
+                });
+                if (statusCode === 400) {
+                  consecutive400++;
+                  if (
+                    !switched &&
+                    pollTaskUUID !== createdTaskUUID &&
+                    consecutive400 >= 2
+                  ) {
+                    console.log(
+                      "[Hailuo2.3Fast] Switching poll UUID due to repeated 400",
+                      { from: pollTaskUUID, to: createdTaskUUID }
+                    );
+                    pollTaskUUID = createdTaskUUID;
+                    switched = true;
+                    consecutive400 = 0;
+                  }
+                  if (consecutive400 >= 5) {
+                    res.status(502).json({
+                      success: false,
+                      error:
+                        "Hailuo 2.3 Fast polling returned repeated 400 errors",
+                      details: body || serializeError(e),
+                    });
+                    return;
+                  }
+                }
+                continue;
+              }
+            }
+          }
+
+          if (!videoUrl) {
+            res.status(502).json({
+              success: false,
+              error: "Hailuo 2.3 Fast did not return a video URL",
+              details: data,
+            });
+            return;
+          }
+
+          let hailuoFastStream;
+          try {
+            hailuoFastStream = await axios.get(videoUrl, {
+              responseType: "stream",
+              timeout: 600000,
+            });
+          } catch (e) {
+            res.status(500).json({
+              success: false,
+              error: "Failed to download Hailuo 2.3 Fast video",
+              details: serializeError(e),
+            });
+            return;
+          }
+
+          let uploadedFast;
+          try {
+            uploadedFast = await uploadGeneratedVideo(
+              feature,
+              "hailuo-2-3-fast",
+              hailuoFastStream.data as Readable
+            );
+          } catch (e) {
+            res.status(500).json({
+              success: false,
+              error: "Failed to upload Hailuo 2.3 Fast video to S3",
+              details: serializeError(e),
+            });
+            return;
+          }
+
+          res.status(200).json({
+            success: true,
+            video: {
+              url: uploadedFast.signedUrl,
+              signedUrl: uploadedFast.signedUrl,
+              key: uploadedFast.key,
+            },
+            s3Key: uploadedFast.key,
+          });
+          return;
+        } catch (err: any) {
+          console.error("Hailuo 2.3 Fast error:", err?.response?.data || err);
+          res.status(500).json({
+            success: false,
+            error: "Hailuo 2.3 Fast generation failed",
+            details: serializeError(err),
+          });
+          return;
+        }
+      }
+
+      if (isRunwareHailuo23) {
+        try {
+          console.log("[Hailuo2.3] Start generation", {
+            feature,
+            rawModel,
+            imageCloudUrlInitial: imageCloudUrl?.slice(0, 120),
+            lastFrameProvided: !!lastFrameCloudUrl,
+          });
+
+          if (lastFrameCloudUrl) {
+            console.warn(
+              "[Hailuo2.3] last frame provided but ignored (model uses first frame only)"
+            );
+          }
+
+          const runwareHeaders = {
+            Authorization: `Bearer ${
+              process.env.RUNWARE_API_KEY || process.env.RUNWARE_KEY
+            }`,
+            "Content-Type": "application/json",
+          };
+
+          const uploadFrame = async (imgUrl: string) => {
+            const payload = [
+              {
+                taskType: "imageUpload",
+                taskUUID: randomUUID(),
+                image: imgUrl,
+              },
+            ];
+            const resp = await axios.post(
+              "https://api.runware.ai/v1",
+              payload,
+              {
+                headers: runwareHeaders,
+                timeout: 180000,
+              }
+            );
+            const data = resp.data;
+            const obj = Array.isArray(data?.data) ? data.data[0] : data?.data;
+            return obj?.imageUUID || obj?.imageUuid;
+          };
+
+          let firstUUID: string | undefined;
+          try {
+            firstUUID = await uploadFrame(imageCloudUrl);
+            console.log("[Hailuo2.3] imageUpload success", { firstUUID });
+          } catch (e: any) {
+            console.error(
+              "[Hailuo2.3] imageUpload failed:",
+              e?.response?.data || e?.message || e
+            );
+            res.status(400).json({
+              success: false,
+              error: "Failed to upload image to Runware (Hailuo 2.3)",
+              details: serializeError(e),
+            });
+            return;
+          }
+          if (!firstUUID) {
+            res.status(400).json({
+              success: false,
+              error: "Runware imageUpload did not return imageUUID",
+            });
+            return;
+          }
+
+          const allowedDurations = [6, 10];
+          const requestedDuration = Number(process.env.HAILUO23_DURATION);
+          const duration = allowedDurations.includes(requestedDuration)
+            ? requestedDuration
+            : 6;
+          if (duration === 10) {
+            console.log(
+              "[Hailuo2.3] Using 10s duration – ensure source frame is 1366x768 per Runware docs"
+            );
+          }
+
+          const promptOptimizer =
+            String(process.env.HAILUO23_PROMPT_OPTIMIZER || "false") === "true";
+
+          const createdTaskUUID = randomUUID();
+          const frameImages: any[] = [
+            { inputImage: firstUUID, frame: "first" },
+          ];
+
+          const providerSettings: Record<string, any> = {};
+          if (promptOptimizer) {
+            providerSettings.minimax = { promptOptimizer: true };
+          }
+
+          const task: any = {
+            taskType: "videoInference",
+            taskUUID: createdTaskUUID,
+            model: "minimax:4@1",
+            positivePrompt: prompt || "",
+            duration,
+            deliveryMethod: "async",
+            frameImages,
+          };
+          if (Object.keys(providerSettings).length > 0) {
+            task.providerSettings = providerSettings;
+          }
+          console.log("[Hailuo2.3] Created task", {
+            taskUUID: createdTaskUUID,
+            duration,
+            promptOptimizer,
+          });
+
+          const createResp = await axios.post(
+            "https://api.runware.ai/v1",
+            [task],
+            {
+              headers: runwareHeaders,
+              timeout: 180000,
+            }
+          );
+          const data = createResp.data;
+          const ackItem = Array.isArray(data?.data)
+            ? data.data.find((d: any) => d?.taskType === "videoInference") ||
+              data.data[0]
+            : data?.data;
+          let videoUrl =
+            ackItem?.videoURL ||
+            ackItem?.url ||
+            ackItem?.video ||
+            (Array.isArray(ackItem?.videos) ? ackItem.videos[0] : null);
+          let pollTaskUUID: string = ackItem?.taskUUID || createdTaskUUID;
+          console.log("[Hailuo2.3] Ack response", {
+            ackTaskUUID: ackItem?.taskUUID,
+            createdTaskUUID,
+            chosenPollTaskUUID: pollTaskUUID,
+            immediateVideo: !!videoUrl,
+            status: ackItem?.status || ackItem?.taskStatus,
+          });
+
+          if (!videoUrl && pollTaskUUID) {
+            const maxAttempts = 100;
+            const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
+            let consecutive400 = 0;
+            let switched = false;
+            for (let attempt = 0; attempt < maxAttempts; attempt++) {
+              await delay(3000);
+              const pollPayload = [
+                { taskType: "getResponse", taskUUID: pollTaskUUID },
+              ];
+              console.log("[Hailuo2.3] Poll attempt", {
+                attempt,
+                pollTaskUUID,
+              });
+              try {
+                const poll = await axios.post(
+                  "https://api.runware.ai/v1",
+                  pollPayload,
+                  { headers: runwareHeaders, timeout: 60000 }
+                );
+                const pd = poll.data;
+                const item = Array.isArray(pd?.data)
+                  ? pd.data.find(
+                      (d: any) => d?.taskUUID === pollTaskUUID || d?.videoURL
+                    ) || pd.data[0]
+                  : pd?.data;
+                const status = item?.status || item?.taskStatus;
+                if (status)
+                  console.log("[Hailuo2.3] Poll status", { attempt, status });
+                if (status === "success" || item?.videoURL || item?.url) {
+                  videoUrl =
+                    item?.videoURL ||
+                    item?.url ||
+                    item?.video ||
+                    (Array.isArray(item?.videos) ? item.videos[0] : null);
+                  if (videoUrl) break;
+                }
+                if (status === "error" || status === "failed") {
+                  res.status(502).json({
+                    success: false,
+                    error: "Hailuo 2.3 generation failed during polling",
+                    details: pd,
+                  });
+                  return;
+                }
+                consecutive400 = 0;
+              } catch (e: any) {
+                const statusCode = e?.response?.status;
+                const body = e?.response?.data;
+                console.log("[Hailuo2.3] Poll error", {
+                  attempt,
+                  statusCode,
+                  body:
+                    typeof body === "object"
+                      ? JSON.stringify(body).slice(0, 500)
+                      : body,
+                });
+                if (statusCode === 400) {
+                  consecutive400++;
+                  if (
+                    !switched &&
+                    pollTaskUUID !== createdTaskUUID &&
+                    consecutive400 >= 2
+                  ) {
+                    console.log(
+                      "[Hailuo2.3] Switching poll UUID due to repeated 400",
+                      { from: pollTaskUUID, to: createdTaskUUID }
+                    );
+                    pollTaskUUID = createdTaskUUID;
+                    switched = true;
+                    consecutive400 = 0;
+                  }
+                  if (consecutive400 >= 5) {
+                    res.status(502).json({
+                      success: false,
+                      error: "Hailuo 2.3 polling returned repeated 400 errors",
+                      details: body || serializeError(e),
+                    });
+                    return;
+                  }
+                }
+                continue;
+              }
+            }
+          }
+
+          if (!videoUrl) {
+            res.status(502).json({
+              success: false,
+              error: "Hailuo 2.3 did not return a video URL",
+              details: data,
+            });
+            return;
+          }
+
+          let hailuoStream;
+          try {
+            hailuoStream = await axios.get(videoUrl, {
+              responseType: "stream",
+              timeout: 600000,
+            });
+          } catch (e) {
+            res.status(500).json({
+              success: false,
+              error: "Failed to download Hailuo 2.3 video",
+              details: serializeError(e),
+            });
+            return;
+          }
+
+          let uploaded;
+          try {
+            uploaded = await uploadGeneratedVideo(
+              feature,
+              "hailuo-2-3",
+              hailuoStream.data as Readable
+            );
+          } catch (e) {
+            res.status(500).json({
+              success: false,
+              error: "Failed to upload Hailuo 2.3 video to S3",
+              details: serializeError(e),
+            });
+            return;
+          }
+
+          res.status(200).json({
+            success: true,
+            video: {
+              url: uploaded.signedUrl,
+              signedUrl: uploaded.signedUrl,
+              key: uploaded.key,
+            },
+            s3Key: uploaded.key,
+          });
+          return;
+        } catch (err: any) {
+          console.error("Hailuo 2.3 error:", err?.response?.data || err);
+          res.status(500).json({
+            success: false,
+            error: "Hailuo 2.3 generation failed",
+            details: serializeError(err),
+          });
+          return;
+        }
+      }
+
       if (isPixverseTransition || isPixverseImage2Video) {
         // Ensure 512x512 for Pixverse-compatible inputs for ANY host (S3/Cloudinary/etc)
         const force512 = (url: string | undefined): string | undefined => {
@@ -2141,7 +3664,11 @@ router.post(
           if (maybeCloud !== url) return maybeCloud;
           try {
             const ensured = await ensure512SquareImageFromUrl(url);
-            const key = makeKey({ type: "image", feature: "pixverse-512", ext: "png" });
+            const key = makeKey({
+              type: "image",
+              feature: "pixverse-512",
+              ext: "png",
+            });
             await uploadBuffer(key, ensured.buffer, ensured.contentType);
             const signed = await signKey(key);
             return signed;

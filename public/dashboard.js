@@ -3363,8 +3363,19 @@ async function generateVideo(endpoint, event) {
     return;
   }
   // If model requires last frame (Pixverse) ensure it's present
-  const modelSelect = document.getElementById("stepModelSelect");
+  const modelSelect =
+    document.getElementById("stepModelSelect") ||
+    document.getElementById("featureModelSelect");
   const selectedModel = modelSelect ? modelSelect.value : undefined;
+  if (!selectedModel) {
+    if (statusDiv) {
+      statusDiv.textContent = "Please pick a video model.";
+      statusDiv.style.color = "red";
+    } else {
+      alert("Please pick a video model first.");
+    }
+    return;
+  }
   if (/pixverse-v4-transition/i.test(selectedModel || "")) {
     lastFrameUrl = window._stepLastFrameUrl || null;
     if (!lastFrameUrl) {
