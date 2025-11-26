@@ -1,10 +1,215 @@
+const IDEOGRAM_MODEL_ID = "ideogram:4@1";
+const IDEOGRAM_REMIX_MODEL_ID = "ideogram:4@2";
+const IDEOGRAM_BASE_DIMENSIONS = [
+  { width: 1536, height: 512 },
+  { width: 1536, height: 576 },
+  { width: 1472, height: 576 },
+  { width: 1408, height: 576 },
+  { width: 1536, height: 640 },
+  { width: 1472, height: 640 },
+  { width: 1408, height: 640 },
+  { width: 1344, height: 640 },
+  { width: 1472, height: 704 },
+  { width: 1408, height: 704 },
+  { width: 1344, height: 704 },
+  { width: 1280, height: 704 },
+  { width: 1312, height: 736 },
+  { width: 1344, height: 768 },
+  { width: 1216, height: 704 },
+  { width: 1280, height: 768 },
+  { width: 1152, height: 704 },
+  { width: 1280, height: 800 },
+  { width: 1216, height: 768 },
+  { width: 1248, height: 832 },
+  { width: 1216, height: 832 },
+  { width: 1088, height: 768 },
+  { width: 1152, height: 832 },
+  { width: 1152, height: 864 },
+  { width: 1088, height: 832 },
+  { width: 1152, height: 896 },
+  { width: 1120, height: 896 },
+  { width: 1024, height: 832 },
+  { width: 1088, height: 896 },
+  { width: 960, height: 832 },
+  { width: 1024, height: 896 },
+  { width: 1088, height: 960 },
+  { width: 960, height: 896 },
+  { width: 1024, height: 960 },
+  { width: 1024, height: 1024 },
+];
+const IDEOGRAM_REMIX_BASE_DIMENSIONS = [
+  { width: 1536, height: 512 },
+  { width: 1536, height: 576 },
+  { width: 1472, height: 576 },
+  { width: 1408, height: 576 },
+  { width: 1536, height: 640 },
+  { width: 1472, height: 640 },
+  { width: 1408, height: 640 },
+  { width: 1344, height: 640 },
+  { width: 1472, height: 704 },
+  { width: 1408, height: 704 },
+  { width: 1344, height: 704 },
+  { width: 1312, height: 736 },
+  { width: 1344, height: 768 },
+  { width: 1280, height: 704 },
+  { width: 1216, height: 704 },
+  { width: 1280, height: 768 },
+  { width: 1152, height: 704 },
+  { width: 1280, height: 800 },
+  { width: 1216, height: 768 },
+  { width: 1248, height: 832 },
+  { width: 1216, height: 832 },
+  { width: 1088, height: 768 },
+  { width: 1152, height: 832 },
+  { width: 1152, height: 864 },
+  { width: 1088, height: 832 },
+  { width: 1152, height: 896 },
+  { width: 1120, height: 896 },
+  { width: 1024, height: 832 },
+  { width: 1088, height: 896 },
+  { width: 960, height: 832 },
+  { width: 1024, height: 896 },
+  { width: 1088, height: 960 },
+  { width: 960, height: 896 },
+  { width: 1024, height: 960 },
+  { width: 1024, height: 1024 },
+  { width: 960, height: 1024 },
+  { width: 896, height: 960 },
+  { width: 960, height: 1088 },
+  { width: 896, height: 1024 },
+  { width: 832, height: 960 },
+  { width: 896, height: 1088 },
+  { width: 832, height: 1088 },
+  { width: 864, height: 1152 },
+  { width: 832, height: 1152 },
+  { width: 768, height: 1088 },
+  { width: 832, height: 1216 },
+  { width: 832, height: 1248 },
+  { width: 768, height: 1216 },
+  { width: 800, height: 1280 },
+  { width: 704, height: 1152 },
+  { width: 768, height: 1280 },
+  { width: 704, height: 1216 },
+  { width: 768, height: 1344 },
+  { width: 736, height: 1328 },
+  { width: 704, height: 1280 },
+  { width: 704, height: 1344 },
+  { width: 704, height: 1408 },
+  { width: 704, height: 1472 },
+  { width: 640, height: 1334 },
+  { width: 640, height: 1408 },
+  { width: 640, height: 1472 },
+  { width: 640, height: 1536 },
+  { width: 576, height: 1408 },
+  { width: 576, height: 1472 },
+  { width: 576, height: 1536 },
+  { width: 512, height: 1536 },
+];
+
+function buildIdeogramDimensionOptions(list) {
+  const seen = new Set();
+  const values = [];
+  list.forEach((dim) => {
+    const forwardKey = `${dim.width}x${dim.height}`;
+    if (!seen.has(forwardKey)) {
+      values.push(dim);
+      seen.add(forwardKey);
+    }
+    if (dim.width !== dim.height) {
+      const swappedKey = `${dim.height}x${dim.width}`;
+      if (!seen.has(swappedKey)) {
+        values.push({ width: dim.height, height: dim.width });
+        seen.add(swappedKey);
+      }
+    }
+  });
+  return values;
+}
+
+const IDEOGRAM_DIMENSION_OPTIONS = buildIdeogramDimensionOptions(
+  IDEOGRAM_BASE_DIMENSIONS
+);
+const IDEOGRAM_REMIX_DIMENSION_OPTIONS = buildIdeogramDimensionOptions(
+  IDEOGRAM_REMIX_BASE_DIMENSIONS
+);
+
+function pickIdeogramDefault(options) {
+  return (
+    options.find((dim) => dim.width === 1024 && dim.height === 1024) ||
+    options[0]
+  );
+}
+
+const IDEOGRAM_DEFAULT_DIMENSION = pickIdeogramDefault(
+  IDEOGRAM_DIMENSION_OPTIONS
+);
+const IDEOGRAM_REMIX_DEFAULT_DIMENSION = pickIdeogramDefault(
+  IDEOGRAM_REMIX_DIMENSION_OPTIONS
+);
+
+function getIdeogramDimensionOptions(modelId) {
+  return modelId === IDEOGRAM_REMIX_MODEL_ID
+    ? IDEOGRAM_REMIX_DIMENSION_OPTIONS
+    : IDEOGRAM_DIMENSION_OPTIONS;
+}
+
+function getIdeogramDefaultDimension(modelId) {
+  return modelId === IDEOGRAM_REMIX_MODEL_ID
+    ? IDEOGRAM_REMIX_DEFAULT_DIMENSION
+    : IDEOGRAM_DEFAULT_DIMENSION;
+}
+
+function initializeIdeogramDropdown(modelId = IDEOGRAM_MODEL_ID) {
+  if (!window.__ideogramDimensionSelect) return;
+  const select = window.__ideogramDimensionSelect;
+  const targetModel = modelId || IDEOGRAM_MODEL_ID;
+  const options = getIdeogramDimensionOptions(targetModel);
+  select.innerHTML = options
+    .map(
+      (dim) =>
+        `<option value="${dim.width}x${
+          dim.height
+        }">${formatIdeogramDimensionLabel(dim)}</option>`
+    )
+    .join("");
+  const defaultDim = getIdeogramDefaultDimension(targetModel);
+  select.value = `${defaultDim.width}x${defaultDim.height}`;
+  select.dataset.activeModel = targetModel;
+}
+
+function gcd(a, b) {
+  if (!b) return a;
+  return gcd(b, a % b);
+}
+
+function formatAspectRatio(width, height) {
+  const divisor = gcd(width, height);
+  return `${width / divisor}:${height / divisor}`;
+}
+
+function formatIdeogramDimensionLabel(dim) {
+  return `${dim.width}×${dim.height} (${formatAspectRatio(
+    dim.width,
+    dim.height
+  )})`;
+}
+
 const PHOTO_MODEL_OPTIONS = [
   { value: "bfl:2@1", label: "FLUX.1 Schnell" },
   { value: "bfl:1@8", label: "FLUX.1 Dev" },
   { value: "bfl:1@4", label: "FLUX.1 Pro" },
   { value: "bytedance:5@0", label: "Seeddream 4.0 (Runware)" },
+  { value: IDEOGRAM_MODEL_ID, label: "Ideogram 3.0 (Runware)", textOnly: true },
+  {
+    value: IDEOGRAM_REMIX_MODEL_ID,
+    label: "Ideogram 3.0 Remix (Runware, needs reference)",
+    textOnly: true,
+  },
   { value: "sourceful:1@1", label: "Riverflow 1.1 (Runware)" },
 ];
+const PHOTO_MODEL_META = new Map(
+  PHOTO_MODEL_OPTIONS.map((opt) => [opt.value, opt])
+);
 let featureModelSelectVideoOptionsHtml = "";
 
 // Helper to choose playable video URL (prefers signed S3 URL when present)
@@ -1264,9 +1469,49 @@ function showFeatureDetailPage(endpoint, sourceTab = "filters") {
     const uploadStatus = document.getElementById("featureUploadStatus");
     const genBtn = document.getElementById("featureGenerateVideoBtn");
     const genStatus = document.getElementById("featureGenStatus");
+    const featureModelSelect = document.getElementById("featureModelSelect");
     const featureLastFrameWrapper = document.getElementById(
       "featureLastFrameWrapper"
     );
+    const ideogramOptionsPanel = document.getElementById(
+      "ideogramOptionsPanel"
+    );
+    const ideogramDimensionSelect = document.getElementById(
+      "ideogramDimensionSelect"
+    );
+    if (ideogramDimensionSelect && !window.__ideogramDimensionSelect) {
+      window.__ideogramDimensionSelect = ideogramDimensionSelect;
+    }
+    const ideogramReferenceUuidInput = document.getElementById(
+      "ideogramReferenceUuidInput"
+    );
+    const ideogramRenderingSpeedSelect = document.getElementById(
+      "ideogramRenderingSpeedSelect"
+    );
+    const ideogramMagicPromptToggle = document.getElementById(
+      "ideogramMagicPromptToggle"
+    );
+    const ideogramStyleTypeInput = document.getElementById(
+      "ideogramStyleTypeInput"
+    );
+    const ideogramStylePresetInput = document.getElementById(
+      "ideogramStylePresetInput"
+    );
+    const ideogramStyleCodeInput = document.getElementById(
+      "ideogramStyleCodeInput"
+    );
+    const ideogramRemixStrengthInput = document.getElementById(
+      "ideogramRemixStrengthInput"
+    );
+    const ideogramReferenceNotice = document.getElementById(
+      "ideogramReferenceNotice"
+    );
+    const ideogramReferenceLabel = ideogramReferenceUuidInput
+      ? ideogramReferenceUuidInput.closest("label")
+      : null;
+    const ideogramRemixStrengthLabel = ideogramRemixStrengthInput
+      ? ideogramRemixStrengthInput.closest("label")
+      : null;
     // Vidu Q1 extra reference wrappers
     const featureRef2Wrapper = document.getElementById("featureRef2Wrapper");
     const featureRef3Wrapper = document.getElementById("featureRef3Wrapper");
@@ -1293,6 +1538,74 @@ function showFeatureDetailPage(endpoint, sourceTab = "filters") {
     let featureImageDataUri = null;
     let featureUploadedImageFile = null;
 
+    const getIdeogramSelectionState = () => {
+      if (!isPhotoFeature || !featureModelSelect) {
+        return {
+          selectedModel: null,
+          isBase: false,
+          isRemix: false,
+          isFamily: false,
+        };
+      }
+      const selectedModel = featureModelSelect.value;
+      const isBase = selectedModel === IDEOGRAM_MODEL_ID;
+      const isRemix = selectedModel === IDEOGRAM_REMIX_MODEL_ID;
+      return {
+        selectedModel,
+        isBase,
+        isRemix,
+        isFamily: isBase || isRemix,
+      };
+    };
+
+    const updateIdeogramOptionsState = (opts = {}) => {
+      if (!ideogramOptionsPanel) return;
+      const { selectedModel, isFamily, isRemix } = getIdeogramSelectionState();
+      if (!isPhotoFeature || !isFamily) {
+        ideogramOptionsPanel.style.display = "none";
+        if (ideogramReferenceLabel)
+          ideogramReferenceLabel.style.display = "none";
+        if (ideogramRemixStrengthLabel)
+          ideogramRemixStrengthLabel.style.display = "none";
+        if (ideogramReferenceNotice)
+          ideogramReferenceNotice.style.display = "none";
+        return;
+      }
+
+      ideogramOptionsPanel.style.display = "block";
+
+      if (!opts.skipDropdown) {
+        const select = window.__ideogramDimensionSelect;
+        const activeModel = select?.dataset?.activeModel;
+        if (!select || activeModel !== selectedModel) {
+          initializeIdeogramDropdown(selectedModel);
+        }
+      }
+
+      if (ideogramReferenceLabel) {
+        ideogramReferenceLabel.style.display = isRemix ? "flex" : "none";
+      }
+      if (ideogramRemixStrengthLabel) {
+        ideogramRemixStrengthLabel.style.display = isRemix ? "flex" : "none";
+      }
+      if (ideogramReferenceNotice) {
+        ideogramReferenceNotice.style.display = "block";
+        ideogramReferenceNotice.textContent = isRemix
+          ? featureRunwareImageUUID
+            ? "Reference ready. Remix will reuse your uploaded image."
+            : "Remix requires a Runware reference. Upload an image to continue."
+          : "Optional: upload an image if you want to store its Runware reference.";
+      }
+    };
+
+    const setFeatureRunwareReference = (uuid) => {
+      featureRunwareImageUUID = uuid || null;
+      if (ideogramReferenceUuidInput) {
+        ideogramReferenceUuidInput.value = featureRunwareImageUUID || "";
+      }
+      updateIdeogramOptionsState({ skipDropdown: true });
+    };
+
     // Reset UI
     if (preview) {
       preview.style.display = "none";
@@ -1301,7 +1614,7 @@ function showFeatureDetailPage(endpoint, sourceTab = "filters") {
     if (uploadStatus) uploadStatus.textContent = "";
     if (genStatus) genStatus.textContent = "";
     uploadedImageUrl = null;
-    featureRunwareImageUUID = null;
+    setFeatureRunwareReference(null);
     featureImageDataUri = null;
     featureUploadedImageFile = null;
 
@@ -1428,7 +1741,6 @@ function showFeatureDetailPage(endpoint, sourceTab = "filters") {
       };
     }
     // Toggle display of last frame uploader based on model selection
-    const featureModelSelect = document.getElementById("featureModelSelect");
     if (featureModelSelect && !featureModelSelectVideoOptionsHtml) {
       featureModelSelectVideoOptionsHtml = featureModelSelect.innerHTML;
     }
@@ -1441,6 +1753,19 @@ function showFeatureDetailPage(endpoint, sourceTab = "filters") {
       } else if (featureModelSelectVideoOptionsHtml) {
         featureModelSelect.innerHTML = featureModelSelectVideoOptionsHtml;
       }
+    }
+
+    const toggleIdeogramOptions = (opts = {}) => {
+      updateIdeogramOptionsState(opts);
+    };
+
+    if (isPhotoFeature) {
+      if (featureModelSelect) {
+        featureModelSelect.addEventListener("change", toggleIdeogramOptions);
+      }
+      toggleIdeogramOptions();
+    } else if (ideogramOptionsPanel) {
+      ideogramOptionsPanel.style.display = "none";
     }
 
     if (featureModelSelect && featureLastFrameWrapper && !isPhotoFeature) {
@@ -1536,7 +1861,7 @@ function showFeatureDetailPage(endpoint, sourceTab = "filters") {
       if (!file) return;
       featureUploadedImageFile = file;
       featureImageDataUri = null;
-      featureRunwareImageUUID = null;
+      setFeatureRunwareReference(null);
       if (isPhotoFeature) {
         try {
           if (uploadStatus) {
@@ -1623,11 +1948,11 @@ function showFeatureDetailPage(endpoint, sourceTab = "filters") {
         if (!res.ok || !data?.imageUUID) {
           throw new Error(data?.error || "Runware upload failed");
         }
-        featureRunwareImageUUID = data.imageUUID;
+        setFeatureRunwareReference(data.imageUUID);
         if (uploadStatus)
           uploadStatus.textContent = "Image ready for Runware edits.";
       } catch (err) {
-        featureRunwareImageUUID = null;
+        setFeatureRunwareReference(null);
         if (uploadStatus) {
           uploadStatus.textContent =
             err?.message || "Runware upload failed. Please retry.";
@@ -1650,16 +1975,24 @@ function showFeatureDetailPage(endpoint, sourceTab = "filters") {
       if (isPhotoFeature) {
         genBtn.innerHTML = '<i class="fas fa-magic"></i> Generate Photo';
         genBtn.onclick = async function () {
-          if (!featureUploadedImageFile && !uploadedImageUrl) {
-            if (genStatus)
-              genStatus.textContent = "Please upload an image first.";
-            return;
-          }
           const modelSelect = document.getElementById("featureModelSelect");
           const selectedModel = modelSelect ? modelSelect.value : "";
           if (!selectedModel) {
             if (genStatus)
               genStatus.textContent = "Select a model before generating.";
+            return;
+          }
+          const isIdeogramRemixModel =
+            selectedModel === IDEOGRAM_REMIX_MODEL_ID;
+          const isIdeogramModel =
+            selectedModel === IDEOGRAM_MODEL_ID || isIdeogramRemixModel;
+          if (
+            !isIdeogramModel &&
+            !featureUploadedImageFile &&
+            !uploadedImageUrl
+          ) {
+            if (genStatus)
+              genStatus.textContent = "Please upload an image first.";
             return;
           }
           const featurePromptEl = document.getElementById(
@@ -1696,31 +2029,116 @@ function showFeatureDetailPage(endpoint, sourceTab = "filters") {
                 }),
               });
             } else {
-              let seedImage = uploadedImageUrl;
-              if (featureUploadedImageFile) {
-                const dataUri =
-                  featureImageDataUri ||
-                  (await fileToDataUrl(featureUploadedImageFile));
-                if (typeof dataUri === "string") {
-                  featureImageDataUri = dataUri;
-                  seedImage = dataUri;
+              const requestPayload = {
+                feature: feature.endpoint,
+                prompt: promptText,
+                model: selectedModel,
+                numberResults: 1,
+              };
+
+              if (isIdeogramModel) {
+                const fallbackDimension =
+                  getIdeogramDefaultDimension(selectedModel);
+                let dimensionValue =
+                  (ideogramDimensionSelect && ideogramDimensionSelect.value) ||
+                  `${fallbackDimension.width}x${fallbackDimension.height}`;
+                if (!/\d+x\d+/.test(dimensionValue)) {
+                  dimensionValue = `${fallbackDimension.width}x${fallbackDimension.height}`;
                 }
+                const [dimW, dimH] = dimensionValue
+                  .split("x")
+                  .map((val) => parseInt(val, 10));
+                const resolvedWidth = Number.isFinite(dimW)
+                  ? dimW
+                  : fallbackDimension.width;
+                const resolvedHeight = Number.isFinite(dimH)
+                  ? dimH
+                  : fallbackDimension.height;
+                requestPayload.width = resolvedWidth;
+                requestPayload.height = resolvedHeight;
+
+                const renderingSpeedRaw = ideogramRenderingSpeedSelect
+                  ? ideogramRenderingSpeedSelect.value || "QUALITY"
+                  : "QUALITY";
+                const renderingSpeed = renderingSpeedRaw
+                  .toUpperCase()
+                  .includes("SPEED")
+                  ? "SPEED"
+                  : "QUALITY";
+                const magicPromptEnabled = ideogramMagicPromptToggle
+                  ? ideogramMagicPromptToggle.checked !== false
+                  : true;
+                const styleTypeValue = ideogramStyleTypeInput
+                  ? ideogramStyleTypeInput.value.trim()
+                  : "";
+                const stylePresetValue = ideogramStylePresetInput
+                  ? ideogramStylePresetInput.value.trim()
+                  : "";
+                const styleCodeValue = ideogramStyleCodeInput
+                  ? ideogramStyleCodeInput.value.trim()
+                  : "";
+
+                const ideogramSettings = {
+                  renderingSpeed,
+                  magicPrompt: magicPromptEnabled ? "ON" : "OFF",
+                };
+                if (styleTypeValue) {
+                  ideogramSettings.styleType = styleTypeValue;
+                }
+                if (stylePresetValue) {
+                  ideogramSettings.stylePreset = stylePresetValue;
+                }
+                if (styleCodeValue) {
+                  ideogramSettings.styleCode = styleCodeValue;
+                }
+
+                if (isIdeogramRemixModel) {
+                  if (!featureRunwareImageUUID) {
+                    throw new Error(
+                      "Remix requires an uploaded Runware reference. Please upload an image first."
+                    );
+                  }
+                  requestPayload.referenceImages = [featureRunwareImageUUID];
+                  ideogramSettings.styleReferenceImages = [
+                    featureRunwareImageUUID,
+                  ];
+                  let remixStrengthValue = ideogramRemixStrengthInput
+                    ? parseInt(ideogramRemixStrengthInput.value, 10)
+                    : NaN;
+                  if (
+                    !Number.isFinite(remixStrengthValue) ||
+                    remixStrengthValue < 0 ||
+                    remixStrengthValue > 100
+                  ) {
+                    remixStrengthValue = 70;
+                  }
+                  ideogramSettings.remixStrength = remixStrengthValue;
+                }
+
+                requestPayload.ideogramSettings = ideogramSettings;
+              } else {
+                let seedImage = uploadedImageUrl;
+                if (featureUploadedImageFile) {
+                  const dataUri =
+                    featureImageDataUri ||
+                    (await fileToDataUrl(featureUploadedImageFile));
+                  if (typeof dataUri === "string") {
+                    featureImageDataUri = dataUri;
+                    seedImage = dataUri;
+                  }
+                }
+                if (!seedImage) {
+                  throw new Error("Unable to determine reference image.");
+                }
+                requestPayload.seedImage = seedImage;
+                requestPayload.width = 1024;
+                requestPayload.height = 1024;
               }
-              if (!seedImage) {
-                throw new Error("Unable to determine reference image.");
-              }
+
               response = await fetch("/api/runware/generate-photo", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  feature: feature.endpoint,
-                  prompt: promptText,
-                  model: selectedModel,
-                  seedImage,
-                  width: 1024,
-                  height: 1024,
-                  numberResults: 1,
-                }),
+                body: JSON.stringify(requestPayload),
               });
             }
             const data = await response.json();

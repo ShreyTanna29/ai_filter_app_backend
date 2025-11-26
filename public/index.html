@@ -843,6 +843,98 @@
                   <i class="fas fa-magic"></i> Generate Video
                 </button>
               </div>
+
+              <!-- Ideogram-specific controls (shown only when Ideogram model selected) -->
+              <div
+                id="ideogramOptionsPanel"
+                style="display:none"
+                class="mt-4 bg-gradient-to-br from-yellow-50 to-orange-50 rounded-2xl p-4 border border-yellow-100 shadow-sm"
+              >
+                <h4 class="text-sm font-semibold text-gray-800 mb-3 flex items-center gap-2">
+                  <i class="fas fa-sliders-h text-yellow-600"></i>
+                  Ideogram Options
+                </h4>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <label class="flex flex-col text-xs font-semibold text-gray-600">
+                    Canvas Size
+                    <select
+                      id="ideogramDimensionSelect"
+                      class="mt-1 border rounded px-2 py-2 text-sm"
+                    ></select>
+                  </label>
+                  <label class="flex flex-col text-xs font-semibold text-gray-600">
+                    Remix Reference Image UUID
+                    <input
+                      type="text"
+                      id="ideogramReferenceUuidInput"
+                      placeholder="Auto-filled when you upload"
+                      class="mt-1 border rounded px-2 py-2 text-sm"
+                      readonly
+                    />
+                  </label>
+                  <label class="flex flex-col text-xs font-semibold text-gray-600">
+                    Rendering Speed
+                    <select
+                      id="ideogramRenderingSpeedSelect"
+                      class="mt-1 border rounded px-2 py-2 text-sm"
+                    >
+                      <option value="QUALITY" selected>Quality (best detail)</option>
+                      <option value="SPEED">Speed (faster)</option>
+                    </select>
+                  </label>
+                  <label class="flex items-center gap-2 text-xs font-semibold text-gray-600">
+                    <input
+                      type="checkbox"
+                      id="ideogramMagicPromptToggle"
+                      class="h-4 w-4"
+                      checked
+                    />
+                    Magic Prompt (enhance prompt automatically)
+                  </label>
+                  <label class="flex flex-col text-xs font-semibold text-gray-600">
+                    Style Type
+                    <input
+                      type="text"
+                      id="ideogramStyleTypeInput"
+                      placeholder="e.g. illustration, photo"
+                      class="mt-1 border rounded px-2 py-2 text-sm"
+                    />
+                  </label>
+                  <label class="flex flex-col text-xs font-semibold text-gray-600 md:col-span-2">
+                    Style Preset
+                    <input
+                      type="text"
+                      id="ideogramStylePresetInput"
+                      placeholder="Optional preset name"
+                      class="mt-1 border rounded px-2 py-2 text-sm"
+                    />
+                  </label>
+                  <label class="flex flex-col text-xs font-semibold text-gray-600 md:col-span-2">
+                    Style Code
+                    <input
+                      type="text"
+                      id="ideogramStyleCodeInput"
+                      placeholder="Optional style code"
+                      class="mt-1 border rounded px-2 py-2 text-sm"
+                    />
+                  </label>
+                  <label class="flex flex-col text-xs font-semibold text-gray-600 md:col-span-2">
+                    Remix Strength (0-100)
+                    <input
+                      type="number"
+                      id="ideogramRemixStrengthInput"
+                      min="0"
+                      max="100"
+                      step="1"
+                      placeholder="70"
+                      class="mt-1 border rounded px-2 py-2 text-sm"
+                    />
+                  </label>
+                </div>
+                <p class="text-xs text-gray-500 mt-3" id="ideogramReferenceNotice">
+                  The Remix model requires a previously uploaded Runware reference image.
+                </p>
+              </div>
               
               <!-- Vidu Q1 extra reference images (hidden unless Vidu model selected) - moved below main controls -->
               <div class="mt-4 flex gap-4">
