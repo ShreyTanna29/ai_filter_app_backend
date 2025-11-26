@@ -862,6 +862,9 @@ function renderApps() {
             <div class="flex items-center gap-2">
               <button data-app-id="${
                 app.id
+              }" class="view-app-details px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm"><i class="fa fa-eye mr-1"></i>View Details</button>
+              <button data-app-id="${
+                app.id
               }" class="rotate-app px-3 py-1 bg-yellow-500 text-white rounded hover:bg-yellow-600 text-sm">Rotate Key</button>
               <button data-app-id="${
                 app.id
@@ -920,6 +923,13 @@ function renderApps() {
       if (!id) return;
       if (!confirm("Delete this app?")) return;
       await deleteApp(+id, btn);
+    });
+  });
+  listEl.querySelectorAll(".view-app-details").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const id = btn.getAttribute("data-app-id");
+      if (!id) return;
+      await showAppDetailPage(+id);
     });
   });
 }
@@ -1013,6 +1023,486 @@ async function deleteApp(id, btn) {
     if (btn) btn.disabled = false;
   }
 }
+
+// === App Detail Page Functions ===
+let currentAppDetail = null;
+let appResources = null;
+
+async function showAppDetailPage(appId) {
+  showFullscreenLoader();
+  try {
+    // Fetch app details and all available resources in parallel
+    const [appRes, resourcesRes] = await Promise.all([
+      fetch(`/api/apps/${appId}`, { headers: { ...apiKeyHeaders() } }),
+      fetch(`/api/apps/resources/all`, { headers: { ...apiKeyHeaders() } }),
+    ]);
+
+    const appData = await appRes.json();
+    const resourcesData = await resourcesRes.json();
+
+    if (!appRes.ok || !appData.success) {
+      throw new Error(appData.message || "Failed to load app details");
+    }
+    if (!resourcesRes.ok || !resourcesData.success) {
+      throw new Error(resourcesData.message || "Failed to load resources");
+    }
+
+    currentAppDetail = appData.app;
+    appResources = resourcesData;
+
+    renderAppDetailPage();
+
+    // Hide apps tab, show detail page
+    document.getElementById("tab-apps").classList.add("hidden");
+    document.getElementById("appDetailPage").classList.remove("hidden");
+  } catch (err) {
+    alert((err && err.message) || "Failed to load app details");
+  } finally {
+    hideFullscreenLoader();
+  }
+}
+
+function renderAppDetailPage() {
+  const page = document.getElementById("appDetailPage");
+  if (!page || !currentAppDetail) return;
+
+  // Get currently allowed IDs
+  const allowedFeatureIds = new Set(
+    (currentAppDetail.allowedFeatures || []).map((af) => af.featureId)
+  );
+  const allowedPhotoFeatureIds = new Set(
+    (currentAppDetail.allowedPhotoFeatures || []).map(
+      (apf) => apf.photoFeatureId
+    )
+  );
+  const allowedVideoIds = new Set(
+    (currentAppDetail.allowedVideos || []).map((av) => av.generatedVideoId)
+  );
+  const allowedPhotoIds = new Set(
+    (currentAppDetail.allowedPhotos || []).map((ap) => ap.generatedPhotoId)
+  );
+
+  const keyMasked = currentAppDetail.apiKey
+    ? maskKey(currentAppDetail.apiKey)
+    : "";
+  const created = currentAppDetail.createdAt
+    ? new Date(currentAppDetail.createdAt).toLocaleString()
+    : "";
+
+  page.innerHTML = `
+    <div class="max-w-5xl mx-auto bg-white rounded-xl shadow p-8">
+      <div class="flex justify-between items-center mb-6">
+        <div class="flex items-center gap-3">
+          <button onclick="closeAppDetailPage()" class="text-gray-400 hover:text-gray-700 text-xl">
+            <i class="fa fa-arrow-left"></i>
+          </button>
+          <h2 class="text-2xl font-bold text-gray-800">${
+            currentAppDetail.name
+          }</h2>
+          <span class="px-2 py-1 text-xs rounded ${
+            currentAppDetail.isActive
+              ? "bg-green-100 text-green-700"
+              : "bg-red-100 text-red-700"
+          }">
+            ${currentAppDetail.isActive ? "Active" : "Inactive"}
+          </span>
+        </div>
+        <div class="text-sm text-gray-500">Created: ${created}</div>
+      </div>
+
+      <!-- API Key Section -->
+      <div class="mb-8 p-4 bg-gray-50 rounded-lg border">
+        <div class="font-semibold text-gray-700 mb-2">API Key</div>
+        <div class="flex items-center gap-3">
+          <code class="flex-1 bg-white p-2 rounded border text-sm" id="appDetailApiKey">${keyMasked}</code>
+          <button onclick="copyAppDetailKey()" class="px-3 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700">Copy</button>
+          <button onclick="revealAppDetailKey()" class="px-3 py-1 bg-gray-200 text-gray-700 rounded text-sm hover:bg-gray-300">Reveal</button>
+        </div>
+      </div>
+
+      <!-- Permissions Section -->
+      <div class="mb-6">
+        <h3 class="text-xl font-semibold text-gray-800 mb-4">Permissions</h3>
+        <p class="text-sm text-gray-500 mb-4">Select which resources this app can access via its API key.</p>
+
+        <!-- Filters (Video Features) -->
+        <div class="mb-6">
+          <div class="flex items-center justify-between mb-2">
+            <h4 class="font-semibold text-gray-700"><i class="fa fa-film mr-2 text-blue-500"></i>Video Filters</h4>
+            <div class="flex gap-2">
+              <button onclick="selectAllPermissions('features')" class="text-xs text-blue-600 hover:underline">Select All</button>
+              <button onclick="deselectAllPermissions('features')" class="text-xs text-gray-500 hover:underline">Deselect All</button>
+            </div>
+          </div>
+          <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 max-h-48 overflow-y-auto p-3 bg-gray-50 rounded border" id="appFeaturesCheckboxes">
+            ${
+              (appResources?.features || [])
+                .map(
+                  (f) => `
+              <label class="flex items-center gap-2 text-sm cursor-pointer hover:bg-white p-1 rounded">
+                <input type="checkbox" name="feature" value="${f.id}" ${
+                    allowedFeatureIds.has(f.id) ? "checked" : ""
+                  } class="rounded text-blue-600">
+                <span class="truncate" title="${f.endpoint}">${
+                    f.endpoint
+                  }</span>
+              </label>
+            `
+                )
+                .join("") ||
+              '<span class="text-gray-400 text-sm">No video filters available</span>'
+            }
+          </div>
+        </div>
+
+        <!-- Photo Filters -->
+        <div class="mb-6">
+          <div class="flex items-center justify-between mb-2">
+            <h4 class="font-semibold text-gray-700"><i class="fa fa-image mr-2 text-green-500"></i>Photo Filters</h4>
+            <div class="flex gap-2">
+              <button onclick="selectAllPermissions('photoFeatures')" class="text-xs text-blue-600 hover:underline">Select All</button>
+              <button onclick="deselectAllPermissions('photoFeatures')" class="text-xs text-gray-500 hover:underline">Deselect All</button>
+            </div>
+          </div>
+          <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 max-h-48 overflow-y-auto p-3 bg-gray-50 rounded border" id="appPhotoFeaturesCheckboxes">
+            ${
+              (appResources?.photoFeatures || [])
+                .map(
+                  (pf) => `
+              <label class="flex items-center gap-2 text-sm cursor-pointer hover:bg-white p-1 rounded">
+                <input type="checkbox" name="photoFeature" value="${pf.id}" ${
+                    allowedPhotoFeatureIds.has(pf.id) ? "checked" : ""
+                  } class="rounded text-green-600">
+                <span class="truncate" title="${pf.endpoint}">${
+                    pf.endpoint
+                  }</span>
+              </label>
+            `
+                )
+                .join("") ||
+              '<span class="text-gray-400 text-sm">No photo filters available</span>'
+            }
+          </div>
+        </div>
+
+        <!-- Generated Videos -->
+        <div class="mb-6">
+          <div class="flex items-center justify-between mb-2">
+            <h4 class="font-semibold text-gray-700"><i class="fa fa-video mr-2 text-purple-500"></i>Generated Videos</h4>
+            <div class="flex gap-2">
+              <button onclick="selectAllPermissions('generatedVideos')" class="text-xs text-blue-600 hover:underline">Select All</button>
+              <button onclick="deselectAllPermissions('generatedVideos')" class="text-xs text-gray-500 hover:underline">Deselect All</button>
+            </div>
+          </div>
+          <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 max-h-48 overflow-y-auto p-3 bg-gray-50 rounded border" id="appGeneratedVideosCheckboxes">
+            ${
+              (appResources?.generatedVideos || [])
+                .map(
+                  (v) => `
+              <label class="flex items-center gap-2 text-sm cursor-pointer hover:bg-white p-1 rounded">
+                <input type="checkbox" name="generatedVideo" value="${v.id}" ${
+                    allowedVideoIds.has(v.id) ? "checked" : ""
+                  } class="rounded text-purple-600">
+                <span class="truncate text-blue-600 hover:underline cursor-pointer" title="${
+                  v.feature
+                } - ${
+                    v.id
+                  }" onclick="event.preventDefault(); event.stopPropagation(); showAppMediaPreview('video', '${encodeURIComponent(
+                    v.signedUrl || v.url
+                  )}', '${v.feature} (#${v.id})')">${v.feature} (#${
+                    v.id
+                  })</span>
+              </label>
+            `
+                )
+                .join("") ||
+              '<span class="text-gray-400 text-sm">No generated videos available</span>'
+            }
+          </div>
+        </div>
+
+        <!-- Generated Photos -->
+        <div class="mb-6">
+          <div class="flex items-center justify-between mb-2">
+            <h4 class="font-semibold text-gray-700"><i class="fa fa-photo-video mr-2 text-orange-500"></i>Generated Photos</h4>
+            <div class="flex gap-2">
+              <button onclick="selectAllPermissions('generatedPhotos')" class="text-xs text-blue-600 hover:underline">Select All</button>
+              <button onclick="deselectAllPermissions('generatedPhotos')" class="text-xs text-gray-500 hover:underline">Deselect All</button>
+            </div>
+          </div>
+          <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 max-h-48 overflow-y-auto p-3 bg-gray-50 rounded border" id="appGeneratedPhotosCheckboxes">
+            ${
+              (appResources?.generatedPhotos || [])
+                .map(
+                  (p) => `
+              <label class="flex items-center gap-2 text-sm cursor-pointer hover:bg-white p-1 rounded">
+                <input type="checkbox" name="generatedPhoto" value="${p.id}" ${
+                    allowedPhotoIds.has(p.id) ? "checked" : ""
+                  } class="rounded text-orange-600">
+                <span class="truncate text-blue-600 hover:underline cursor-pointer" title="${
+                  p.feature
+                } - ${
+                    p.id
+                  }" onclick="event.preventDefault(); event.stopPropagation(); showAppMediaPreview('image', '${encodeURIComponent(
+                    p.signedUrl || p.url
+                  )}', '${p.feature} (#${p.id})')">${p.feature} (#${
+                    p.id
+                  })</span>
+              </label>
+            `
+                )
+                .join("") ||
+              '<span class="text-gray-400 text-sm">No generated photos available</span>'
+            }
+          </div>
+        </div>
+      </div>
+
+      <!-- Save Button -->
+      <div class="flex justify-end gap-3">
+        <button onclick="closeAppDetailPage()" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300">Cancel</button>
+        <button onclick="saveAppPermissions()" id="saveAppPermissionsBtn" class="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+          <i class="fa fa-save mr-2"></i>Save Permissions
+        </button>
+      </div>
+      <div id="appDetailStatus" class="text-sm mt-3 text-center"></div>
+    </div>
+  `;
+}
+
+function closeAppDetailPage() {
+  document.getElementById("appDetailPage").classList.add("hidden");
+  document.getElementById("tab-apps").classList.remove("hidden");
+  currentAppDetail = null;
+}
+
+async function copyAppDetailKey() {
+  if (!currentAppDetail?.apiKey) return;
+  const ok = await copyToClipboard(currentAppDetail.apiKey);
+  if (ok) {
+    alert("API Key copied to clipboard!");
+  } else {
+    alert("Could not copy. Key: " + currentAppDetail.apiKey);
+  }
+}
+
+function revealAppDetailKey() {
+  if (!currentAppDetail?.apiKey) return;
+  const keyEl = document.getElementById("appDetailApiKey");
+  if (keyEl) {
+    if (keyEl.dataset.revealed === "true") {
+      keyEl.textContent = maskKey(currentAppDetail.apiKey);
+      keyEl.dataset.revealed = "false";
+    } else {
+      keyEl.textContent = currentAppDetail.apiKey;
+      keyEl.dataset.revealed = "true";
+    }
+  }
+}
+
+function selectAllPermissions(type) {
+  let containerId;
+  switch (type) {
+    case "features":
+      containerId = "appFeaturesCheckboxes";
+      break;
+    case "photoFeatures":
+      containerId = "appPhotoFeaturesCheckboxes";
+      break;
+    case "generatedVideos":
+      containerId = "appGeneratedVideosCheckboxes";
+      break;
+    case "generatedPhotos":
+      containerId = "appGeneratedPhotosCheckboxes";
+      break;
+    default:
+      return;
+  }
+  const container = document.getElementById(containerId);
+  if (container) {
+    container
+      .querySelectorAll('input[type="checkbox"]')
+      .forEach((cb) => (cb.checked = true));
+  }
+}
+
+function deselectAllPermissions(type) {
+  let containerId;
+  switch (type) {
+    case "features":
+      containerId = "appFeaturesCheckboxes";
+      break;
+    case "photoFeatures":
+      containerId = "appPhotoFeaturesCheckboxes";
+      break;
+    case "generatedVideos":
+      containerId = "appGeneratedVideosCheckboxes";
+      break;
+    case "generatedPhotos":
+      containerId = "appGeneratedPhotosCheckboxes";
+      break;
+    default:
+      return;
+  }
+  const container = document.getElementById(containerId);
+  if (container) {
+    container
+      .querySelectorAll('input[type="checkbox"]')
+      .forEach((cb) => (cb.checked = false));
+  }
+}
+
+async function saveAppPermissions() {
+  if (!currentAppDetail) return;
+
+  const statusEl = document.getElementById("appDetailStatus");
+  const saveBtn = document.getElementById("saveAppPermissionsBtn");
+
+  // Gather selected IDs
+  const featureIds = Array.from(
+    document.querySelectorAll(
+      '#appFeaturesCheckboxes input[name="feature"]:checked'
+    )
+  ).map((cb) => parseInt(cb.value));
+  const photoFeatureIds = Array.from(
+    document.querySelectorAll(
+      '#appPhotoFeaturesCheckboxes input[name="photoFeature"]:checked'
+    )
+  ).map((cb) => parseInt(cb.value));
+  const generatedVideoIds = Array.from(
+    document.querySelectorAll(
+      '#appGeneratedVideosCheckboxes input[name="generatedVideo"]:checked'
+    )
+  ).map((cb) => parseInt(cb.value));
+  const generatedPhotoIds = Array.from(
+    document.querySelectorAll(
+      '#appGeneratedPhotosCheckboxes input[name="generatedPhoto"]:checked'
+    )
+  ).map((cb) => parseInt(cb.value));
+
+  if (saveBtn) saveBtn.disabled = true;
+  if (statusEl) statusEl.textContent = "Saving permissions...";
+
+  try {
+    const res = await fetch(`/api/apps/${currentAppDetail.id}/permissions`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        ...apiKeyHeaders(),
+      },
+      body: JSON.stringify({
+        featureIds,
+        photoFeatureIds,
+        generatedVideoIds,
+        generatedPhotoIds,
+      }),
+    });
+
+    const data = await res.json();
+    if (!res.ok || !data.success) {
+      throw new Error(data.message || "Failed to save permissions");
+    }
+
+    currentAppDetail = data.app;
+    if (statusEl) {
+      statusEl.textContent = "Permissions saved successfully!";
+      statusEl.className = "text-sm mt-3 text-center text-green-600";
+    }
+
+    // Refresh app list in background
+    loadApps();
+  } catch (err) {
+    if (statusEl) {
+      statusEl.textContent =
+        (err && err.message) || "Failed to save permissions";
+      statusEl.className = "text-sm mt-3 text-center text-red-600";
+    }
+  } finally {
+    if (saveBtn) saveBtn.disabled = false;
+  }
+}
+
+// Make app detail functions globally available
+window.showAppDetailPage = showAppDetailPage;
+window.closeAppDetailPage = closeAppDetailPage;
+window.copyAppDetailKey = copyAppDetailKey;
+window.revealAppDetailKey = revealAppDetailKey;
+window.selectAllPermissions = selectAllPermissions;
+window.deselectAllPermissions = deselectAllPermissions;
+window.saveAppPermissions = saveAppPermissions;
+
+// App Media Preview Modal
+function showAppMediaPreview(type, encodedUrl, title) {
+  const url = decodeURIComponent(encodedUrl);
+
+  // Create or get the modal
+  let modal = document.getElementById("appMediaPreviewModal");
+  if (!modal) {
+    modal = document.createElement("div");
+    modal.id = "appMediaPreviewModal";
+    modal.className =
+      "fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-70";
+    modal.style.display = "none";
+    modal.innerHTML = `
+      <div class="bg-white rounded-lg shadow-xl max-w-4xl w-full mx-4 overflow-hidden">
+        <div class="flex items-center justify-between p-4 border-b">
+          <h3 id="appMediaPreviewTitle" class="font-semibold text-gray-800"></h3>
+          <button onclick="closeAppMediaPreview()" class="text-gray-400 hover:text-gray-700 text-2xl">&times;</button>
+        </div>
+        <div id="appMediaPreviewContent" class="p-4 flex justify-center items-center bg-gray-100" style="min-height: 300px; max-height: 70vh;">
+        </div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+
+    // Close on backdrop click
+    modal.addEventListener("click", (e) => {
+      if (e.target === modal) closeAppMediaPreview();
+    });
+  }
+
+  const titleEl = document.getElementById("appMediaPreviewTitle");
+  const contentEl = document.getElementById("appMediaPreviewContent");
+
+  if (titleEl)
+    titleEl.textContent =
+      title || (type === "video" ? "Video Preview" : "Image Preview");
+
+  if (contentEl) {
+    if (type === "video") {
+      contentEl.innerHTML = `
+        <video controls autoplay class="max-w-full max-h-full rounded" style="max-height: 60vh;">
+          <source src="${url}" type="video/mp4">
+          Your browser does not support video playback.
+        </video>
+      `;
+    } else {
+      contentEl.innerHTML = `
+        <img src="${url}" alt="${
+        title || "Image preview"
+      }" class="max-w-full max-h-full rounded object-contain" style="max-height: 60vh;" />
+      `;
+    }
+  }
+
+  modal.style.display = "flex";
+}
+
+function closeAppMediaPreview() {
+  const modal = document.getElementById("appMediaPreviewModal");
+  if (modal) {
+    modal.style.display = "none";
+    // Stop video if playing
+    const video = modal.querySelector("video");
+    if (video) {
+      video.pause();
+      video.src = "";
+    }
+  }
+}
+
+window.showAppMediaPreview = showAppMediaPreview;
+window.closeAppMediaPreview = closeAppMediaPreview;
 
 // Load all features at once
 async function loadAllFeatures() {

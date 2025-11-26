@@ -58,6 +58,8 @@ model GeneratedVideo {
   url       String // Cloudinary URL
   createdAt DateTime @default(now())
 
+  apps AppGeneratedVideo[]
+
   @@index([feature, createdAt])
 }
 
@@ -132,6 +134,8 @@ model Features {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  apps AppFeature[]
+
   @@index([endpoint, createdAt])
 }
 
@@ -143,6 +147,8 @@ model Photo_Features {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  apps AppPhotoFeature[]
+
   @@index([endpoint, createdAt])
 }
 
@@ -151,6 +157,8 @@ model Generated_Photo {
   feature   String
   url       String // Cloudinary URL
   createdAt DateTime @default(now())
+
+  apps AppGeneratedPhoto[]
 
   @@index([feature, createdAt])
 }
@@ -162,4 +170,66 @@ model App {
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  // Permission relationships
+  allowedFeatures      AppFeature[]
+  allowedPhotoFeatures AppPhotoFeature[]
+  allowedVideos        AppGeneratedVideo[]
+  allowedPhotos        AppGeneratedPhoto[]
+}
+
+// Junction table for App <-> Features (video filters)
+model AppFeature {
+  id        Int      @id @default(autoincrement())
+  app       App      @relation(fields: [appId], references: [id], onDelete: Cascade)
+  appId     Int
+  feature   Features @relation(fields: [featureId], references: [id], onDelete: Cascade)
+  featureId Int
+  createdAt DateTime @default(now())
+
+  @@unique([appId, featureId])
+  @@index([appId])
+  @@index([featureId])
+}
+
+// Junction table for App <-> Photo_Features (photo filters)
+model AppPhotoFeature {
+  id             Int            @id @default(autoincrement())
+  app            App            @relation(fields: [appId], references: [id], onDelete: Cascade)
+  appId          Int
+  photoFeature   Photo_Features @relation(fields: [photoFeatureId], references: [id], onDelete: Cascade)
+  photoFeatureId Int
+  createdAt      DateTime       @default(now())
+
+  @@unique([appId, photoFeatureId])
+  @@index([appId])
+  @@index([photoFeatureId])
+}
+
+// Junction table for App <-> GeneratedVideo
+model AppGeneratedVideo {
+  id               Int            @id @default(autoincrement())
+  app              App            @relation(fields: [appId], references: [id], onDelete: Cascade)
+  appId            Int
+  generatedVideo   GeneratedVideo @relation(fields: [generatedVideoId], references: [id], onDelete: Cascade)
+  generatedVideoId Int
+  createdAt        DateTime       @default(now())
+
+  @@unique([appId, generatedVideoId])
+  @@index([appId])
+  @@index([generatedVideoId])
+}
+
+// Junction table for App <-> Generated_Photo
+model AppGeneratedPhoto {
+  id               Int             @id @default(autoincrement())
+  app              App             @relation(fields: [appId], references: [id], onDelete: Cascade)
+  appId            Int
+  generatedPhoto   Generated_Photo @relation(fields: [generatedPhotoId], references: [id], onDelete: Cascade)
+  generatedPhotoId Int
+  createdAt        DateTime        @default(now())
+
+  @@unique([appId, generatedPhotoId])
+  @@index([appId])
+  @@index([generatedPhotoId])
 }

@@ -68,6 +68,135 @@ const SEEDDREAM_DIMENSIONS = [
     { width: 3328, height: 4992 },
     { width: 6048, height: 2592 },
 ];
+const IDEOGRAM_MODEL_ID = "ideogram:4@1";
+const IDEOGRAM_REMIX_MODEL_ID = "ideogram:4@2";
+const IDEOGRAM_BASE_DIMENSIONS = [
+    { width: 1536, height: 512 },
+    { width: 1536, height: 576 },
+    { width: 1472, height: 576 },
+    { width: 1408, height: 576 },
+    { width: 1536, height: 640 },
+    { width: 1472, height: 640 },
+    { width: 1408, height: 640 },
+    { width: 1344, height: 640 },
+    { width: 1472, height: 704 },
+    { width: 1408, height: 704 },
+    { width: 1344, height: 704 },
+    { width: 1280, height: 704 },
+    { width: 1312, height: 736 },
+    { width: 1344, height: 768 },
+    { width: 1216, height: 704 },
+    { width: 1280, height: 768 },
+    { width: 1152, height: 704 },
+    { width: 1280, height: 800 },
+    { width: 1216, height: 768 },
+    { width: 1248, height: 832 },
+    { width: 1216, height: 832 },
+    { width: 1088, height: 768 },
+    { width: 1152, height: 832 },
+    { width: 1152, height: 864 },
+    { width: 1088, height: 832 },
+    { width: 1152, height: 896 },
+    { width: 1120, height: 896 },
+    { width: 1024, height: 832 },
+    { width: 1088, height: 896 },
+    { width: 960, height: 832 },
+    { width: 1024, height: 896 },
+    { width: 1088, height: 960 },
+    { width: 960, height: 896 },
+    { width: 1024, height: 960 },
+    { width: 1024, height: 1024 },
+];
+const IDEOGRAM_REMIX_BASE_DIMENSIONS = [
+    { width: 1536, height: 512 },
+    { width: 1536, height: 576 },
+    { width: 1472, height: 576 },
+    { width: 1408, height: 576 },
+    { width: 1536, height: 640 },
+    { width: 1472, height: 640 },
+    { width: 1408, height: 640 },
+    { width: 1344, height: 640 },
+    { width: 1472, height: 704 },
+    { width: 1408, height: 704 },
+    { width: 1344, height: 704 },
+    { width: 1312, height: 736 },
+    { width: 1344, height: 768 },
+    { width: 1280, height: 704 },
+    { width: 1216, height: 704 },
+    { width: 1280, height: 768 },
+    { width: 1152, height: 704 },
+    { width: 1280, height: 800 },
+    { width: 1216, height: 768 },
+    { width: 1248, height: 832 },
+    { width: 1216, height: 832 },
+    { width: 1088, height: 768 },
+    { width: 1152, height: 832 },
+    { width: 1152, height: 864 },
+    { width: 1088, height: 832 },
+    { width: 1152, height: 896 },
+    { width: 1120, height: 896 },
+    { width: 1024, height: 832 },
+    { width: 1088, height: 896 },
+    { width: 960, height: 832 },
+    { width: 1024, height: 896 },
+    { width: 1088, height: 960 },
+    { width: 960, height: 896 },
+    { width: 1024, height: 960 },
+    { width: 1024, height: 1024 },
+    { width: 960, height: 1024 },
+    { width: 896, height: 960 },
+    { width: 960, height: 1088 },
+    { width: 896, height: 1024 },
+    { width: 832, height: 960 },
+    { width: 896, height: 1088 },
+    { width: 832, height: 1088 },
+    { width: 864, height: 1152 },
+    { width: 832, height: 1152 },
+    { width: 768, height: 1088 },
+    { width: 832, height: 1216 },
+    { width: 832, height: 1248 },
+    { width: 768, height: 1216 },
+    { width: 800, height: 1280 },
+    { width: 704, height: 1152 },
+    { width: 768, height: 1280 },
+    { width: 704, height: 1216 },
+    { width: 768, height: 1344 },
+    { width: 736, height: 1328 },
+    { width: 704, height: 1280 },
+    { width: 704, height: 1344 },
+    { width: 704, height: 1408 },
+    { width: 704, height: 1472 },
+    { width: 640, height: 1334 },
+    { width: 640, height: 1408 },
+    { width: 640, height: 1472 },
+    { width: 640, height: 1536 },
+    { width: 576, height: 1408 },
+    { width: 576, height: 1472 },
+    { width: 576, height: 1536 },
+    { width: 512, height: 1536 },
+];
+function buildDimensionCatalog(base) {
+    const values = [];
+    const seen = new Set();
+    for (const dim of base) {
+        const variants = [dim];
+        if (dim.width !== dim.height) {
+            variants.push({ width: dim.height, height: dim.width });
+        }
+        for (const variant of variants) {
+            const key = `${variant.width}x${variant.height}`;
+            if (!seen.has(key)) {
+                seen.add(key);
+                values.push(variant);
+            }
+        }
+    }
+    return values;
+}
+const IDEOGRAM_DIMENSIONS = buildDimensionCatalog(IDEOGRAM_BASE_DIMENSIONS);
+const IDEOGRAM_REMIX_DIMENSIONS = buildDimensionCatalog(IDEOGRAM_REMIX_BASE_DIMENSIONS);
+const IDEOGRAM_DEFAULT_DIMENSION = IDEOGRAM_DIMENSIONS.find((d) => d.width === 1024 && d.height === 1024) || { width: 1024, height: 1024 };
+const IDEOGRAM_REMIX_DEFAULT_DIMENSION = IDEOGRAM_REMIX_DIMENSIONS.find((d) => d.width === 1024 && d.height === 1024) || { width: 1024, height: 1024 };
 // Reuse a keep-alive agent to improve large POST stability
 const httpsAgent = new https_1.default.Agent({ keepAlive: true });
 function postRunware(payload_1) {
@@ -129,6 +258,26 @@ function resolveSeeddreamSize(width, height) {
             return match;
     }
     return SEEDDREAM_DIMENSIONS[0];
+}
+function resolveIdeogramSize(width, height) {
+    const parsedWidth = parseInt(String(width || ""), 10);
+    const parsedHeight = parseInt(String(height || ""), 10);
+    if (!Number.isNaN(parsedWidth) && !Number.isNaN(parsedHeight)) {
+        const match = IDEOGRAM_DIMENSIONS.find((dim) => dim.width === parsedWidth && dim.height === parsedHeight);
+        if (match)
+            return match;
+    }
+    return IDEOGRAM_DEFAULT_DIMENSION;
+}
+function resolveIdeogramRemixSize(width, height) {
+    const parsedWidth = parseInt(String(width || ""), 10);
+    const parsedHeight = parseInt(String(height || ""), 10);
+    if (!Number.isNaN(parsedWidth) && !Number.isNaN(parsedHeight)) {
+        const match = IDEOGRAM_REMIX_DIMENSIONS.find((dim) => dim.width === parsedWidth && dim.height === parsedHeight);
+        if (match)
+            return match;
+    }
+    return IDEOGRAM_REMIX_DEFAULT_DIMENSION;
 }
 function getRunwareHeaders() {
     const key = process.env.RUNWARE_API_KEY || process.env.RUNWARE_KEY;
@@ -230,11 +379,13 @@ router.post("/runware/upload-image", upload.single("image"), (req, res) => __awa
 // POST /api/runware/generate-photo
 // JSON body: { feature?: string, prompt: string, model?: string, width?: number, height?: number, seedImage?: string }
 router.post("/runware/generate-photo", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    var _a, _b, _c, _d, _e;
+    var _a, _b, _c, _d, _e, _f;
     try {
-        const { feature, prompt, model, width, height, seedImage, negativePrompt, steps, cfgScale, numberResults, } = req.body || {};
+        const { feature, prompt, model, width, height, seedImage, negativePrompt, steps, cfgScale, numberResults, ideogramSettings, referenceImages, referenceImage, referenceImageUUID, } = req.body || {};
         // Basic validation
-        if (!prompt || typeof prompt !== "string") {
+        const rawPrompt = typeof prompt === "string" ? prompt : "";
+        const promptText = rawPrompt.trim();
+        if (!promptText) {
             res.status(400).json({ success: false, error: "'prompt' is required" });
             return;
         }
@@ -251,44 +402,168 @@ router.post("/runware/generate-photo", (req, res) => __awaiter(void 0, void 0, v
             normalizedModel === "seeddream 4.0") {
             chosenModel = SEEDDREAM_MODEL_ID;
         }
+        else if (normalizedModel === "ideogram" ||
+            normalizedModel === "ideogram 3" ||
+            normalizedModel === "ideogram 3.0") {
+            chosenModel = IDEOGRAM_MODEL_ID;
+        }
+        else if (normalizedModel === "ideogram remix" ||
+            normalizedModel === "ideogram 3 remix" ||
+            normalizedModel === "ideogram 3.0 remix" ||
+            normalizedModel === "ideogram remix 3.0") {
+            chosenModel = IDEOGRAM_REMIX_MODEL_ID;
+        }
         if (clientModel === SEEDDREAM_MODEL_ID) {
             chosenModel = SEEDDREAM_MODEL_ID;
         }
+        if (clientModel === IDEOGRAM_MODEL_ID) {
+            chosenModel = IDEOGRAM_MODEL_ID;
+        }
+        if (clientModel === IDEOGRAM_REMIX_MODEL_ID) {
+            chosenModel = IDEOGRAM_REMIX_MODEL_ID;
+        }
         const isSeeddream = chosenModel === SEEDDREAM_MODEL_ID;
-        // Conservative defaults
-        const defaultSize = 768;
-        let resolvedWidth = parseInt(width) || defaultSize;
-        let resolvedHeight = parseInt(height) || defaultSize;
+        const isIdeogram = chosenModel === IDEOGRAM_MODEL_ID;
+        const isIdeogramRemix = chosenModel === IDEOGRAM_REMIX_MODEL_ID;
+        const isIdeogramFamily = isIdeogram || isIdeogramRemix;
+        const referenceImageInputs = [];
+        if (Array.isArray(referenceImages))
+            referenceImageInputs.push(...referenceImages);
+        if (typeof referenceImage === "string")
+            referenceImageInputs.push(referenceImage);
+        if (typeof referenceImageUUID === "string")
+            referenceImageInputs.push(referenceImageUUID);
+        const ideogramReferenceImages = referenceImageInputs
+            .map((val) => (typeof val === "string" ? val.trim() : ""))
+            .filter(Boolean);
+        const trimmedReferenceImages = ideogramReferenceImages.slice(0, 4);
+        if (isIdeogramFamily && promptText.length > 2000) {
+            res.status(400).json({
+                success: false,
+                error: "Ideogram prompt must be between 1 and 2000 characters.",
+            });
+            return;
+        }
+        if (isIdeogramRemix && trimmedReferenceImages.length === 0) {
+            res.status(400).json({
+                success: false,
+                error: "Ideogram Remix requires a Runware reference image. Upload a reference image first.",
+            });
+            return;
+        }
+        const defaultDimension = isIdeogramRemix
+            ? IDEOGRAM_REMIX_DEFAULT_DIMENSION
+            : isIdeogram
+                ? IDEOGRAM_DEFAULT_DIMENSION
+                : { width: 768, height: 768 };
+        const defaultSize = defaultDimension.width;
+        const defaultHeight = defaultDimension.height;
+        const parseDimension = (value) => Number.parseInt(String(value !== null && value !== void 0 ? value : ""), 10);
+        let resolvedWidth = parseDimension(width);
+        let resolvedHeight = parseDimension(height);
+        if (Number.isNaN(resolvedWidth))
+            resolvedWidth = defaultSize;
+        if (Number.isNaN(resolvedHeight))
+            resolvedHeight = defaultHeight;
         if (isSeeddream) {
             const dims = resolveSeeddreamSize(width, height);
             resolvedWidth = dims.width;
             resolvedHeight = dims.height;
         }
-        const requestedResults = Math.min(Math.max(parseInt(numberResults) || 1, 1), isSeeddream ? 15 : 4);
+        else if (isIdeogram) {
+            const dims = resolveIdeogramSize(width, height);
+            resolvedWidth = dims.width;
+            resolvedHeight = dims.height;
+        }
+        else if (isIdeogramRemix) {
+            const dims = resolveIdeogramRemixSize(width, height);
+            resolvedWidth = dims.width;
+            resolvedHeight = dims.height;
+        }
+        const maxResultsPerRequest = isSeeddream ? 15 : isIdeogramFamily ? 2 : 4;
+        const requestedResults = Math.min(Math.max(parseInt(numberResults) || 1, 1), maxResultsPerRequest);
         const seeddreamSequentialResults = isSeeddream
             ? requestedResults
             : undefined;
+        const providerSettings = {};
+        const allowsSeedImage = !isIdeogramFamily;
+        if (isSeeddream && seeddreamSequentialResults) {
+            providerSettings.bytedance = {
+                maxSequentialImages: seeddreamSequentialResults,
+            };
+        }
+        if (isIdeogramFamily) {
+            const ideogramConfig = ideogramSettings && typeof ideogramSettings === "object"
+                ? ideogramSettings
+                : {};
+            const renderingSpeed = String(ideogramConfig.renderingSpeed || "QUALITY")
+                .toUpperCase()
+                .includes("SPEED")
+                ? "SPEED"
+                : "QUALITY";
+            const magicPromptRaw = typeof ideogramConfig.magicPrompt === "string"
+                ? ideogramConfig.magicPrompt.trim().toUpperCase()
+                : "ON";
+            const magicPrompt = magicPromptRaw === "OFF"
+                ? "OFF"
+                : magicPromptRaw === "AUTO"
+                    ? "AUTO"
+                    : "ON";
+            const styleType = typeof ideogramConfig.styleType === "string"
+                ? ideogramConfig.styleType.trim()
+                : undefined;
+            const stylePreset = typeof ideogramConfig.stylePreset === "string"
+                ? ideogramConfig.stylePreset.trim()
+                : undefined;
+            const styleCode = typeof ideogramConfig.styleCode === "string"
+                ? ideogramConfig.styleCode.trim()
+                : undefined;
+            const providerPayload = {
+                renderingSpeed,
+                magicPrompt,
+            };
+            if (styleType)
+                providerPayload.styleType = styleType;
+            if (stylePreset)
+                providerPayload.stylePreset = stylePreset;
+            if (styleCode)
+                providerPayload.styleCode = styleCode;
+            if (isIdeogramRemix) {
+                const remixStrengthRaw = Number.parseInt(String((_a = ideogramConfig.remixStrength) !== null && _a !== void 0 ? _a : ""), 10);
+                if (!Number.isNaN(remixStrengthRaw)) {
+                    providerPayload.remixStrength = Math.min(Math.max(remixStrengthRaw, 0), 100);
+                }
+            }
+            if (Array.isArray(ideogramConfig.styleReferenceImages) &&
+                ideogramConfig.styleReferenceImages.length) {
+                providerPayload.styleReferenceImages =
+                    ideogramConfig.styleReferenceImages
+                        .filter((val) => typeof val === "string" && val.trim())
+                        .slice(0, 4)
+                        .map((val) => val.trim());
+            }
+            providerSettings.ideogram = providerPayload;
+        }
         const task = {
             taskType: "imageInference",
             taskUUID: (0, crypto_1.randomUUID)(),
             outputType: "URL",
-            positivePrompt: prompt,
+            positivePrompt: promptText,
             model: chosenModel,
             numberResults: isSeeddream ? 1 : requestedResults,
             width: resolvedWidth,
             height: resolvedHeight,
         };
-        if (isSeeddream && seeddreamSequentialResults) {
-            task.providerSettings = {
-                bytedance: {
-                    maxSequentialImages: seeddreamSequentialResults,
-                },
-            };
+        if (isIdeogramRemix && trimmedReferenceImages.length) {
+            task.referenceImages = trimmedReferenceImages;
+        }
+        if (Object.keys(providerSettings).length > 0) {
+            task.providerSettings = providerSettings;
         }
         if (negativePrompt && typeof negativePrompt === "string") {
             task.negativePrompt = negativePrompt;
         }
-        if (seedImage && typeof seedImage === "string") {
+        if (allowsSeedImage && seedImage && typeof seedImage === "string") {
             task.seedImage = seedImage; // UUID, URL, base64, or data URI supported by Runware
         }
         if (steps)
@@ -304,7 +579,7 @@ router.post("/runware/generate-photo", (req, res) => __awaiter(void 0, void 0, v
         }
         catch (primaryErr) {
             // Adaptive fallback on upstream timeout (e.g., 524 from Cloudflare)
-            const code = (primaryErr === null || primaryErr === void 0 ? void 0 : primaryErr.code) || ((_a = primaryErr === null || primaryErr === void 0 ? void 0 : primaryErr.response) === null || _a === void 0 ? void 0 : _a.status);
+            const code = (primaryErr === null || primaryErr === void 0 ? void 0 : primaryErr.code) || ((_b = primaryErr === null || primaryErr === void 0 ? void 0 : primaryErr.response) === null || _b === void 0 ? void 0 : _b.status);
             const isTimeoutLike = code === 524 ||
                 code === 504 ||
                 code === 408 ||
@@ -318,6 +593,14 @@ router.post("/runware/generate-photo", (req, res) => __awaiter(void 0, void 0, v
                         const fallbackDims = SEEDDREAM_DIMENSIONS[0];
                         smaller.width = fallbackDims.width;
                         smaller.height = fallbackDims.height;
+                    }
+                    else if (isIdeogram) {
+                        smaller.width = IDEOGRAM_DEFAULT_DIMENSION.width;
+                        smaller.height = IDEOGRAM_DEFAULT_DIMENSION.height;
+                    }
+                    else if (isIdeogramRemix) {
+                        smaller.width = IDEOGRAM_REMIX_DEFAULT_DIMENSION.width;
+                        smaller.height = IDEOGRAM_REMIX_DEFAULT_DIMENSION.height;
                     }
                     else {
                         smaller.width = Math.min(640, task.width || defaultSize);
@@ -367,7 +650,7 @@ router.post("/runware/generate-photo", (req, res) => __awaiter(void 0, void 0, v
         return;
     }
     catch (err) {
-        const msg = ((_e = (_d = (_c = (_b = err === null || err === void 0 ? void 0 : err.response) === null || _b === void 0 ? void 0 : _b.data) === null || _c === void 0 ? void 0 : _c.errors) === null || _d === void 0 ? void 0 : _d[0]) === null || _e === void 0 ? void 0 : _e.message) ||
+        const msg = ((_f = (_e = (_d = (_c = err === null || err === void 0 ? void 0 : err.response) === null || _c === void 0 ? void 0 : _c.data) === null || _d === void 0 ? void 0 : _d.errors) === null || _e === void 0 ? void 0 : _e[0]) === null || _f === void 0 ? void 0 : _f.message) ||
             (err === null || err === void 0 ? void 0 : err.message) ||
             "Unknown error";
         console.error("Runware generate-photo error:", msg);
