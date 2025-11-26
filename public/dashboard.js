@@ -316,8 +316,10 @@ window.addEventListener("DOMContentLoaded", function () {
   window.handleLogout = function () {
     console.log("Logging out user");
 
-    // Clear token from localStorage
+    // Clear token, user email and role from localStorage
     localStorage.removeItem("token");
+    localStorage.removeItem("userEmail");
+    localStorage.removeItem("userRole");
 
     // Hide dropdown
     const dropdown = document.getElementById("userDropdownMenu");
@@ -474,7 +476,7 @@ window.addEventListener("DOMContentLoaded", function () {
             errorDiv.textContent = data.message || "Invalid credentials.";
           return;
         }
-        // Persist token and user email
+        // Persist token, user email and role
         if (data && data.accessToken) {
           localStorage.setItem("token", data.accessToken);
         }
@@ -482,6 +484,11 @@ window.addEventListener("DOMContentLoaded", function () {
           localStorage.setItem("userEmail", data.user.email);
         } else {
           localStorage.setItem("userEmail", email);
+        }
+        if (data && data.user && data.user.role) {
+          localStorage.setItem("userRole", data.user.role);
+        } else {
+          localStorage.setItem("userRole", "user");
         }
         // Hide auth modal and show dashboard
         const signInModal = document.getElementById("signInModal");
@@ -720,6 +727,20 @@ async function initializeDashboard() {
     console.log("User email displayed:", storedEmail);
   }
 
+  // Display user role badge
+  const storedRole = localStorage.getItem("userRole") || "user";
+  const userRoleBadge = document.getElementById("userRoleBadge");
+  if (userRoleBadge) {
+    userRoleBadge.textContent = storedRole;
+    if (storedRole === "admin") {
+      userRoleBadge.className =
+        "inline-block mt-1 px-2 py-0.5 text-xs font-medium rounded-full bg-blue-100 text-blue-700";
+    } else {
+      userRoleBadge.className =
+        "inline-block mt-1 px-2 py-0.5 text-xs font-medium rounded-full bg-gray-100 text-gray-600";
+    }
+  }
+
   console.log("Starting data loading sequence...");
 
   try {
@@ -744,6 +765,8 @@ async function initializeDashboard() {
   } finally {
     // Always hide loader after both finish (success or error)
     hideFullscreenLoader();
+    // Apply role-based UI restrictions
+    applyRoleBasedUI();
   }
 }
 
@@ -773,6 +796,80 @@ function getStoredApiKey() {
     localStorage.getItem("adminApiKey") || localStorage.getItem("apiKey") || ""
   );
 }
+
+// Check if the current user is an admin
+function isAdmin() {
+  const role = localStorage.getItem("userRole");
+  return role === "admin";
+}
+
+// Apply role-based UI restrictions - hide/disable admin-only elements for non-admin users
+function applyRoleBasedUI() {
+  const hideForUser = !isAdmin();
+
+  // Hide Add buttons for features, photo filters, templates, cartoon characters
+  const addButtons = [
+    "addFeatureBtn",
+    "addPhotoFeatureBtn",
+    "addTemplateBtn",
+    "addCartoonCharacterBtn",
+  ];
+  addButtons.forEach((id) => {
+    const btn = document.getElementById(id);
+    if (btn) btn.style.display = hideForUser ? "none" : "";
+  });
+
+  // Hide create app form for non-admins
+  const createAppForm = document.getElementById("createAppForm");
+  if (createAppForm) {
+    const formParent = createAppForm.closest(".bg-white.rounded-xl");
+    if (formParent) formParent.style.display = hideForUser ? "none" : "";
+  }
+
+  // Hide delete buttons in feature detail and cartoon character detail
+  const detailDeleteBtns = [
+    "featureDetailDeleteBtn",
+    "cartoonCharacterDetailDeleteBtn",
+  ];
+  detailDeleteBtns.forEach((id) => {
+    const btn = document.getElementById(id);
+    if (btn) btn.style.display = hideForUser ? "none" : "";
+  });
+
+  // Hide rename/edit buttons for non-admins
+  const editBtns = document.querySelectorAll(
+    "#editFeatureNameBtn, #editCartoonCharacterNameBtn, #editFeaturePromptBtn, #editCartoonCharacterPromptBtn"
+  );
+  editBtns.forEach((btn) => {
+    if (btn) btn.style.display = hideForUser ? "none" : "";
+  });
+
+  // Hide generate video buttons for non-admins (this is a write operation)
+  const generateBtns = ["featureGenerateVideoBtn", "cartoonGenerateVideoBtn"];
+  generateBtns.forEach((id) => {
+    const btn = document.getElementById(id);
+    if (btn) btn.style.display = hideForUser ? "none" : "";
+  });
+
+  // Hide save prompt buttons for non-admins
+  const savePromptBtns = document.querySelectorAll(
+    "#featureModalSavePrompt, #cartoonCharacterSavePromptBtn"
+  );
+  savePromptBtns.forEach((btn) => {
+    if (btn) btn.style.display = hideForUser ? "none" : "";
+  });
+
+  // Hide video generation sections for non-admins (contains upload + generate)
+  const videoGenSections = ["featureVideoGenSection", "cartoonVideoGenSection"];
+  videoGenSections.forEach((id) => {
+    const section = document.getElementById(id);
+    if (section) section.style.display = hideForUser ? "none" : "";
+  });
+}
+
+// Make isAdmin globally available
+window.isAdmin = isAdmin;
+window.applyRoleBasedUI = applyRoleBasedUI;
 
 function setStoredApiKey(key) {
   if (key && typeof key === "string") {
@@ -883,6 +980,7 @@ function renderApps() {
       '<div class="text-sm text-gray-500">No apps yet. Create one above.</div>';
     return;
   }
+  const adminUser = isAdmin();
   listEl.innerHTML = apps
     .map((app) => {
       const created = app.createdAt
@@ -900,12 +998,16 @@ function renderApps() {
               <button data-app-id="${
                 app.id
               }" class="view-app-details px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm"><i class="fa fa-eye mr-1"></i>View Details</button>
-              <button data-app-id="${
-                app.id
-              }" class="rotate-app px-3 py-1 bg-yellow-500 text-white rounded hover:bg-yellow-600 text-sm">Rotate Key</button>
-              <button data-app-id="${
-                app.id
-              }" class="delete-app px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700 text-sm">Delete</button>
+              ${
+                adminUser
+                  ? `<button data-app-id="${app.id}" class="rotate-app px-3 py-1 bg-yellow-500 text-white rounded hover:bg-yellow-600 text-sm">Rotate Key</button>`
+                  : ""
+              }
+              ${
+                adminUser
+                  ? `<button data-app-id="${app.id}" class="delete-app px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700 text-sm">Delete</button>`
+                  : ""
+              }
             </div>
           </div>
           <div class="mt-3 p-2 bg-gray-50 rounded border text-sm flex items-center justify-between">
@@ -1298,13 +1400,33 @@ function renderAppDetailPage() {
       <!-- Save Button -->
       <div class="flex justify-end gap-3">
         <button onclick="closeAppDetailPage()" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300">Cancel</button>
-        <button onclick="saveAppPermissions()" id="saveAppPermissionsBtn" class="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+        ${
+          isAdmin()
+            ? `<button onclick="saveAppPermissions()" id="saveAppPermissionsBtn" class="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
           <i class="fa fa-save mr-2"></i>Save Permissions
-        </button>
+        </button>`
+            : ""
+        }
       </div>
       <div id="appDetailStatus" class="text-sm mt-3 text-center"></div>
     </div>
   `;
+
+  // Disable checkboxes for non-admin users
+  if (!isAdmin()) {
+    page.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
+      cb.disabled = true;
+      cb.style.opacity = "0.6";
+    });
+    // Hide select/deselect all buttons for non-admins
+    page
+      .querySelectorAll(
+        '[onclick*="selectAllPermissions"], [onclick*="deselectAllPermissions"]'
+      )
+      .forEach((btn) => {
+        btn.style.display = "none";
+      });
+  }
 }
 
 function closeAppDetailPage() {
@@ -2950,6 +3072,9 @@ function showFeatureDetailPage(endpoint, sourceTab = "filters") {
         }
       };
     }
+
+    // Apply role-based UI restrictions after setting up the detail page
+    applyRoleBasedUI();
   } catch (err) {
     console.error("showFeatureDetailPage failed:", err);
     // Always show filters tab if anything fails
@@ -3183,6 +3308,7 @@ function displayTemplates() {
         template.description.toLowerCase().includes(searchTerm))
   );
 
+  const adminUser = isAdmin();
   grid.innerHTML = filteredTemplates
     .map((template) => {
       // Flatten all steps from all subcategories for step count
@@ -3200,18 +3326,18 @@ function displayTemplates() {
                 template.description || ""
               }</div>
             </div>
-            <div class="flex gap-2">
-              <button class="px-3 py-1 bg-blue-500 hover:bg-blue-600 text-white rounded shadow-sm flex items-center gap-1" onclick="editTemplate(${
-                template.id
-              })">
+            ${
+              adminUser
+                ? `<div class="flex gap-2">
+              <button class="px-3 py-1 bg-blue-500 hover:bg-blue-600 text-white rounded shadow-sm flex items-center gap-1" onclick="editTemplate(${template.id})">
                 <i class="fas fa-edit"></i> <span class="hidden sm:inline">Edit</span>
               </button>
-              <button class="px-3 py-1 bg-red-500 hover:bg-red-600 text-white rounded shadow-sm flex items-center gap-1" onclick="deleteTemplate(${
-                template.id
-              })">
+              <button class="px-3 py-1 bg-red-500 hover:bg-red-600 text-white rounded shadow-sm flex items-center gap-1" onclick="deleteTemplate(${template.id})">
                 <i class="fas fa-trash"></i> <span class="hidden sm:inline">Delete</span>
               </button>
-            </div>
+            </div>`
+                : ""
+            }
           </div>
           <div class="mb-4">
             <div class="font-semibold text-gray-700 mb-2 flex items-center gap-2">
@@ -3315,9 +3441,12 @@ function showStepDetailPage(templateId, stepIndex, subcatIndex) {
         const html = videos
           .map((v) => {
             const vidUrl = v.signedUrl || v.url;
+            const deleteBtn = isAdmin()
+              ? `<button class="absolute top-1 right-1 bg-red-600/80 text-white text-[10px] px-1.5 py-0.5 rounded opacity-0 group-hover:opacity-100 transition delete-step-video-btn" title="Delete video"><svg xmlns='http://www.w3.org/2000/svg' width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' class='pointer-events-none'><path d='M3 6h18'/><path d='M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2'/><path d='M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6'/><path d='M10 11v6'/><path d='M14 11v6'/></svg></button>`
+              : "";
             return `<div class="relative rounded-lg overflow-hidden border border-gray-200 hover:border-blue-400 hover:shadow group step-detail-thumb" data-url="${vidUrl}" data-id="${v.id}" style="width:120px;height:213px;display:inline-block;vertical-align:top;background:#000;cursor:pointer;">
        <video src="${vidUrl}" class="w-full h-full object-cover" preload="metadata" muted playsinline style="width:100%;height:100%;object-fit:cover;pointer-events:none;"></video>
-       <button class="absolute top-1 right-1 bg-red-600/80 text-white text-[10px] px-1.5 py-0.5 rounded opacity-0 group-hover:opacity-100 transition delete-step-video-btn" title="Delete video"><svg xmlns='http://www.w3.org/2000/svg' width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' class='pointer-events-none'><path d='M3 6h18'/><path d='M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2'/><path d='M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6'/><path d='M10 11v6'/><path d='M14 11v6'/></svg></button>
+       ${deleteBtn}
      </div>`;
           })
           .join("");
@@ -3407,6 +3536,34 @@ function showStepDetailPage(templateId, stepIndex, subcatIndex) {
   const saveBtn = document.getElementById("stepDetailSaveBtn");
   const cancelBtn = document.getElementById("stepDetailCancelBtn");
   if (cancelBtn) cancelBtn.onclick = () => closeStepDetailPage();
+
+  // Hide save button and disable inputs for non-admin users
+  if (!isAdmin()) {
+    if (saveBtn) saveBtn.style.display = "none";
+    const epInput = document.getElementById("stepDetailEndpointInput");
+    const promptInput = document.getElementById("stepDetailPromptInput");
+    if (epInput) {
+      epInput.readOnly = true;
+      epInput.style.backgroundColor = "#f3f4f6";
+    }
+    if (promptInput) {
+      promptInput.readOnly = true;
+      promptInput.style.backgroundColor = "#f3f4f6";
+    }
+  } else if (saveBtn) {
+    saveBtn.style.display = "";
+    const epInput = document.getElementById("stepDetailEndpointInput");
+    const promptInput = document.getElementById("stepDetailPromptInput");
+    if (epInput) {
+      epInput.readOnly = false;
+      epInput.style.backgroundColor = "";
+    }
+    if (promptInput) {
+      promptInput.readOnly = false;
+      promptInput.style.backgroundColor = "";
+    }
+  }
+
   if (saveBtn) {
     saveBtn.onclick = async () => {
       const epInput = document.getElementById("stepDetailEndpointInput");
@@ -5845,6 +6002,9 @@ function showCartoonCharacterDetailPage(endpoint) {
       }
     };
   }
+
+  // Apply role-based UI restrictions after setting up the detail page
+  applyRoleBasedUI();
 }
 
 // Close cartoon character detail page

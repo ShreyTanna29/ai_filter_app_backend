@@ -437,6 +437,232 @@ app.delete("/api/photo-features/:endpoint", (req, res) => __awaiter(void 0, void
         });
     }
 }));
+// ============================================
+// === CARTOON CHARACTERS API ENDPOINTS ===
+// ============================================
+// Get all cartoon characters without pagination
+app.get("/api/cartoon-characters/all", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const list = yield prisma_1.default.cartoon_Characters.findMany({
+            orderBy: { createdAt: "asc" },
+        });
+        res.json({
+            success: true,
+            features: list,
+        });
+    }
+    catch (error) {
+        console.error(error);
+        res.status(500).json({
+            success: false,
+            message: "Internal server error",
+        });
+    }
+}));
+// Paginated cartoon characters list with search
+app.get("/api/cartoon-characters", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const { page = 1, limit = 10, search } = req.query;
+        const pageNumber = parseInt(page);
+        const limitNumber = parseInt(limit);
+        const skip = (pageNumber - 1) * limitNumber;
+        const whereClause = search && typeof search === "string"
+            ? {
+                OR: [
+                    { endpoint: { contains: search, mode: "insensitive" } },
+                    { prompt: { contains: search, mode: "insensitive" } },
+                ],
+            }
+            : {};
+        const [list, total] = yield Promise.all([
+            prisma_1.default.cartoon_Characters.findMany({
+                where: whereClause,
+                skip,
+                take: limitNumber,
+                orderBy: { createdAt: "asc" },
+            }),
+            prisma_1.default.cartoon_Characters.count({ where: whereClause }),
+        ]);
+        res.json({
+            success: true,
+            features: list,
+            pagination: {
+                page: pageNumber,
+                limit: limitNumber,
+                total,
+                totalPages: Math.ceil(total / limitNumber),
+            },
+        });
+    }
+    catch (error) {
+        console.error(error);
+        res.status(500).json({
+            success: false,
+            message: "Internal server error",
+        });
+    }
+}));
+// Update a cartoon character's prompt
+app.put("/api/cartoon-characters/:endpoint", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    const { endpoint } = req.params;
+    const { prompt, isActive } = req.body;
+    try {
+        const updated = yield prisma_1.default.cartoon_Characters.update({
+            where: { endpoint },
+            data: {
+                prompt,
+                isActive,
+            },
+        });
+        res.json({
+            success: true,
+            feature: updated,
+        });
+    }
+    catch (error) {
+        console.error(error);
+        if (error.code === "P2025") {
+            return res.status(404).json({
+                success: false,
+                message: "Cartoon character not found",
+            });
+        }
+        res.status(500).json({
+            success: false,
+            message: "Internal server error",
+        });
+    }
+}));
+// Create a new cartoon character
+app.post("/api/cartoon-characters", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    const { endpoint, prompt } = req.body;
+    if (!endpoint || !prompt) {
+        return res.status(400).json({
+            success: false,
+            message: "Endpoint and prompt are required",
+        });
+    }
+    try {
+        const created = yield prisma_1.default.cartoon_Characters.create({
+            data: {
+                endpoint,
+                prompt,
+                isActive: true,
+            },
+        });
+        res.json({
+            success: true,
+            feature: created,
+        });
+    }
+    catch (error) {
+        console.error(error);
+        if (error.code === "P2002") {
+            return res.status(409).json({
+                success: false,
+                message: "Cartoon character with this endpoint already exists",
+            });
+        }
+        res.status(500).json({
+            success: false,
+            message: "Internal server error",
+        });
+    }
+}));
+// Rename a cartoon character endpoint
+app.put("/api/cartoon-characters/:endpoint/rename", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    const { endpoint } = req.params;
+    const { newEndpoint } = req.body;
+    if (!newEndpoint) {
+        return res.status(400).json({
+            success: false,
+            message: "New endpoint name is required",
+        });
+    }
+    try {
+        const updated = yield prisma_1.default.cartoon_Characters.update({
+            where: { endpoint },
+            data: { endpoint: newEndpoint },
+        });
+        res.json({
+            success: true,
+            feature: updated,
+        });
+    }
+    catch (error) {
+        console.error(error);
+        if (error.code === "P2025") {
+            return res.status(404).json({
+                success: false,
+                message: "Cartoon character not found",
+            });
+        }
+        if (error.code === "P2002") {
+            return res.status(409).json({
+                success: false,
+                message: "A cartoon character with this endpoint already exists",
+            });
+        }
+        res.status(500).json({
+            success: false,
+            message: "Internal server error",
+        });
+    }
+}));
+// Delete a cartoon character
+app.delete("/api/cartoon-characters/:endpoint", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    const { endpoint } = req.params;
+    try {
+        yield prisma_1.default.cartoon_Characters.delete({
+            where: { endpoint },
+        });
+        res.json({
+            success: true,
+            message: "Cartoon character deleted successfully",
+        });
+    }
+    catch (error) {
+        console.error(error);
+        if (error.code === "P2025") {
+            return res.status(404).json({
+                success: false,
+                message: "Cartoon character not found",
+            });
+        }
+        res.status(500).json({
+            success: false,
+            message: "Internal server error",
+        });
+    }
+}));
+// Get cartoon character graphics (latest video per endpoint)
+app.get("/api/cartoon-character-graphic", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const latestVideos = yield prisma_1.default.generated_Cartoon_Video.findMany({
+            distinct: ["feature"],
+            orderBy: [{ feature: "asc" }, { createdAt: "desc" }],
+            select: {
+                feature: true,
+                url: true,
+            },
+        });
+        const result = yield Promise.all(latestVideos.map((v) => __awaiter(void 0, void 0, void 0, function* () {
+            let signed = v.url;
+            try {
+                if (v.url && /amazonaws\.com\//.test(v.url)) {
+                    signed = yield (0, signedUrl_1.signKey)((0, signedUrl_1.deriveKey)(v.url));
+                }
+            }
+            catch (_a) { }
+            return { endpoint: v.feature, graphicUrl: signed };
+        })));
+        res.json(result);
+    }
+    catch (error) {
+        console.error("Error computing cartoon character graphics:", error);
+        res.status(500).json({ error: "Failed to get cartoon character graphics" });
+    }
+}));
 app.use("/api", filter_endpoints_1.default);
 app.use("/api", templates_1.default);
 app.use("/api/generate-video", generate_video_1.default);
