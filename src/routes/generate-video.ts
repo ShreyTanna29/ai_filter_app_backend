@@ -80,17 +80,6 @@ const serializeError = (err: any) => {
   return safeJson(err);
 };
 
-// Extract a short, user-friendly Cloudinary error summary (if structure matches)
-function summarizeCloudinaryError(err: any): string | undefined {
-  if (!err) return undefined;
-  const data = err?.response?.data || err?.data || err;
-  // Common Cloudinary error shapes: { error: { message: "..." } } or { message: "..." }
-  const msg = data?.error?.message || data?.message || err?.message;
-  if (!msg) return undefined;
-  // Trim overly long messages
-  return msg.length > 180 ? msg.slice(0, 177) + "..." : msg;
-}
-
 // Extract structured Runware error details for UI surfacing
 function extractRunwareError(raw: any) {
   try {
@@ -121,19 +110,6 @@ interface VideoGenerationRequest {
   // Optional additional reference images for models like Vidu Q1 that accept multiple refs
   image_url2?: string;
   image_url3?: string;
-}
-
-interface VideoGenerationResponse {
-  success: boolean;
-  video?: { url: string; signedUrl?: string; key?: string };
-  videoUrl?: string;
-  s3Key?: string;
-  error?: string;
-  details?: any;
-  provider?: string;
-  provider_status?: string;
-  provider_message?: string;
-  provider_code?: string | number;
 }
 
 // Helper: upload generated video stream to S3 and return signed + canonical URLs
@@ -198,7 +174,15 @@ router.post(
   async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const { feature } = req.params;
-      const userModel = req.body.model;
+      const userModel =
+        typeof req.body.model === "string" ? req.body.model.trim() : "";
+      if (!userModel) {
+        res.status(400).json({
+          success: false,
+          error: "Model is required",
+        });
+        return;
+      }
       const promptOverride = req.body.prompt;
       const imageUrl = req.body.imageUrl || req.body.image_url;
 
@@ -241,7 +225,7 @@ router.post(
           : "";
 
       // Step 3: Provider branching (Pixverse transition, then MiniMax, else Luma)
-      const rawModel = (userModel || "").toString();
+      const rawModel = userModel;
       const isPixverseTransition = /pixverse-v4-transition/i.test(rawModel);
       // Support v4, v4.5 and v5 image to video variants
       const isPixverseImage2Video =
@@ -275,6 +259,12 @@ router.post(
       const isRunwareHailuo23 = /hailuo[\s-]*2\.?3(?!.*fast)|minimax:4@1/i.test(
         rawModel
       );
+      const isLumaModel =
+        /(^|\s)(ray|luma)(?=\b)/i.test(rawModel) ||
+        /dream\s*machine/i.test(rawModel) ||
+        /ray[\s-]*1\.6/i.test(rawModel) ||
+        /ray[\s-]*2/i.test(rawModel) ||
+        /ray.*flash/i.test(rawModel);
       if (isRunwareSeedanceProFast) {
         try {
           console.log("[Seedance] Start generation", {
@@ -2244,11 +2234,8 @@ router.post(
             process.env.RUNWAY_TURBO_PUBLIC_FIGURE_THRESHOLD || undefined;
 
           const createdTaskUUID = randomUUID();
-          const frameImages: any[] = [
-            { inputImage: firstUUID, frame: "first" },
-          ];
-          if (lastUUID)
-            frameImages.push({ inputImage: lastUUID, frame: "last" });
+          const frameImages: any[] = [{ image: firstUUID, frame: "first" }];
+          if (lastUUID) frameImages.push({ image: lastUUID, frame: "last" });
 
           const task: any = {
             taskType: "videoInference",
@@ -2256,12 +2243,11 @@ router.post(
             model: "runway:1@1",
             positivePrompt: prompt || "",
             duration,
-            fps,
             width,
             height,
-            CFGScale: cfgScale,
-            deliveryMethod: "async",
-            frameImages,
+            inputs: {
+              frameImages,
+            },
           };
 
           if (publicFigureThreshold) {
@@ -2362,6 +2348,18 @@ router.post(
               } catch (e: any) {
                 const statusCode = e?.response?.status;
                 const body = e?.response?.data;
+                let parsedBody: any = body;
+                if (typeof body === "string") {
+                  try {
+                    parsedBody = JSON.parse(body);
+                  } catch {
+                    parsedBody = undefined;
+                  }
+                }
+                const runwareMessage = Array.isArray(parsedBody?.errors)
+                  ? parsedBody.errors[0]?.message ||
+                    parsedBody.errors[0]?.responseContent
+                  : undefined;
                 console.log("[Runway Gen4] Poll error", {
                   attempt,
                   statusCode,
@@ -2389,8 +2387,12 @@ router.post(
                     res.status(502).json({
                       success: false,
                       error:
+                        runwareMessage?.trim() ||
                         "Runway Gen-4 Turbo polling returned repeated 400 errors",
-                      details: body || serializeError(e),
+                      code: runwareMessage
+                        ? "RUNWAY_PROVIDER_ERROR"
+                        : undefined,
+                      details: parsedBody || body || serializeError(e),
                     });
                     return;
                   }
@@ -2455,6 +2457,23 @@ router.post(
             "Runway Gen-4 Turbo error:",
             err?.response?.data || err
           );
+          const runwareErrors = err?.response?.data?.errors;
+          const invalidPromptError = Array.isArray(runwareErrors)
+            ? runwareErrors.find(
+                (e: any) => e?.code === "invalidPositivePrompt"
+              )
+            : null;
+          if (invalidPromptError) {
+            const minLen = Number(invalidPromptError?.min) || 1;
+            const maxLen = Number(invalidPromptError?.max) || 1000;
+            res.status(400).json({
+              success: false,
+              error: `Runway Gen-4 Turbo prompt must be between ${minLen} and ${maxLen} characters.`,
+              code: "RUNWAY_PROMPT_LENGTH",
+              details: serializeError(err),
+            });
+            return;
+          }
           res.status(500).json({
             success: false,
             error: "Runway Gen-4 Turbo generation failed",
@@ -2568,8 +2587,6 @@ router.post(
             model: "openai:3@1",
             positivePrompt: prompt,
             duration,
-            width,
-            height,
             deliveryMethod: "async",
             frameImages,
           };
@@ -5747,6 +5764,14 @@ router.post(
         return;
       }
 
+      if (!isLumaModel) {
+        res.status(400).json({
+          success: false,
+          error: `Unsupported or unrecognized model: ${rawModel}`,
+        });
+        return;
+      }
+
       // Step 3 (fallback): Generate video using LumaLabs Dream Machine (Ray 2 - Image to Video)
       const lumaApiKey = process.env.LUMA_API_KEY;
       if (!lumaApiKey) {
@@ -5754,10 +5779,8 @@ router.post(
       }
 
       // Map friendly model names to Luma identifiers
-      const resolveLumaModel = (val?: string): string => {
-        const v = (val || process.env.LUMA_MODE || "ray 2")
-          .toString()
-          .toLowerCase();
+      const resolveLumaModel = (val: string): string => {
+        const v = val.toString().toLowerCase();
         if (v.includes("1.6")) return "ray-1-6";
         if (v.includes("flash")) return "ray-flash-2"; // fast Ray 2
         return "ray-2"; // default

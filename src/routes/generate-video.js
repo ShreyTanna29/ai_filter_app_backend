@@ -88,19 +88,6 @@ const serializeError = (err) => {
     }
     return safeJson(err);
 };
-// Extract a short, user-friendly Cloudinary error summary (if structure matches)
-function summarizeCloudinaryError(err) {
-    var _a, _b;
-    if (!err)
-        return undefined;
-    const data = ((_a = err === null || err === void 0 ? void 0 : err.response) === null || _a === void 0 ? void 0 : _a.data) || (err === null || err === void 0 ? void 0 : err.data) || err;
-    // Common Cloudinary error shapes: { error: { message: "..." } } or { message: "..." }
-    const msg = ((_b = data === null || data === void 0 ? void 0 : data.error) === null || _b === void 0 ? void 0 : _b.message) || (data === null || data === void 0 ? void 0 : data.message) || (err === null || err === void 0 ? void 0 : err.message);
-    if (!msg)
-        return undefined;
-    // Trim overly long messages
-    return msg.length > 180 ? msg.slice(0, 177) + "..." : msg;
-}
 // Extract structured Runware error details for UI surfacing
 function extractRunwareError(raw) {
     try {
@@ -174,10 +161,17 @@ function prepareImageForProvider(rawUrl, feature) {
 const upload = (0, multer_1.default)({ storage: multer_1.default.memoryStorage() });
 // Generate video from feature endpoint
 router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _0, _1, _2, _3, _4, _5, _6, _7, _8, _9, _10, _11, _12, _13, _14, _15, _16, _17, _18, _19, _20, _21, _22, _23, _24, _25, _26, _27, _28, _29, _30, _31, _32, _33, _34, _35, _36, _37, _38, _39, _40, _41, _42, _43, _44, _45, _46, _47, _48, _49, _50, _51, _52, _53, _54, _55, _56, _57, _58, _59, _60, _61, _62, _63;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _0, _1, _2, _3, _4, _5, _6, _7, _8, _9, _10, _11, _12, _13, _14, _15, _16, _17, _18, _19, _20, _21, _22, _23, _24, _25, _26, _27, _28, _29, _30, _31, _32, _33, _34, _35, _36, _37, _38, _39, _40, _41, _42, _43, _44, _45, _46, _47, _48, _49, _50, _51, _52, _53, _54, _55, _56, _57, _58, _59, _60, _61, _62, _63, _64, _65, _66, _67, _68, _69, _70, _71, _72, _73, _74, _75, _76, _77, _78, _79, _80, _81, _82, _83, _84, _85, _86, _87, _88;
     try {
         const { feature } = req.params;
-        const userModel = req.body.model;
+        const userModel = typeof req.body.model === "string" ? req.body.model.trim() : "";
+        if (!userModel) {
+            res.status(400).json({
+                success: false,
+                error: "Model is required",
+            });
+            return;
+        }
         const promptOverride = req.body.prompt;
         const imageUrl = req.body.imageUrl || req.body.image_url;
         if (!imageUrl) {
@@ -211,7 +205,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                 ? featureObj.prompt
                 : "";
         // Step 3: Provider branching (Pixverse transition, then MiniMax, else Luma)
-        const rawModel = (userModel || "").toString();
+        const rawModel = userModel;
         const isPixverseTransition = /pixverse-v4-transition/i.test(rawModel);
         // Support v4, v4.5 and v5 image to video variants
         const isPixverseImage2Video = /pixverse-v4(?:\.5)?-image-to-video|pixverse-v5-image-to-video|kling-v1-pro-image-to-video|kling-v1-standard-image-to-video|kling-1\.5-pro-image-to-video|kling-v1\.6-pro-image-to-video|kling-1\.6-standard-image-to-video|kling-v2-master-image-to-video|kling-v2\.1-standard-image-to-video|kling-v2\.1-pro-image-to-video/i.test(rawModel);
@@ -224,6 +218,16 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
         const isRunwareLTX2Fast = /ltx[\s-]*2.*fast|lightricks:2@1/i.test(rawModel);
         const isRunwareViduQ2Turbo = /vidu[\s-]*q?2.*turbo|vidu:3@2/i.test(rawModel);
         const isRunwareViduQ2Pro = /vidu[\s-]*q?2.*pro|vidu:3@1/i.test(rawModel);
+        const isRunwayGen4Turbo = /runway.*gen[\s-]*4.*turbo|runway:1@1/i.test(rawModel);
+        const isRunwareSora2 = /sora[\s-]*2|openai:3@1/i.test(rawModel);
+        const isRunwareSora2Pro = /sora[\s-]*2.*pro|openai:3@2/i.test(rawModel);
+        const isRunwareHailuo23Fast = /hailuo[\s-]*2\.?3.*fast|minimax:4@2/i.test(rawModel);
+        const isRunwareHailuo23 = /hailuo[\s-]*2\.?3(?!.*fast)|minimax:4@1/i.test(rawModel);
+        const isLumaModel = /(^|\s)(ray|luma)(?=\b)/i.test(rawModel) ||
+            /dream\s*machine/i.test(rawModel) ||
+            /ray[\s-]*1\.6/i.test(rawModel) ||
+            /ray[\s-]*2/i.test(rawModel) ||
+            /ray.*flash/i.test(rawModel);
         if (isRunwareSeedanceProFast) {
             try {
                 console.log("[Seedance] Start generation", {
@@ -1799,6 +1803,1297 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                 return;
             }
         }
+        if (isRunwayGen4Turbo) {
+            try {
+                console.log("[Runway Gen4] Start generation", {
+                    feature,
+                    rawModel,
+                    imageCloudUrlInitial: imageCloudUrl === null || imageCloudUrl === void 0 ? void 0 : imageCloudUrl.slice(0, 120),
+                    lastFrameProvided: !!lastFrameCloudUrl,
+                });
+                const runwareHeaders = {
+                    Authorization: `Bearer ${process.env.RUNWARE_API_KEY || process.env.RUNWARE_KEY}`,
+                    "Content-Type": "application/json",
+                };
+                const uploadFrame = (imgUrl) => __awaiter(void 0, void 0, void 0, function* () {
+                    const payload = [
+                        {
+                            taskType: "imageUpload",
+                            taskUUID: (0, crypto_1.randomUUID)(),
+                            image: imgUrl,
+                        },
+                    ];
+                    const resp = yield axios_1.default.post("https://api.runware.ai/v1", payload, {
+                        headers: runwareHeaders,
+                        timeout: 180000,
+                    });
+                    const data = resp.data;
+                    const obj = Array.isArray(data === null || data === void 0 ? void 0 : data.data) ? data.data[0] : data === null || data === void 0 ? void 0 : data.data;
+                    return (obj === null || obj === void 0 ? void 0 : obj.imageUUID) || (obj === null || obj === void 0 ? void 0 : obj.imageUuid);
+                });
+                let firstUUID;
+                try {
+                    firstUUID = yield uploadFrame(imageCloudUrl);
+                    console.log("[Runway Gen4] imageUpload first success", {
+                        firstUUID,
+                    });
+                }
+                catch (e) {
+                    console.error("[Runway Gen4] imageUpload first failed:", ((_1 = e === null || e === void 0 ? void 0 : e.response) === null || _1 === void 0 ? void 0 : _1.data) || (e === null || e === void 0 ? void 0 : e.message) || e);
+                    res.status(400).json({
+                        success: false,
+                        error: "Failed to upload first frame to Runway Gen-4 Turbo",
+                        details: serializeError(e),
+                    });
+                    return;
+                }
+                if (!firstUUID) {
+                    res.status(400).json({
+                        success: false,
+                        error: "Runware imageUpload did not return imageUUID",
+                    });
+                    return;
+                }
+                let lastUUID;
+                if (lastFrameCloudUrl) {
+                    try {
+                        lastUUID = yield uploadFrame(lastFrameCloudUrl);
+                        console.log("[Runway Gen4] imageUpload last success", {
+                            lastUUID,
+                        });
+                    }
+                    catch (e) {
+                        console.warn("[Runway Gen4] imageUpload last failed (continuing with first frame only)", ((_2 = e === null || e === void 0 ? void 0 : e.response) === null || _2 === void 0 ? void 0 : _2.data) || (e === null || e === void 0 ? void 0 : e.message) || e);
+                    }
+                }
+                const clamp = (val, min, max) => Math.max(min, Math.min(max, val));
+                const supportedDefaults = {
+                    width: 1280,
+                    height: 720,
+                    duration: 10,
+                    fps: 24,
+                    cfg: 7.5,
+                };
+                const width = clamp(Number(process.env.RUNWAY_TURBO_WIDTH || supportedDefaults.width), 256, 1920);
+                const height = clamp(Number(process.env.RUNWAY_TURBO_HEIGHT || supportedDefaults.height), 256, 1080);
+                const duration = clamp(Number(process.env.RUNWAY_TURBO_DURATION || supportedDefaults.duration), 2, 10);
+                const fps = clamp(Number(process.env.RUNWAY_TURBO_FPS || supportedDefaults.fps), 15, 60);
+                const cfgScale = clamp(Number(process.env.RUNWAY_TURBO_CFG || supportedDefaults.cfg), 1, 20);
+                const publicFigureThreshold = process.env.RUNWAY_TURBO_PUBLIC_FIGURE_THRESHOLD || undefined;
+                const createdTaskUUID = (0, crypto_1.randomUUID)();
+                const frameImages = [{ image: firstUUID, frame: "first" }];
+                if (lastUUID)
+                    frameImages.push({ image: lastUUID, frame: "last" });
+                const task = {
+                    taskType: "videoInference",
+                    taskUUID: createdTaskUUID,
+                    model: "runway:1@1",
+                    positivePrompt: prompt || "",
+                    duration,
+                    width,
+                    height,
+                    inputs: {
+                        frameImages,
+                    },
+                };
+                if (publicFigureThreshold) {
+                    task.providerSettings = {
+                        runway: {
+                            contentModeration: {
+                                publicFigureThreshold,
+                            },
+                        },
+                    };
+                }
+                console.log("[Runway Gen4] Created task", {
+                    taskUUID: createdTaskUUID,
+                    duration,
+                    fps,
+                    width,
+                    height,
+                    cfgScale,
+                    frames: frameImages.length,
+                    moderation: publicFigureThreshold,
+                });
+                const createResp = yield axios_1.default.post("https://api.runware.ai/v1", [task], {
+                    headers: runwareHeaders,
+                    timeout: 180000,
+                });
+                const data = createResp.data;
+                const ackItem = Array.isArray(data === null || data === void 0 ? void 0 : data.data)
+                    ? data.data.find((d) => (d === null || d === void 0 ? void 0 : d.taskType) === "videoInference") ||
+                        data.data[0]
+                    : data === null || data === void 0 ? void 0 : data.data;
+                let videoUrl = (ackItem === null || ackItem === void 0 ? void 0 : ackItem.videoURL) ||
+                    (ackItem === null || ackItem === void 0 ? void 0 : ackItem.url) ||
+                    (ackItem === null || ackItem === void 0 ? void 0 : ackItem.video) ||
+                    (Array.isArray(ackItem === null || ackItem === void 0 ? void 0 : ackItem.videos) ? ackItem.videos[0] : null);
+                let pollTaskUUID = (ackItem === null || ackItem === void 0 ? void 0 : ackItem.taskUUID) || createdTaskUUID;
+                console.log("[Runway Gen4] Ack response", {
+                    ackTaskUUID: ackItem === null || ackItem === void 0 ? void 0 : ackItem.taskUUID,
+                    createdTaskUUID,
+                    chosenPollTaskUUID: pollTaskUUID,
+                    immediateVideo: !!videoUrl,
+                    status: (ackItem === null || ackItem === void 0 ? void 0 : ackItem.status) || (ackItem === null || ackItem === void 0 ? void 0 : ackItem.taskStatus),
+                });
+                if (!videoUrl && pollTaskUUID) {
+                    const maxAttempts = 120;
+                    const delay = (ms) => new Promise((r) => setTimeout(r, ms));
+                    let consecutive400 = 0;
+                    let switched = false;
+                    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+                        yield delay(3000);
+                        const pollPayload = [
+                            { taskType: "getResponse", taskUUID: pollTaskUUID },
+                        ];
+                        console.log("[Runway Gen4] Poll attempt", {
+                            attempt,
+                            pollTaskUUID,
+                        });
+                        try {
+                            const poll = yield axios_1.default.post("https://api.runware.ai/v1", pollPayload, { headers: runwareHeaders, timeout: 60000 });
+                            const pd = poll.data;
+                            const item = Array.isArray(pd === null || pd === void 0 ? void 0 : pd.data)
+                                ? pd.data.find((d) => (d === null || d === void 0 ? void 0 : d.taskUUID) === pollTaskUUID || (d === null || d === void 0 ? void 0 : d.videoURL)) || pd.data[0]
+                                : pd === null || pd === void 0 ? void 0 : pd.data;
+                            const status = (item === null || item === void 0 ? void 0 : item.status) || (item === null || item === void 0 ? void 0 : item.taskStatus);
+                            if (status)
+                                console.log("[Runway Gen4] Poll status", { attempt, status });
+                            if (status === "success" || (item === null || item === void 0 ? void 0 : item.videoURL) || (item === null || item === void 0 ? void 0 : item.url)) {
+                                videoUrl =
+                                    (item === null || item === void 0 ? void 0 : item.videoURL) ||
+                                        (item === null || item === void 0 ? void 0 : item.url) ||
+                                        (item === null || item === void 0 ? void 0 : item.video) ||
+                                        (Array.isArray(item === null || item === void 0 ? void 0 : item.videos) ? item.videos[0] : null);
+                                if (videoUrl)
+                                    break;
+                            }
+                            if (status === "error" || status === "failed") {
+                                res.status(502).json({
+                                    success: false,
+                                    error: "Runway Gen-4 Turbo generation failed during polling",
+                                    details: pd,
+                                });
+                                return;
+                            }
+                            consecutive400 = 0;
+                        }
+                        catch (e) {
+                            const statusCode = (_3 = e === null || e === void 0 ? void 0 : e.response) === null || _3 === void 0 ? void 0 : _3.status;
+                            const body = (_4 = e === null || e === void 0 ? void 0 : e.response) === null || _4 === void 0 ? void 0 : _4.data;
+                            let parsedBody = body;
+                            if (typeof body === "string") {
+                                try {
+                                    parsedBody = JSON.parse(body);
+                                }
+                                catch (_89) {
+                                    parsedBody = undefined;
+                                }
+                            }
+                            const runwareMessage = Array.isArray(parsedBody === null || parsedBody === void 0 ? void 0 : parsedBody.errors)
+                                ? ((_5 = parsedBody.errors[0]) === null || _5 === void 0 ? void 0 : _5.message) ||
+                                    ((_6 = parsedBody.errors[0]) === null || _6 === void 0 ? void 0 : _6.responseContent)
+                                : undefined;
+                            console.log("[Runway Gen4] Poll error", {
+                                attempt,
+                                statusCode,
+                                body: typeof body === "object"
+                                    ? JSON.stringify(body).slice(0, 500)
+                                    : body,
+                            });
+                            if (statusCode === 400) {
+                                consecutive400++;
+                                if (!switched &&
+                                    pollTaskUUID !== createdTaskUUID &&
+                                    consecutive400 >= 2) {
+                                    console.log("[Runway Gen4] Switching poll UUID due to repeated 400", { from: pollTaskUUID, to: createdTaskUUID });
+                                    pollTaskUUID = createdTaskUUID;
+                                    switched = true;
+                                    consecutive400 = 0;
+                                }
+                                if (consecutive400 >= 5) {
+                                    res.status(502).json({
+                                        success: false,
+                                        error: (runwareMessage === null || runwareMessage === void 0 ? void 0 : runwareMessage.trim()) ||
+                                            "Runway Gen-4 Turbo polling returned repeated 400 errors",
+                                        code: runwareMessage
+                                            ? "RUNWAY_PROVIDER_ERROR"
+                                            : undefined,
+                                        details: parsedBody || body || serializeError(e),
+                                    });
+                                    return;
+                                }
+                            }
+                            continue;
+                        }
+                    }
+                }
+                if (!videoUrl) {
+                    res.status(502).json({
+                        success: false,
+                        error: "Runway Gen-4 Turbo did not return a video URL",
+                        details: data,
+                    });
+                    return;
+                }
+                let runwayStream;
+                try {
+                    runwayStream = yield axios_1.default.get(videoUrl, {
+                        responseType: "stream",
+                        timeout: 600000,
+                    });
+                }
+                catch (e) {
+                    res.status(500).json({
+                        success: false,
+                        error: "Failed to download Runway Gen-4 Turbo video",
+                        details: serializeError(e),
+                    });
+                    return;
+                }
+                let uploadedRunway;
+                try {
+                    uploadedRunway = yield uploadGeneratedVideo(feature, "runway-gen4-turbo", runwayStream.data);
+                }
+                catch (e) {
+                    res.status(500).json({
+                        success: false,
+                        error: "Failed to upload Runway Gen-4 Turbo video to S3",
+                        details: serializeError(e),
+                    });
+                    return;
+                }
+                res.status(200).json({
+                    success: true,
+                    video: {
+                        url: uploadedRunway.signedUrl,
+                        signedUrl: uploadedRunway.signedUrl,
+                        key: uploadedRunway.key,
+                    },
+                    s3Key: uploadedRunway.key,
+                });
+                return;
+            }
+            catch (err) {
+                console.error("Runway Gen-4 Turbo error:", ((_7 = err === null || err === void 0 ? void 0 : err.response) === null || _7 === void 0 ? void 0 : _7.data) || err);
+                const runwareErrors = (_9 = (_8 = err === null || err === void 0 ? void 0 : err.response) === null || _8 === void 0 ? void 0 : _8.data) === null || _9 === void 0 ? void 0 : _9.errors;
+                const invalidPromptError = Array.isArray(runwareErrors)
+                    ? runwareErrors.find((e) => (e === null || e === void 0 ? void 0 : e.code) === "invalidPositivePrompt")
+                    : null;
+                if (invalidPromptError) {
+                    const minLen = Number(invalidPromptError === null || invalidPromptError === void 0 ? void 0 : invalidPromptError.min) || 1;
+                    const maxLen = Number(invalidPromptError === null || invalidPromptError === void 0 ? void 0 : invalidPromptError.max) || 1000;
+                    res.status(400).json({
+                        success: false,
+                        error: `Runway Gen-4 Turbo prompt must be between ${minLen} and ${maxLen} characters.`,
+                        code: "RUNWAY_PROMPT_LENGTH",
+                        details: serializeError(err),
+                    });
+                    return;
+                }
+                res.status(500).json({
+                    success: false,
+                    error: "Runway Gen-4 Turbo generation failed",
+                    details: serializeError(err),
+                });
+                return;
+            }
+        }
+        if (isRunwareSora2) {
+            try {
+                console.log("[Sora2] Start generation", {
+                    feature,
+                    rawModel,
+                    imageCloudUrlInitial: imageCloudUrl === null || imageCloudUrl === void 0 ? void 0 : imageCloudUrl.slice(0, 120),
+                    lastFrameProvided: !!lastFrameCloudUrl,
+                });
+                if (!prompt || !prompt.trim()) {
+                    res.status(400).json({
+                        success: false,
+                        error: "Prompt is required for Sora 2",
+                    });
+                    return;
+                }
+                if (lastFrameCloudUrl) {
+                    console.warn("[Sora2] last frame provided but ignored (model supports first frame only)");
+                }
+                const runwareHeaders = {
+                    Authorization: `Bearer ${process.env.RUNWARE_API_KEY || process.env.RUNWARE_KEY}`,
+                    "Content-Type": "application/json",
+                };
+                const uploadFrame = (imgUrl) => __awaiter(void 0, void 0, void 0, function* () {
+                    const payload = [
+                        {
+                            taskType: "imageUpload",
+                            taskUUID: (0, crypto_1.randomUUID)(),
+                            image: imgUrl,
+                        },
+                    ];
+                    const resp = yield axios_1.default.post("https://api.runware.ai/v1", payload, {
+                        headers: runwareHeaders,
+                        timeout: 180000,
+                    });
+                    const data = resp.data;
+                    const obj = Array.isArray(data === null || data === void 0 ? void 0 : data.data) ? data.data[0] : data === null || data === void 0 ? void 0 : data.data;
+                    return (obj === null || obj === void 0 ? void 0 : obj.imageUUID) || (obj === null || obj === void 0 ? void 0 : obj.imageUuid);
+                });
+                let firstUUID;
+                try {
+                    firstUUID = yield uploadFrame(imageCloudUrl);
+                    console.log("[Sora2] imageUpload success", { firstUUID });
+                }
+                catch (e) {
+                    console.error("[Sora2] imageUpload failed:", ((_10 = e === null || e === void 0 ? void 0 : e.response) === null || _10 === void 0 ? void 0 : _10.data) || (e === null || e === void 0 ? void 0 : e.message) || e);
+                    res.status(400).json({
+                        success: false,
+                        error: "Failed to upload image to Runware (Sora 2)",
+                        details: serializeError(e),
+                    });
+                    return;
+                }
+                if (!firstUUID) {
+                    res.status(400).json({
+                        success: false,
+                        error: "Runware imageUpload did not return imageUUID",
+                    });
+                    return;
+                }
+                const pickDuration = () => {
+                    const allowed = [4, 8, 12];
+                    const envVal = Number(process.env.SORA2_DURATION);
+                    if (allowed.includes(envVal))
+                        return envVal;
+                    return 8;
+                };
+                const duration = pickDuration();
+                const orientation = (process.env.SORA2_ORIENTATION ||
+                    process.env.SORA2_ASPECT ||
+                    "").toLowerCase();
+                const usePortrait = /portrait|vertical|9[:x]16|720x1280/.test(orientation);
+                const width = usePortrait ? 720 : 1280;
+                const height = usePortrait ? 1280 : 720;
+                const createdTaskUUID = (0, crypto_1.randomUUID)();
+                const frameImages = [
+                    { inputImage: firstUUID, frame: "first" },
+                ];
+                const task = {
+                    taskType: "videoInference",
+                    taskUUID: createdTaskUUID,
+                    model: "openai:3@1",
+                    positivePrompt: prompt,
+                    duration,
+                    deliveryMethod: "async",
+                    frameImages,
+                };
+                console.log("[Sora2] Created task", {
+                    taskUUID: createdTaskUUID,
+                    duration,
+                    width,
+                    height,
+                });
+                const createResp = yield axios_1.default.post("https://api.runware.ai/v1", [task], {
+                    headers: runwareHeaders,
+                    timeout: 180000,
+                });
+                const data = createResp.data;
+                const ackItem = Array.isArray(data === null || data === void 0 ? void 0 : data.data)
+                    ? data.data.find((d) => (d === null || d === void 0 ? void 0 : d.taskType) === "videoInference") ||
+                        data.data[0]
+                    : data === null || data === void 0 ? void 0 : data.data;
+                let videoUrl = (ackItem === null || ackItem === void 0 ? void 0 : ackItem.videoURL) ||
+                    (ackItem === null || ackItem === void 0 ? void 0 : ackItem.url) ||
+                    (ackItem === null || ackItem === void 0 ? void 0 : ackItem.video) ||
+                    (Array.isArray(ackItem === null || ackItem === void 0 ? void 0 : ackItem.videos) ? ackItem.videos[0] : null);
+                let pollTaskUUID = (ackItem === null || ackItem === void 0 ? void 0 : ackItem.taskUUID) || createdTaskUUID;
+                console.log("[Sora2] Ack response", {
+                    ackTaskUUID: ackItem === null || ackItem === void 0 ? void 0 : ackItem.taskUUID,
+                    createdTaskUUID,
+                    chosenPollTaskUUID: pollTaskUUID,
+                    immediateVideo: !!videoUrl,
+                    status: (ackItem === null || ackItem === void 0 ? void 0 : ackItem.status) || (ackItem === null || ackItem === void 0 ? void 0 : ackItem.taskStatus),
+                });
+                if (!videoUrl && pollTaskUUID) {
+                    const maxAttempts = 120;
+                    const delay = (ms) => new Promise((r) => setTimeout(r, ms));
+                    let consecutive400 = 0;
+                    let switched = false;
+                    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+                        yield delay(3000);
+                        const pollPayload = [
+                            { taskType: "getResponse", taskUUID: pollTaskUUID },
+                        ];
+                        console.log("[Sora2] Poll attempt", {
+                            attempt,
+                            pollTaskUUID,
+                        });
+                        try {
+                            const poll = yield axios_1.default.post("https://api.runware.ai/v1", pollPayload, { headers: runwareHeaders, timeout: 60000 });
+                            const pd = poll.data;
+                            const item = Array.isArray(pd === null || pd === void 0 ? void 0 : pd.data)
+                                ? pd.data.find((d) => (d === null || d === void 0 ? void 0 : d.taskUUID) === pollTaskUUID || (d === null || d === void 0 ? void 0 : d.videoURL)) || pd.data[0]
+                                : pd === null || pd === void 0 ? void 0 : pd.data;
+                            const status = (item === null || item === void 0 ? void 0 : item.status) || (item === null || item === void 0 ? void 0 : item.taskStatus);
+                            if (status)
+                                console.log("[Sora2] Poll status", { attempt, status });
+                            if (status === "success" || (item === null || item === void 0 ? void 0 : item.videoURL) || (item === null || item === void 0 ? void 0 : item.url)) {
+                                videoUrl =
+                                    (item === null || item === void 0 ? void 0 : item.videoURL) ||
+                                        (item === null || item === void 0 ? void 0 : item.url) ||
+                                        (item === null || item === void 0 ? void 0 : item.video) ||
+                                        (Array.isArray(item === null || item === void 0 ? void 0 : item.videos) ? item.videos[0] : null);
+                                if (videoUrl)
+                                    break;
+                            }
+                            if (status === "error" || status === "failed") {
+                                res.status(502).json({
+                                    success: false,
+                                    error: "Sora 2 generation failed during polling",
+                                    details: pd,
+                                });
+                                return;
+                            }
+                            consecutive400 = 0;
+                        }
+                        catch (e) {
+                            const statusCode = (_11 = e === null || e === void 0 ? void 0 : e.response) === null || _11 === void 0 ? void 0 : _11.status;
+                            const body = (_12 = e === null || e === void 0 ? void 0 : e.response) === null || _12 === void 0 ? void 0 : _12.data;
+                            console.log("[Sora2] Poll error", {
+                                attempt,
+                                statusCode,
+                                body: typeof body === "object"
+                                    ? JSON.stringify(body).slice(0, 500)
+                                    : body,
+                            });
+                            if (statusCode === 400) {
+                                consecutive400++;
+                                if (!switched &&
+                                    pollTaskUUID !== createdTaskUUID &&
+                                    consecutive400 >= 2) {
+                                    console.log("[Sora2] Switching poll UUID due to repeated 400", { from: pollTaskUUID, to: createdTaskUUID });
+                                    pollTaskUUID = createdTaskUUID;
+                                    switched = true;
+                                    consecutive400 = 0;
+                                }
+                                if (consecutive400 >= 5) {
+                                    res.status(502).json({
+                                        success: false,
+                                        error: "Sora 2 polling returned repeated 400 errors",
+                                        details: body || serializeError(e),
+                                    });
+                                    return;
+                                }
+                            }
+                            continue;
+                        }
+                    }
+                }
+                if (!videoUrl) {
+                    res.status(502).json({
+                        success: false,
+                        error: "Sora 2 did not return a video URL",
+                        details: data,
+                    });
+                    return;
+                }
+                let soraStream;
+                try {
+                    soraStream = yield axios_1.default.get(videoUrl, {
+                        responseType: "stream",
+                        timeout: 600000,
+                    });
+                }
+                catch (e) {
+                    res.status(500).json({
+                        success: false,
+                        error: "Failed to download Sora 2 video",
+                        details: serializeError(e),
+                    });
+                    return;
+                }
+                let uploadedSora;
+                try {
+                    uploadedSora = yield uploadGeneratedVideo(feature, "sora-2", soraStream.data);
+                }
+                catch (e) {
+                    res.status(500).json({
+                        success: false,
+                        error: "Failed to upload Sora 2 video to S3",
+                        details: serializeError(e),
+                    });
+                    return;
+                }
+                res.status(200).json({
+                    success: true,
+                    video: {
+                        url: uploadedSora.signedUrl,
+                        signedUrl: uploadedSora.signedUrl,
+                        key: uploadedSora.key,
+                    },
+                    s3Key: uploadedSora.key,
+                });
+                return;
+            }
+            catch (err) {
+                console.error("Sora 2 error:", ((_13 = err === null || err === void 0 ? void 0 : err.response) === null || _13 === void 0 ? void 0 : _13.data) || err);
+                res.status(500).json({
+                    success: false,
+                    error: "Sora 2 generation failed",
+                    details: serializeError(err),
+                });
+                return;
+            }
+        }
+        if (isRunwareSora2Pro) {
+            try {
+                console.log("[Sora2Pro] Start generation", {
+                    feature,
+                    rawModel,
+                    imageCloudUrlInitial: imageCloudUrl === null || imageCloudUrl === void 0 ? void 0 : imageCloudUrl.slice(0, 120),
+                    lastFrameProvided: !!lastFrameCloudUrl,
+                });
+                if (!prompt || !prompt.trim()) {
+                    res.status(400).json({
+                        success: false,
+                        error: "Prompt is required for Sora 2 Pro",
+                    });
+                    return;
+                }
+                if (lastFrameCloudUrl) {
+                    console.warn("[Sora2Pro] last frame provided but ignored (model supports first frame only)");
+                }
+                const runwareHeaders = {
+                    Authorization: `Bearer ${process.env.RUNWARE_API_KEY || process.env.RUNWARE_KEY}`,
+                    "Content-Type": "application/json",
+                };
+                const uploadFrame = (imgUrl) => __awaiter(void 0, void 0, void 0, function* () {
+                    const payload = [
+                        {
+                            taskType: "imageUpload",
+                            taskUUID: (0, crypto_1.randomUUID)(),
+                            image: imgUrl,
+                        },
+                    ];
+                    const resp = yield axios_1.default.post("https://api.runware.ai/v1", payload, {
+                        headers: runwareHeaders,
+                        timeout: 180000,
+                    });
+                    const data = resp.data;
+                    const obj = Array.isArray(data === null || data === void 0 ? void 0 : data.data) ? data.data[0] : data === null || data === void 0 ? void 0 : data.data;
+                    return (obj === null || obj === void 0 ? void 0 : obj.imageUUID) || (obj === null || obj === void 0 ? void 0 : obj.imageUuid);
+                });
+                let firstUUID;
+                try {
+                    firstUUID = yield uploadFrame(imageCloudUrl);
+                    console.log("[Sora2Pro] imageUpload success", { firstUUID });
+                }
+                catch (e) {
+                    console.error("[Sora2Pro] imageUpload failed:", ((_14 = e === null || e === void 0 ? void 0 : e.response) === null || _14 === void 0 ? void 0 : _14.data) || (e === null || e === void 0 ? void 0 : e.message) || e);
+                    res.status(400).json({
+                        success: false,
+                        error: "Failed to upload image to Runware (Sora 2 Pro)",
+                        details: serializeError(e),
+                    });
+                    return;
+                }
+                if (!firstUUID) {
+                    res.status(400).json({
+                        success: false,
+                        error: "Runware imageUpload did not return imageUUID",
+                    });
+                    return;
+                }
+                const allowedDurations = [4, 8, 12];
+                const pickDuration = () => {
+                    const envVal = Number(process.env.SORA2PRO_DURATION);
+                    if (allowedDurations.includes(envVal))
+                        return envVal;
+                    return 12;
+                };
+                const duration = pickDuration();
+                const combos = [
+                    { width: 1280, height: 720, tag: "16:9" },
+                    { width: 720, height: 1280, tag: "9:16" },
+                    { width: 1792, height: 1024, tag: "7:4" },
+                    { width: 1024, height: 1792, tag: "4:7" },
+                ];
+                const pickDims = () => {
+                    const envWidth = Number(process.env.SORA2PRO_WIDTH);
+                    const envHeight = Number(process.env.SORA2PRO_HEIGHT);
+                    if (envWidth && envHeight) {
+                        const match = combos.find((c) => c.width === envWidth && c.height === envHeight);
+                        if (match)
+                            return match;
+                    }
+                    const aspectPref = (process.env.SORA2PRO_ASPECT ||
+                        process.env.SORA2PRO_ORIENTATION ||
+                        process.env.SORA2_PRO_ASPECT ||
+                        "").toLowerCase();
+                    if (aspectPref) {
+                        if (/9[:x]16|portrait|vertical/.test(aspectPref))
+                            return combos[1];
+                        if (/16[:x]9|landscape|horizontal/.test(aspectPref))
+                            return combos[0];
+                        if (/7[:x]4|1792x1024|wide/.test(aspectPref))
+                            return combos[2];
+                        if (/4[:x]7|1024x1792/.test(aspectPref))
+                            return combos[3];
+                    }
+                    return combos[2];
+                };
+                const { width, height } = pickDims();
+                const createdTaskUUID = (0, crypto_1.randomUUID)();
+                const frameImages = [
+                    { inputImage: firstUUID, frame: "first" },
+                ];
+                const task = {
+                    taskType: "videoInference",
+                    taskUUID: createdTaskUUID,
+                    model: "openai:3@2",
+                    positivePrompt: prompt,
+                    duration,
+                    width,
+                    height,
+                    deliveryMethod: "async",
+                    frameImages,
+                };
+                console.log("[Sora2Pro] Created task", {
+                    taskUUID: createdTaskUUID,
+                    duration,
+                    width,
+                    height,
+                });
+                const createResp = yield axios_1.default.post("https://api.runware.ai/v1", [task], {
+                    headers: runwareHeaders,
+                    timeout: 180000,
+                });
+                const data = createResp.data;
+                const ackItem = Array.isArray(data === null || data === void 0 ? void 0 : data.data)
+                    ? data.data.find((d) => (d === null || d === void 0 ? void 0 : d.taskType) === "videoInference") ||
+                        data.data[0]
+                    : data === null || data === void 0 ? void 0 : data.data;
+                let videoUrl = (ackItem === null || ackItem === void 0 ? void 0 : ackItem.videoURL) ||
+                    (ackItem === null || ackItem === void 0 ? void 0 : ackItem.url) ||
+                    (ackItem === null || ackItem === void 0 ? void 0 : ackItem.video) ||
+                    (Array.isArray(ackItem === null || ackItem === void 0 ? void 0 : ackItem.videos) ? ackItem.videos[0] : null);
+                let pollTaskUUID = (ackItem === null || ackItem === void 0 ? void 0 : ackItem.taskUUID) || createdTaskUUID;
+                console.log("[Sora2Pro] Ack response", {
+                    ackTaskUUID: ackItem === null || ackItem === void 0 ? void 0 : ackItem.taskUUID,
+                    createdTaskUUID,
+                    chosenPollTaskUUID: pollTaskUUID,
+                    immediateVideo: !!videoUrl,
+                    status: (ackItem === null || ackItem === void 0 ? void 0 : ackItem.status) || (ackItem === null || ackItem === void 0 ? void 0 : ackItem.taskStatus),
+                });
+                if (!videoUrl && pollTaskUUID) {
+                    const maxAttempts = 120;
+                    const delay = (ms) => new Promise((r) => setTimeout(r, ms));
+                    let consecutive400 = 0;
+                    let switched = false;
+                    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+                        yield delay(3000);
+                        const pollPayload = [
+                            { taskType: "getResponse", taskUUID: pollTaskUUID },
+                        ];
+                        console.log("[Sora2Pro] Poll attempt", {
+                            attempt,
+                            pollTaskUUID,
+                        });
+                        try {
+                            const poll = yield axios_1.default.post("https://api.runware.ai/v1", pollPayload, { headers: runwareHeaders, timeout: 60000 });
+                            const pd = poll.data;
+                            const item = Array.isArray(pd === null || pd === void 0 ? void 0 : pd.data)
+                                ? pd.data.find((d) => (d === null || d === void 0 ? void 0 : d.taskUUID) === pollTaskUUID || (d === null || d === void 0 ? void 0 : d.videoURL)) || pd.data[0]
+                                : pd === null || pd === void 0 ? void 0 : pd.data;
+                            const status = (item === null || item === void 0 ? void 0 : item.status) || (item === null || item === void 0 ? void 0 : item.taskStatus);
+                            if (status)
+                                console.log("[Sora2Pro] Poll status", { attempt, status });
+                            if (status === "success" || (item === null || item === void 0 ? void 0 : item.videoURL) || (item === null || item === void 0 ? void 0 : item.url)) {
+                                videoUrl =
+                                    (item === null || item === void 0 ? void 0 : item.videoURL) ||
+                                        (item === null || item === void 0 ? void 0 : item.url) ||
+                                        (item === null || item === void 0 ? void 0 : item.video) ||
+                                        (Array.isArray(item === null || item === void 0 ? void 0 : item.videos) ? item.videos[0] : null);
+                                if (videoUrl)
+                                    break;
+                            }
+                            if (status === "error" || status === "failed") {
+                                res.status(502).json({
+                                    success: false,
+                                    error: "Sora 2 Pro generation failed during polling",
+                                    details: pd,
+                                });
+                                return;
+                            }
+                            consecutive400 = 0;
+                        }
+                        catch (e) {
+                            const statusCode = (_15 = e === null || e === void 0 ? void 0 : e.response) === null || _15 === void 0 ? void 0 : _15.status;
+                            const body = (_16 = e === null || e === void 0 ? void 0 : e.response) === null || _16 === void 0 ? void 0 : _16.data;
+                            console.log("[Sora2Pro] Poll error", {
+                                attempt,
+                                statusCode,
+                                body: typeof body === "object"
+                                    ? JSON.stringify(body).slice(0, 500)
+                                    : body,
+                            });
+                            if (statusCode === 400) {
+                                consecutive400++;
+                                if (!switched &&
+                                    pollTaskUUID !== createdTaskUUID &&
+                                    consecutive400 >= 2) {
+                                    console.log("[Sora2Pro] Switching poll UUID due to repeated 400", { from: pollTaskUUID, to: createdTaskUUID });
+                                    pollTaskUUID = createdTaskUUID;
+                                    switched = true;
+                                    consecutive400 = 0;
+                                }
+                                if (consecutive400 >= 5) {
+                                    res.status(502).json({
+                                        success: false,
+                                        error: "Sora 2 Pro polling returned repeated 400 errors",
+                                        details: body || serializeError(e),
+                                    });
+                                    return;
+                                }
+                            }
+                            continue;
+                        }
+                    }
+                }
+                if (!videoUrl) {
+                    res.status(502).json({
+                        success: false,
+                        error: "Sora 2 Pro did not return a video URL",
+                        details: data,
+                    });
+                    return;
+                }
+                let soraProStream;
+                try {
+                    soraProStream = yield axios_1.default.get(videoUrl, {
+                        responseType: "stream",
+                        timeout: 600000,
+                    });
+                }
+                catch (e) {
+                    res.status(500).json({
+                        success: false,
+                        error: "Failed to download Sora 2 Pro video",
+                        details: serializeError(e),
+                    });
+                    return;
+                }
+                let uploadedSoraPro;
+                try {
+                    uploadedSoraPro = yield uploadGeneratedVideo(feature, "sora-2-pro", soraProStream.data);
+                }
+                catch (e) {
+                    res.status(500).json({
+                        success: false,
+                        error: "Failed to upload Sora 2 Pro video to S3",
+                        details: serializeError(e),
+                    });
+                    return;
+                }
+                res.status(200).json({
+                    success: true,
+                    video: {
+                        url: uploadedSoraPro.signedUrl,
+                        signedUrl: uploadedSoraPro.signedUrl,
+                        key: uploadedSoraPro.key,
+                    },
+                    s3Key: uploadedSoraPro.key,
+                });
+                return;
+            }
+            catch (err) {
+                console.error("Sora 2 Pro error:", ((_17 = err === null || err === void 0 ? void 0 : err.response) === null || _17 === void 0 ? void 0 : _17.data) || err);
+                res.status(500).json({
+                    success: false,
+                    error: "Sora 2 Pro generation failed",
+                    details: serializeError(err),
+                });
+                return;
+            }
+        }
+        if (isRunwareHailuo23Fast) {
+            try {
+                console.log("[Hailuo2.3Fast] Start generation", {
+                    feature,
+                    rawModel,
+                    imageCloudUrlInitial: imageCloudUrl === null || imageCloudUrl === void 0 ? void 0 : imageCloudUrl.slice(0, 120),
+                    lastFrameProvided: !!lastFrameCloudUrl,
+                });
+                if (lastFrameCloudUrl) {
+                    console.warn("[Hailuo2.3Fast] last frame provided but ignored (model uses first frame only)");
+                }
+                const runwareHeaders = {
+                    Authorization: `Bearer ${process.env.RUNWARE_API_KEY || process.env.RUNWARE_KEY}`,
+                    "Content-Type": "application/json",
+                };
+                const uploadFrame = (imgUrl) => __awaiter(void 0, void 0, void 0, function* () {
+                    const payload = [
+                        {
+                            taskType: "imageUpload",
+                            taskUUID: (0, crypto_1.randomUUID)(),
+                            image: imgUrl,
+                        },
+                    ];
+                    const resp = yield axios_1.default.post("https://api.runware.ai/v1", payload, {
+                        headers: runwareHeaders,
+                        timeout: 180000,
+                    });
+                    const data = resp.data;
+                    const obj = Array.isArray(data === null || data === void 0 ? void 0 : data.data) ? data.data[0] : data === null || data === void 0 ? void 0 : data.data;
+                    return (obj === null || obj === void 0 ? void 0 : obj.imageUUID) || (obj === null || obj === void 0 ? void 0 : obj.imageUuid);
+                });
+                let firstUUID;
+                try {
+                    firstUUID = yield uploadFrame(imageCloudUrl);
+                    console.log("[Hailuo2.3Fast] imageUpload success", { firstUUID });
+                }
+                catch (e) {
+                    console.error("[Hailuo2.3Fast] imageUpload failed:", ((_18 = e === null || e === void 0 ? void 0 : e.response) === null || _18 === void 0 ? void 0 : _18.data) || (e === null || e === void 0 ? void 0 : e.message) || e);
+                    res.status(400).json({
+                        success: false,
+                        error: "Failed to upload image to Runware (Hailuo 2.3 Fast)",
+                        details: serializeError(e),
+                    });
+                    return;
+                }
+                if (!firstUUID) {
+                    res.status(400).json({
+                        success: false,
+                        error: "Runware imageUpload did not return imageUUID",
+                    });
+                    return;
+                }
+                const allowedDurations = [6, 10];
+                const requestedDuration = Number(process.env.HAILUO23_FAST_DURATION);
+                const duration = allowedDurations.includes(requestedDuration)
+                    ? requestedDuration
+                    : 6;
+                if (duration === 10) {
+                    console.log("[Hailuo2.3Fast] Using 10s duration – ensure input frame is 1366x768 per Runware docs");
+                }
+                const promptOptimizer = String(process.env.HAILUO23_FAST_PROMPT_OPTIMIZER || "false") ===
+                    "true";
+                const createdTaskUUID = (0, crypto_1.randomUUID)();
+                const frameImages = [
+                    { inputImage: firstUUID, frame: "first" },
+                ];
+                const providerSettings = {};
+                if (promptOptimizer) {
+                    providerSettings.minimax = { promptOptimizer: true };
+                }
+                const task = {
+                    taskType: "videoInference",
+                    taskUUID: createdTaskUUID,
+                    model: "minimax:4@2",
+                    positivePrompt: prompt || "",
+                    duration,
+                    deliveryMethod: "async",
+                    frameImages,
+                };
+                if (Object.keys(providerSettings).length > 0) {
+                    task.providerSettings = providerSettings;
+                }
+                console.log("[Hailuo2.3Fast] Created task", {
+                    taskUUID: createdTaskUUID,
+                    duration,
+                    promptOptimizer,
+                });
+                const createResp = yield axios_1.default.post("https://api.runware.ai/v1", [task], {
+                    headers: runwareHeaders,
+                    timeout: 180000,
+                });
+                const data = createResp.data;
+                const ackItem = Array.isArray(data === null || data === void 0 ? void 0 : data.data)
+                    ? data.data.find((d) => (d === null || d === void 0 ? void 0 : d.taskType) === "videoInference") ||
+                        data.data[0]
+                    : data === null || data === void 0 ? void 0 : data.data;
+                let videoUrl = (ackItem === null || ackItem === void 0 ? void 0 : ackItem.videoURL) ||
+                    (ackItem === null || ackItem === void 0 ? void 0 : ackItem.url) ||
+                    (ackItem === null || ackItem === void 0 ? void 0 : ackItem.video) ||
+                    (Array.isArray(ackItem === null || ackItem === void 0 ? void 0 : ackItem.videos) ? ackItem.videos[0] : null);
+                let pollTaskUUID = (ackItem === null || ackItem === void 0 ? void 0 : ackItem.taskUUID) || createdTaskUUID;
+                console.log("[Hailuo2.3Fast] Ack response", {
+                    ackTaskUUID: ackItem === null || ackItem === void 0 ? void 0 : ackItem.taskUUID,
+                    createdTaskUUID,
+                    chosenPollTaskUUID: pollTaskUUID,
+                    immediateVideo: !!videoUrl,
+                    status: (ackItem === null || ackItem === void 0 ? void 0 : ackItem.status) || (ackItem === null || ackItem === void 0 ? void 0 : ackItem.taskStatus),
+                });
+                if (!videoUrl && pollTaskUUID) {
+                    const maxAttempts = 100;
+                    const delay = (ms) => new Promise((r) => setTimeout(r, ms));
+                    let consecutive400 = 0;
+                    let switched = false;
+                    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+                        yield delay(3000);
+                        const pollPayload = [
+                            { taskType: "getResponse", taskUUID: pollTaskUUID },
+                        ];
+                        console.log("[Hailuo2.3Fast] Poll attempt", {
+                            attempt,
+                            pollTaskUUID,
+                        });
+                        try {
+                            const poll = yield axios_1.default.post("https://api.runware.ai/v1", pollPayload, { headers: runwareHeaders, timeout: 60000 });
+                            const pd = poll.data;
+                            const item = Array.isArray(pd === null || pd === void 0 ? void 0 : pd.data)
+                                ? pd.data.find((d) => (d === null || d === void 0 ? void 0 : d.taskUUID) === pollTaskUUID || (d === null || d === void 0 ? void 0 : d.videoURL)) || pd.data[0]
+                                : pd === null || pd === void 0 ? void 0 : pd.data;
+                            const status = (item === null || item === void 0 ? void 0 : item.status) || (item === null || item === void 0 ? void 0 : item.taskStatus);
+                            if (status)
+                                console.log("[Hailuo2.3Fast] Poll status", {
+                                    attempt,
+                                    status,
+                                });
+                            if (status === "success" || (item === null || item === void 0 ? void 0 : item.videoURL) || (item === null || item === void 0 ? void 0 : item.url)) {
+                                videoUrl =
+                                    (item === null || item === void 0 ? void 0 : item.videoURL) ||
+                                        (item === null || item === void 0 ? void 0 : item.url) ||
+                                        (item === null || item === void 0 ? void 0 : item.video) ||
+                                        (Array.isArray(item === null || item === void 0 ? void 0 : item.videos) ? item.videos[0] : null);
+                                if (videoUrl)
+                                    break;
+                            }
+                            if (status === "error" || status === "failed") {
+                                res.status(502).json({
+                                    success: false,
+                                    error: "Hailuo 2.3 Fast generation failed during polling",
+                                    details: pd,
+                                });
+                                return;
+                            }
+                            consecutive400 = 0;
+                        }
+                        catch (e) {
+                            const statusCode = (_19 = e === null || e === void 0 ? void 0 : e.response) === null || _19 === void 0 ? void 0 : _19.status;
+                            const body = (_20 = e === null || e === void 0 ? void 0 : e.response) === null || _20 === void 0 ? void 0 : _20.data;
+                            console.log("[Hailuo2.3Fast] Poll error", {
+                                attempt,
+                                statusCode,
+                                body: typeof body === "object"
+                                    ? JSON.stringify(body).slice(0, 500)
+                                    : body,
+                            });
+                            if (statusCode === 400) {
+                                consecutive400++;
+                                if (!switched &&
+                                    pollTaskUUID !== createdTaskUUID &&
+                                    consecutive400 >= 2) {
+                                    console.log("[Hailuo2.3Fast] Switching poll UUID due to repeated 400", { from: pollTaskUUID, to: createdTaskUUID });
+                                    pollTaskUUID = createdTaskUUID;
+                                    switched = true;
+                                    consecutive400 = 0;
+                                }
+                                if (consecutive400 >= 5) {
+                                    res.status(502).json({
+                                        success: false,
+                                        error: "Hailuo 2.3 Fast polling returned repeated 400 errors",
+                                        details: body || serializeError(e),
+                                    });
+                                    return;
+                                }
+                            }
+                            continue;
+                        }
+                    }
+                }
+                if (!videoUrl) {
+                    res.status(502).json({
+                        success: false,
+                        error: "Hailuo 2.3 Fast did not return a video URL",
+                        details: data,
+                    });
+                    return;
+                }
+                let hailuoFastStream;
+                try {
+                    hailuoFastStream = yield axios_1.default.get(videoUrl, {
+                        responseType: "stream",
+                        timeout: 600000,
+                    });
+                }
+                catch (e) {
+                    res.status(500).json({
+                        success: false,
+                        error: "Failed to download Hailuo 2.3 Fast video",
+                        details: serializeError(e),
+                    });
+                    return;
+                }
+                let uploadedFast;
+                try {
+                    uploadedFast = yield uploadGeneratedVideo(feature, "hailuo-2-3-fast", hailuoFastStream.data);
+                }
+                catch (e) {
+                    res.status(500).json({
+                        success: false,
+                        error: "Failed to upload Hailuo 2.3 Fast video to S3",
+                        details: serializeError(e),
+                    });
+                    return;
+                }
+                res.status(200).json({
+                    success: true,
+                    video: {
+                        url: uploadedFast.signedUrl,
+                        signedUrl: uploadedFast.signedUrl,
+                        key: uploadedFast.key,
+                    },
+                    s3Key: uploadedFast.key,
+                });
+                return;
+            }
+            catch (err) {
+                console.error("Hailuo 2.3 Fast error:", ((_21 = err === null || err === void 0 ? void 0 : err.response) === null || _21 === void 0 ? void 0 : _21.data) || err);
+                res.status(500).json({
+                    success: false,
+                    error: "Hailuo 2.3 Fast generation failed",
+                    details: serializeError(err),
+                });
+                return;
+            }
+        }
+        if (isRunwareHailuo23) {
+            try {
+                console.log("[Hailuo2.3] Start generation", {
+                    feature,
+                    rawModel,
+                    imageCloudUrlInitial: imageCloudUrl === null || imageCloudUrl === void 0 ? void 0 : imageCloudUrl.slice(0, 120),
+                    lastFrameProvided: !!lastFrameCloudUrl,
+                });
+                if (lastFrameCloudUrl) {
+                    console.warn("[Hailuo2.3] last frame provided but ignored (model uses first frame only)");
+                }
+                const runwareHeaders = {
+                    Authorization: `Bearer ${process.env.RUNWARE_API_KEY || process.env.RUNWARE_KEY}`,
+                    "Content-Type": "application/json",
+                };
+                const uploadFrame = (imgUrl) => __awaiter(void 0, void 0, void 0, function* () {
+                    const payload = [
+                        {
+                            taskType: "imageUpload",
+                            taskUUID: (0, crypto_1.randomUUID)(),
+                            image: imgUrl,
+                        },
+                    ];
+                    const resp = yield axios_1.default.post("https://api.runware.ai/v1", payload, {
+                        headers: runwareHeaders,
+                        timeout: 180000,
+                    });
+                    const data = resp.data;
+                    const obj = Array.isArray(data === null || data === void 0 ? void 0 : data.data) ? data.data[0] : data === null || data === void 0 ? void 0 : data.data;
+                    return (obj === null || obj === void 0 ? void 0 : obj.imageUUID) || (obj === null || obj === void 0 ? void 0 : obj.imageUuid);
+                });
+                let firstUUID;
+                try {
+                    firstUUID = yield uploadFrame(imageCloudUrl);
+                    console.log("[Hailuo2.3] imageUpload success", { firstUUID });
+                }
+                catch (e) {
+                    console.error("[Hailuo2.3] imageUpload failed:", ((_22 = e === null || e === void 0 ? void 0 : e.response) === null || _22 === void 0 ? void 0 : _22.data) || (e === null || e === void 0 ? void 0 : e.message) || e);
+                    res.status(400).json({
+                        success: false,
+                        error: "Failed to upload image to Runware (Hailuo 2.3)",
+                        details: serializeError(e),
+                    });
+                    return;
+                }
+                if (!firstUUID) {
+                    res.status(400).json({
+                        success: false,
+                        error: "Runware imageUpload did not return imageUUID",
+                    });
+                    return;
+                }
+                const allowedDurations = [6, 10];
+                const requestedDuration = Number(process.env.HAILUO23_DURATION);
+                const duration = allowedDurations.includes(requestedDuration)
+                    ? requestedDuration
+                    : 6;
+                if (duration === 10) {
+                    console.log("[Hailuo2.3] Using 10s duration – ensure source frame is 1366x768 per Runware docs");
+                }
+                const promptOptimizer = String(process.env.HAILUO23_PROMPT_OPTIMIZER || "false") === "true";
+                const createdTaskUUID = (0, crypto_1.randomUUID)();
+                const frameImages = [
+                    { inputImage: firstUUID, frame: "first" },
+                ];
+                const providerSettings = {};
+                if (promptOptimizer) {
+                    providerSettings.minimax = { promptOptimizer: true };
+                }
+                const task = {
+                    taskType: "videoInference",
+                    taskUUID: createdTaskUUID,
+                    model: "minimax:4@1",
+                    positivePrompt: prompt || "",
+                    duration,
+                    deliveryMethod: "async",
+                    frameImages,
+                };
+                if (Object.keys(providerSettings).length > 0) {
+                    task.providerSettings = providerSettings;
+                }
+                console.log("[Hailuo2.3] Created task", {
+                    taskUUID: createdTaskUUID,
+                    duration,
+                    promptOptimizer,
+                });
+                const createResp = yield axios_1.default.post("https://api.runware.ai/v1", [task], {
+                    headers: runwareHeaders,
+                    timeout: 180000,
+                });
+                const data = createResp.data;
+                const ackItem = Array.isArray(data === null || data === void 0 ? void 0 : data.data)
+                    ? data.data.find((d) => (d === null || d === void 0 ? void 0 : d.taskType) === "videoInference") ||
+                        data.data[0]
+                    : data === null || data === void 0 ? void 0 : data.data;
+                let videoUrl = (ackItem === null || ackItem === void 0 ? void 0 : ackItem.videoURL) ||
+                    (ackItem === null || ackItem === void 0 ? void 0 : ackItem.url) ||
+                    (ackItem === null || ackItem === void 0 ? void 0 : ackItem.video) ||
+                    (Array.isArray(ackItem === null || ackItem === void 0 ? void 0 : ackItem.videos) ? ackItem.videos[0] : null);
+                let pollTaskUUID = (ackItem === null || ackItem === void 0 ? void 0 : ackItem.taskUUID) || createdTaskUUID;
+                console.log("[Hailuo2.3] Ack response", {
+                    ackTaskUUID: ackItem === null || ackItem === void 0 ? void 0 : ackItem.taskUUID,
+                    createdTaskUUID,
+                    chosenPollTaskUUID: pollTaskUUID,
+                    immediateVideo: !!videoUrl,
+                    status: (ackItem === null || ackItem === void 0 ? void 0 : ackItem.status) || (ackItem === null || ackItem === void 0 ? void 0 : ackItem.taskStatus),
+                });
+                if (!videoUrl && pollTaskUUID) {
+                    const maxAttempts = 100;
+                    const delay = (ms) => new Promise((r) => setTimeout(r, ms));
+                    let consecutive400 = 0;
+                    let switched = false;
+                    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+                        yield delay(3000);
+                        const pollPayload = [
+                            { taskType: "getResponse", taskUUID: pollTaskUUID },
+                        ];
+                        console.log("[Hailuo2.3] Poll attempt", {
+                            attempt,
+                            pollTaskUUID,
+                        });
+                        try {
+                            const poll = yield axios_1.default.post("https://api.runware.ai/v1", pollPayload, { headers: runwareHeaders, timeout: 60000 });
+                            const pd = poll.data;
+                            const item = Array.isArray(pd === null || pd === void 0 ? void 0 : pd.data)
+                                ? pd.data.find((d) => (d === null || d === void 0 ? void 0 : d.taskUUID) === pollTaskUUID || (d === null || d === void 0 ? void 0 : d.videoURL)) || pd.data[0]
+                                : pd === null || pd === void 0 ? void 0 : pd.data;
+                            const status = (item === null || item === void 0 ? void 0 : item.status) || (item === null || item === void 0 ? void 0 : item.taskStatus);
+                            if (status)
+                                console.log("[Hailuo2.3] Poll status", { attempt, status });
+                            if (status === "success" || (item === null || item === void 0 ? void 0 : item.videoURL) || (item === null || item === void 0 ? void 0 : item.url)) {
+                                videoUrl =
+                                    (item === null || item === void 0 ? void 0 : item.videoURL) ||
+                                        (item === null || item === void 0 ? void 0 : item.url) ||
+                                        (item === null || item === void 0 ? void 0 : item.video) ||
+                                        (Array.isArray(item === null || item === void 0 ? void 0 : item.videos) ? item.videos[0] : null);
+                                if (videoUrl)
+                                    break;
+                            }
+                            if (status === "error" || status === "failed") {
+                                res.status(502).json({
+                                    success: false,
+                                    error: "Hailuo 2.3 generation failed during polling",
+                                    details: pd,
+                                });
+                                return;
+                            }
+                            consecutive400 = 0;
+                        }
+                        catch (e) {
+                            const statusCode = (_23 = e === null || e === void 0 ? void 0 : e.response) === null || _23 === void 0 ? void 0 : _23.status;
+                            const body = (_24 = e === null || e === void 0 ? void 0 : e.response) === null || _24 === void 0 ? void 0 : _24.data;
+                            console.log("[Hailuo2.3] Poll error", {
+                                attempt,
+                                statusCode,
+                                body: typeof body === "object"
+                                    ? JSON.stringify(body).slice(0, 500)
+                                    : body,
+                            });
+                            if (statusCode === 400) {
+                                consecutive400++;
+                                if (!switched &&
+                                    pollTaskUUID !== createdTaskUUID &&
+                                    consecutive400 >= 2) {
+                                    console.log("[Hailuo2.3] Switching poll UUID due to repeated 400", { from: pollTaskUUID, to: createdTaskUUID });
+                                    pollTaskUUID = createdTaskUUID;
+                                    switched = true;
+                                    consecutive400 = 0;
+                                }
+                                if (consecutive400 >= 5) {
+                                    res.status(502).json({
+                                        success: false,
+                                        error: "Hailuo 2.3 polling returned repeated 400 errors",
+                                        details: body || serializeError(e),
+                                    });
+                                    return;
+                                }
+                            }
+                            continue;
+                        }
+                    }
+                }
+                if (!videoUrl) {
+                    res.status(502).json({
+                        success: false,
+                        error: "Hailuo 2.3 did not return a video URL",
+                        details: data,
+                    });
+                    return;
+                }
+                let hailuoStream;
+                try {
+                    hailuoStream = yield axios_1.default.get(videoUrl, {
+                        responseType: "stream",
+                        timeout: 600000,
+                    });
+                }
+                catch (e) {
+                    res.status(500).json({
+                        success: false,
+                        error: "Failed to download Hailuo 2.3 video",
+                        details: serializeError(e),
+                    });
+                    return;
+                }
+                let uploaded;
+                try {
+                    uploaded = yield uploadGeneratedVideo(feature, "hailuo-2-3", hailuoStream.data);
+                }
+                catch (e) {
+                    res.status(500).json({
+                        success: false,
+                        error: "Failed to upload Hailuo 2.3 video to S3",
+                        details: serializeError(e),
+                    });
+                    return;
+                }
+                res.status(200).json({
+                    success: true,
+                    video: {
+                        url: uploaded.signedUrl,
+                        signedUrl: uploaded.signedUrl,
+                        key: uploaded.key,
+                    },
+                    s3Key: uploaded.key,
+                });
+                return;
+            }
+            catch (err) {
+                console.error("Hailuo 2.3 error:", ((_25 = err === null || err === void 0 ? void 0 : err.response) === null || _25 === void 0 ? void 0 : _25.data) || err);
+                res.status(500).json({
+                    success: false,
+                    error: "Hailuo 2.3 generation failed",
+                    details: serializeError(err),
+                });
+                return;
+            }
+        }
         if (isPixverseTransition || isPixverseImage2Video) {
             // Ensure 512x512 for Pixverse-compatible inputs for ANY host (S3/Cloudinary/etc)
             const force512 = (url) => {
@@ -1825,7 +3120,11 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                     return maybeCloud;
                 try {
                     const ensured = yield (0, s3_1.ensure512SquareImageFromUrl)(url);
-                    const key = (0, s3_1.makeKey)({ type: "image", feature: "pixverse-512", ext: "png" });
+                    const key = (0, s3_1.makeKey)({
+                        type: "image",
+                        feature: "pixverse-512",
+                        ext: "png",
+                    });
                     yield (0, s3_1.uploadBuffer)(key, ensured.buffer, ensured.contentType);
                     const signed = yield (0, signedUrl_1.signKey)(key);
                     return signed;
@@ -1940,11 +3239,11 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                 console.error("Pixverse create error (single attempt):", {
                     error: pixErr,
                     payload: createPayload,
-                    serverResponse: (_1 = pixErr === null || pixErr === void 0 ? void 0 : pixErr.response) === null || _1 === void 0 ? void 0 : _1.data,
+                    serverResponse: (_26 = pixErr === null || pixErr === void 0 ? void 0 : pixErr.response) === null || _26 === void 0 ? void 0 : _26.data,
                 });
                 const e = err;
-                let provider_message = ((_3 = (_2 = e === null || e === void 0 ? void 0 : e.response) === null || _2 === void 0 ? void 0 : _2.data) === null || _3 === void 0 ? void 0 : _3.message) ||
-                    ((_5 = (_4 = e === null || e === void 0 ? void 0 : e.response) === null || _4 === void 0 ? void 0 : _4.data) === null || _5 === void 0 ? void 0 : _5.error) ||
+                let provider_message = ((_28 = (_27 = e === null || e === void 0 ? void 0 : e.response) === null || _27 === void 0 ? void 0 : _27.data) === null || _28 === void 0 ? void 0 : _28.message) ||
+                    ((_30 = (_29 = e === null || e === void 0 ? void 0 : e.response) === null || _29 === void 0 ? void 0 : _29.data) === null || _30 === void 0 ? void 0 : _30.error) ||
                     (e === null || e === void 0 ? void 0 : e.message) ||
                     "Unknown error";
                 res.status(502).json({
@@ -1976,7 +3275,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                             pixVideoUrl =
                                 out.video_url ||
                                     out.video ||
-                                    (Array.isArray(out) ? ((_6 = out[0]) === null || _6 === void 0 ? void 0 : _6.video_url) || out[0] : null) ||
+                                    (Array.isArray(out) ? ((_31 = out[0]) === null || _31 === void 0 ? void 0 : _31.video_url) || out[0] : null) ||
                                     result.video_url ||
                                     result.video ||
                                     out.url ||
@@ -2185,7 +3484,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                 console.error("Vidu Q1 create error:", {
                     error: viduQ1Err,
                     payload: createPayload,
-                    serverResponse: (_7 = viduQ1Err === null || viduQ1Err === void 0 ? void 0 : viduQ1Err.response) === null || _7 === void 0 ? void 0 : _7.data,
+                    serverResponse: (_32 = viduQ1Err === null || viduQ1Err === void 0 ? void 0 : viduQ1Err.response) === null || _32 === void 0 ? void 0 : _32.data,
                 });
                 res.status(502).json({
                     success: false,
@@ -2212,7 +3511,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                             viduVideoUrl =
                                 out.video_url ||
                                     out.video ||
-                                    (Array.isArray(out) ? ((_8 = out[0]) === null || _8 === void 0 ? void 0 : _8.video_url) || out[0] : null) ||
+                                    (Array.isArray(out) ? ((_33 = out[0]) === null || _33 === void 0 ? void 0 : _33.video_url) || out[0] : null) ||
                                     result.video_url ||
                                     result.video ||
                                     out.url ||
@@ -2363,11 +3662,11 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                 console.error("Vidu 1.5 create error:", {
                     error: vidu15Err,
                     payload: createPayload,
-                    serverResponse: (_9 = vidu15Err === null || vidu15Err === void 0 ? void 0 : vidu15Err.response) === null || _9 === void 0 ? void 0 : _9.data,
+                    serverResponse: (_34 = vidu15Err === null || vidu15Err === void 0 ? void 0 : vidu15Err.response) === null || _34 === void 0 ? void 0 : _34.data,
                 });
                 res.status(502).json({
                     success: false,
-                    error: (_10 = vidu15Err === null || vidu15Err === void 0 ? void 0 : vidu15Err.response) === null || _10 === void 0 ? void 0 : _10.data.details,
+                    error: (_35 = vidu15Err === null || vidu15Err === void 0 ? void 0 : vidu15Err.response) === null || _35 === void 0 ? void 0 : _35.data.details,
                     details: serializeError(err),
                 });
                 return;
@@ -2390,7 +3689,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                             viduVideoUrl =
                                 out.video_url ||
                                     out.video ||
-                                    (Array.isArray(out) ? ((_11 = out[0]) === null || _11 === void 0 ? void 0 : _11.video_url) || out[0] : null) ||
+                                    (Array.isArray(out) ? ((_36 = out[0]) === null || _36 === void 0 ? void 0 : _36.video_url) || out[0] : null) ||
                                     result.video_url ||
                                     result.video ||
                                     out.url ||
@@ -2544,7 +3843,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                 console.error("Vidu Q1 I2V create error:", {
                     error: viduQ1I2VErr,
                     payload: createPayload,
-                    serverResponse: (_12 = viduQ1I2VErr === null || viduQ1I2VErr === void 0 ? void 0 : viduQ1I2VErr.response) === null || _12 === void 0 ? void 0 : _12.data,
+                    serverResponse: (_37 = viduQ1I2VErr === null || viduQ1I2VErr === void 0 ? void 0 : viduQ1I2VErr.response) === null || _37 === void 0 ? void 0 : _37.data,
                 });
                 res.status(502).json({
                     success: false,
@@ -2573,7 +3872,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                             viduVideoUrl =
                                 out.video_url ||
                                     out.video ||
-                                    (Array.isArray(out) ? ((_13 = out[0]) === null || _13 === void 0 ? void 0 : _13.video_url) || out[0] : null) ||
+                                    (Array.isArray(out) ? ((_38 = out[0]) === null || _38 === void 0 ? void 0 : _38.video_url) || out[0] : null) ||
                                     out.url ||
                                     result.data.url ||
                                     null;
@@ -2595,7 +3894,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                                 ? `Vidu Q1 I2V prediction failed: ${provider_message}`
                                 : "Vidu Q1 I2V prediction failed",
                             provider: "ViduQ1I2V",
-                            provider_status: (_14 = result.data) === null || _14 === void 0 ? void 0 : _14.status,
+                            provider_status: (_39 = result.data) === null || _39 === void 0 ? void 0 : _39.status,
                             provider_message,
                             details: safeJson(result.data),
                         });
@@ -2725,7 +4024,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                 console.error("Vidu 2.0 create error:", {
                     error: vidu20Err,
                     payload: createPayload,
-                    serverResponse: (_15 = vidu20Err === null || vidu20Err === void 0 ? void 0 : vidu20Err.response) === null || _15 === void 0 ? void 0 : _15.data,
+                    serverResponse: (_40 = vidu20Err === null || vidu20Err === void 0 ? void 0 : vidu20Err.response) === null || _40 === void 0 ? void 0 : _40.data,
                 });
                 res.status(502).json({
                     success: false,
@@ -2756,7 +4055,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                             viduVideoUrl =
                                 out.video_url ||
                                     out.video ||
-                                    (Array.isArray(out) ? ((_16 = out[0]) === null || _16 === void 0 ? void 0 : _16.video_url) || out[0] : null) ||
+                                    (Array.isArray(out) ? ((_41 = out[0]) === null || _41 === void 0 ? void 0 : _41.video_url) || out[0] : null) ||
                                     result.video_url ||
                                     result.video ||
                                     out.url ||
@@ -2911,7 +4210,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                 console.error("Veo 2 Image to Video create error:", {
                     error: veo2Err,
                     payload: createPayload,
-                    serverResponse: (_17 = veo2Err === null || veo2Err === void 0 ? void 0 : veo2Err.response) === null || _17 === void 0 ? void 0 : _17.data,
+                    serverResponse: (_42 = veo2Err === null || veo2Err === void 0 ? void 0 : veo2Err.response) === null || _42 === void 0 ? void 0 : _42.data,
                 });
                 res.status(502).json({
                     success: false,
@@ -2942,7 +4241,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                             veoVideoUrl =
                                 out.video_url ||
                                     out.video ||
-                                    (Array.isArray(out) ? ((_18 = out[0]) === null || _18 === void 0 ? void 0 : _18.video_url) || out[0] : null) ||
+                                    (Array.isArray(out) ? ((_43 = out[0]) === null || _43 === void 0 ? void 0 : _43.video_url) || out[0] : null) ||
                                     result.video_url ||
                                     result.video ||
                                     out.url ||
@@ -3095,7 +4394,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                 console.error("Veo 3 Image to Video create error:", {
                     error: veo3Err,
                     payload: createPayload,
-                    serverResponse: (_19 = veo3Err === null || veo3Err === void 0 ? void 0 : veo3Err.response) === null || _19 === void 0 ? void 0 : _19.data,
+                    serverResponse: (_44 = veo3Err === null || veo3Err === void 0 ? void 0 : veo3Err.response) === null || _44 === void 0 ? void 0 : _44.data,
                 });
                 res.status(502).json({
                     success: false,
@@ -3126,7 +4425,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                             veoVideoUrl =
                                 out.video_url ||
                                     out.video ||
-                                    (Array.isArray(out) ? ((_20 = out[0]) === null || _20 === void 0 ? void 0 : _20.video_url) || out[0] : null) ||
+                                    (Array.isArray(out) ? ((_45 = out[0]) === null || _45 === void 0 ? void 0 : _45.video_url) || out[0] : null) ||
                                     result.video_url ||
                                     result.video ||
                                     out.url ||
@@ -3249,7 +4548,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                     try {
                         audioUrl = yield (0, signedUrl_1.signKey)(audioKey);
                     }
-                    catch (_64) {
+                    catch (_90) {
                         audioUrl = (0, s3_1.publicUrlFor)(audioKey); // fallback (may be private)
                     }
                 }
@@ -3328,8 +4627,8 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
             }
             catch (e) {
                 console.error("[Bytedance] Creation error:", serializeError(e));
-                const provider_message = ((_22 = (_21 = e === null || e === void 0 ? void 0 : e.response) === null || _21 === void 0 ? void 0 : _21.data) === null || _22 === void 0 ? void 0 : _22.message) ||
-                    ((_24 = (_23 = e === null || e === void 0 ? void 0 : e.response) === null || _23 === void 0 ? void 0 : _23.data) === null || _24 === void 0 ? void 0 : _24.error) ||
+                const provider_message = ((_47 = (_46 = e === null || e === void 0 ? void 0 : e.response) === null || _46 === void 0 ? void 0 : _46.data) === null || _47 === void 0 ? void 0 : _47.message) ||
+                    ((_49 = (_48 = e === null || e === void 0 ? void 0 : e.response) === null || _48 === void 0 ? void 0 : _48.data) === null || _49 === void 0 ? void 0 : _49.error) ||
                     (e === null || e === void 0 ? void 0 : e.message) ||
                     "Unknown error";
                 res.status(502).json({
@@ -3504,7 +4803,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
             }
             catch (e) {
                 // already using e as any here, so no change needed
-                const respData = (_25 = e === null || e === void 0 ? void 0 : e.response) === null || _25 === void 0 ? void 0 : _25.data;
+                const respData = (_50 = e === null || e === void 0 ? void 0 : e.response) === null || _50 === void 0 ? void 0 : _50.data;
                 const base = (respData === null || respData === void 0 ? void 0 : respData.base_resp) || {};
                 const provider_code = base === null || base === void 0 ? void 0 : base.status_code;
                 const provider_message = (base === null || base === void 0 ? void 0 : base.status_msg) || (respData === null || respData === void 0 ? void 0 : respData.message) || (e === null || e === void 0 ? void 0 : e.message);
@@ -3532,26 +4831,26 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                         params: { task_id: taskId },
                         timeout: 20000,
                     });
-                    const status = (_26 = pollResp.data) === null || _26 === void 0 ? void 0 : _26.status;
+                    const status = (_51 = pollResp.data) === null || _51 === void 0 ? void 0 : _51.status;
                     if (status === "Success" || status === "success") {
                         // Assume file_id -> downloadable endpoint
-                        const fileId = (_27 = pollResp.data) === null || _27 === void 0 ? void 0 : _27.file_id;
+                        const fileId = (_52 = pollResp.data) === null || _52 === void 0 ? void 0 : _52.file_id;
                         console.log("MiniMax generation success payload:", safeJson(pollResp.data));
                         mmFileId = fileId || null;
                         // If API already provides a direct downloadable URL use it, else will fetch below
                         mmVideoUrl =
-                            ((_28 = pollResp.data) === null || _28 === void 0 ? void 0 : _28.video_url) || ((_29 = pollResp.data) === null || _29 === void 0 ? void 0 : _29.file_url) || null;
+                            ((_53 = pollResp.data) === null || _53 === void 0 ? void 0 : _53.video_url) || ((_54 = pollResp.data) === null || _54 === void 0 ? void 0 : _54.file_url) || null;
                         break; // exit loop, will handle retrieval next
                     }
                     if (status === "Fail" ||
                         status === "failed" ||
                         status === "error") {
-                        const base = ((_30 = pollResp.data) === null || _30 === void 0 ? void 0 : _30.base_resp) || {};
+                        const base = ((_55 = pollResp.data) === null || _55 === void 0 ? void 0 : _55.base_resp) || {};
                         const provider_code = base === null || base === void 0 ? void 0 : base.status_code;
                         const provider_message = (base === null || base === void 0 ? void 0 : base.status_msg) ||
-                            ((_31 = pollResp.data) === null || _31 === void 0 ? void 0 : _31.status_reason) ||
-                            ((_32 = pollResp.data) === null || _32 === void 0 ? void 0 : _32.message) ||
-                            ((_33 = pollResp.data) === null || _33 === void 0 ? void 0 : _33.status);
+                            ((_56 = pollResp.data) === null || _56 === void 0 ? void 0 : _56.status_reason) ||
+                            ((_57 = pollResp.data) === null || _57 === void 0 ? void 0 : _57.message) ||
+                            ((_58 = pollResp.data) === null || _58 === void 0 ? void 0 : _58.status);
                         res.status(500).json({
                             success: false,
                             error: provider_message
@@ -3560,7 +4859,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                             provider: "MiniMax",
                             provider_code,
                             provider_message,
-                            provider_status: (_34 = pollResp.data) === null || _34 === void 0 ? void 0 : _34.status,
+                            provider_status: (_59 = pollResp.data) === null || _59 === void 0 ? void 0 : _59.status,
                             details: safeJson(pollResp.data),
                         });
                         return;
@@ -3593,8 +4892,8 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                         timeout: 30000,
                     });
                     mmVideoUrl =
-                        ((_36 = (_35 = retrieveResp.data) === null || _35 === void 0 ? void 0 : _35.file) === null || _36 === void 0 ? void 0 : _36.download_url) ||
-                            ((_37 = retrieveResp.data) === null || _37 === void 0 ? void 0 : _37.download_url) ||
+                        ((_61 = (_60 = retrieveResp.data) === null || _60 === void 0 ? void 0 : _60.file) === null || _61 === void 0 ? void 0 : _61.download_url) ||
+                            ((_62 = retrieveResp.data) === null || _62 === void 0 ? void 0 : _62.download_url) ||
                             null;
                     if (!mmVideoUrl) {
                         console.error("MiniMax retrieve missing download_url", safeJson(retrieveResp.data));
@@ -3610,7 +4909,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                 }
                 catch (e) {
                     console.error("MiniMax retrieve error:", serializeError(e));
-                    const respData = (_38 = e === null || e === void 0 ? void 0 : e.response) === null || _38 === void 0 ? void 0 : _38.data;
+                    const respData = (_63 = e === null || e === void 0 ? void 0 : e.response) === null || _63 === void 0 ? void 0 : _63.data;
                     const base = (respData === null || respData === void 0 ? void 0 : respData.base_resp) || {};
                     const provider_code = base === null || base === void 0 ? void 0 : base.status_code;
                     const provider_message = (base === null || base === void 0 ? void 0 : base.status_msg) || (respData === null || respData === void 0 ? void 0 : respData.message) || (e === null || e === void 0 ? void 0 : e.message);
@@ -3645,7 +4944,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                 });
             }
             catch (e) {
-                const respData = (_39 = e === null || e === void 0 ? void 0 : e.response) === null || _39 === void 0 ? void 0 : _39.data;
+                const respData = (_64 = e === null || e === void 0 ? void 0 : e.response) === null || _64 === void 0 ? void 0 : _64.data;
                 const base = (respData === null || respData === void 0 ? void 0 : respData.base_resp) || {};
                 const provider_code = base === null || base === void 0 ? void 0 : base.status_code;
                 const provider_message = (base === null || base === void 0 ? void 0 : base.status_msg) || (respData === null || respData === void 0 ? void 0 : respData.message) || (e === null || e === void 0 ? void 0 : e.message);
@@ -3687,6 +4986,13 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
             });
             return;
         }
+        if (!isLumaModel) {
+            res.status(400).json({
+                success: false,
+                error: `Unsupported or unrecognized model: ${rawModel}`,
+            });
+            return;
+        }
         // Step 3 (fallback): Generate video using LumaLabs Dream Machine (Ray 2 - Image to Video)
         const lumaApiKey = process.env.LUMA_API_KEY;
         if (!lumaApiKey) {
@@ -3694,9 +5000,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
         }
         // Map friendly model names to Luma identifiers
         const resolveLumaModel = (val) => {
-            const v = (val || process.env.LUMA_MODE || "ray 2")
-                .toString()
-                .toLowerCase();
+            const v = val.toString().toLowerCase();
             if (v.includes("1.6"))
                 return "ray-1-6";
             if (v.includes("flash"))
@@ -3759,9 +5063,9 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                 console.error("Luma create generation error:", {
                     error: serializeError(e),
                     payload: lumaPayload,
-                    serverResponse: (_40 = e === null || e === void 0 ? void 0 : e.response) === null || _40 === void 0 ? void 0 : _40.data,
+                    serverResponse: (_65 = e === null || e === void 0 ? void 0 : e.response) === null || _65 === void 0 ? void 0 : _65.data,
                 });
-                const respData = (_41 = e === null || e === void 0 ? void 0 : e.response) === null || _41 === void 0 ? void 0 : _41.data;
+                const respData = (_66 = e === null || e === void 0 ? void 0 : e.response) === null || _66 === void 0 ? void 0 : _66.data;
                 // Prefer detail/message/error from server response for user-facing error
                 const userMessage = (respData === null || respData === void 0 ? void 0 : respData.detail) ||
                     (respData === null || respData === void 0 ? void 0 : respData.message) ||
@@ -3787,7 +5091,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
             });
             return;
         }
-        const generationId = ((_42 = createGenRes.data) === null || _42 === void 0 ? void 0 : _42.id) || ((_44 = (_43 = createGenRes.data) === null || _43 === void 0 ? void 0 : _43.data) === null || _44 === void 0 ? void 0 : _44.id);
+        const generationId = ((_67 = createGenRes.data) === null || _67 === void 0 ? void 0 : _67.id) || ((_69 = (_68 = createGenRes.data) === null || _68 === void 0 ? void 0 : _68.data) === null || _69 === void 0 ? void 0 : _69.id);
         if (!generationId) {
             res.status(500).json({
                 success: false,
@@ -3832,33 +5136,33 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
             }
             // Try to read state/status and the video URL in a robust way
             state =
-                ((_45 = pollRes.data) === null || _45 === void 0 ? void 0 : _45.state) ||
-                    ((_46 = pollRes.data) === null || _46 === void 0 ? void 0 : _46.status) ||
-                    ((_48 = (_47 = pollRes.data) === null || _47 === void 0 ? void 0 : _47.data) === null || _48 === void 0 ? void 0 : _48.state) ||
+                ((_70 = pollRes.data) === null || _70 === void 0 ? void 0 : _70.state) ||
+                    ((_71 = pollRes.data) === null || _71 === void 0 ? void 0 : _71.status) ||
+                    ((_73 = (_72 = pollRes.data) === null || _72 === void 0 ? void 0 : _72.data) === null || _73 === void 0 ? void 0 : _73.state) ||
                     "";
             if (state === "completed") {
                 videoUrl =
-                    ((_50 = (_49 = pollRes.data) === null || _49 === void 0 ? void 0 : _49.assets) === null || _50 === void 0 ? void 0 : _50.video) ||
-                        ((_51 = pollRes.data) === null || _51 === void 0 ? void 0 : _51.video) ||
-                        ((_53 = (_52 = pollRes.data) === null || _52 === void 0 ? void 0 : _52.data) === null || _53 === void 0 ? void 0 : _53.video_url) ||
-                        ((_57 = (_56 = (_55 = (_54 = pollRes.data) === null || _54 === void 0 ? void 0 : _54.assets) === null || _55 === void 0 ? void 0 : _55.mp4) === null || _56 === void 0 ? void 0 : _56[0]) === null || _57 === void 0 ? void 0 : _57.url) ||
+                    ((_75 = (_74 = pollRes.data) === null || _74 === void 0 ? void 0 : _74.assets) === null || _75 === void 0 ? void 0 : _75.video) ||
+                        ((_76 = pollRes.data) === null || _76 === void 0 ? void 0 : _76.video) ||
+                        ((_78 = (_77 = pollRes.data) === null || _77 === void 0 ? void 0 : _77.data) === null || _78 === void 0 ? void 0 : _78.video_url) ||
+                        ((_82 = (_81 = (_80 = (_79 = pollRes.data) === null || _79 === void 0 ? void 0 : _79.assets) === null || _80 === void 0 ? void 0 : _80.mp4) === null || _81 === void 0 ? void 0 : _81[0]) === null || _82 === void 0 ? void 0 : _82.url) ||
                         null;
                 console.log("Luma poll response:", pollRes.data);
                 break;
             }
             if (state === "failed") {
                 console.error("Luma generation failed:", pollRes.data);
-                const provider_message = ((_58 = pollRes.data) === null || _58 === void 0 ? void 0 : _58.failure_reason) ||
-                    ((_59 = pollRes.data) === null || _59 === void 0 ? void 0 : _59.error) ||
-                    ((_60 = pollRes.data) === null || _60 === void 0 ? void 0 : _60.message) ||
-                    ((_61 = pollRes.data) === null || _61 === void 0 ? void 0 : _61.state);
+                const provider_message = ((_83 = pollRes.data) === null || _83 === void 0 ? void 0 : _83.failure_reason) ||
+                    ((_84 = pollRes.data) === null || _84 === void 0 ? void 0 : _84.error) ||
+                    ((_85 = pollRes.data) === null || _85 === void 0 ? void 0 : _85.message) ||
+                    ((_86 = pollRes.data) === null || _86 === void 0 ? void 0 : _86.state);
                 res.status(500).json({
                     success: false,
                     error: provider_message
                         ? `Luma generation failed: ${provider_message}`
                         : "Luma generation failed",
                     provider: "Luma",
-                    provider_status: (_62 = pollRes.data) === null || _62 === void 0 ? void 0 : _62.state,
+                    provider_status: (_87 = pollRes.data) === null || _87 === void 0 ? void 0 : _87.state,
                     provider_message,
                     details: safeJson(pollRes.data),
                 });
@@ -3886,7 +5190,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
         }
         catch (err) {
             const e = err;
-            console.error("Error downloading Luma video:", ((_63 = e === null || e === void 0 ? void 0 : e.response) === null || _63 === void 0 ? void 0 : _63.data) || e);
+            console.error("Error downloading Luma video:", ((_88 = e === null || e === void 0 ? void 0 : e.response) === null || _88 === void 0 ? void 0 : _88.data) || e);
             res.status(500).json({
                 success: false,
                 error: "Failed to download Luma video",
