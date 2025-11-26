@@ -476,6 +476,25 @@ window.addEventListener("DOMContentLoaded", function () {
             errorDiv.textContent = data.message || "Invalid credentials.";
           return;
         }
+
+        // Check if 2FA is required (admin login)
+        if (data.requires2FA) {
+          // Hide sign in modal and show 2FA verification modal
+          const signInModal = document.getElementById("signInModal");
+          if (signInModal) signInModal.style.display = "none";
+          show2FAVerifyModal(data.tempToken, data.user);
+          return;
+        }
+
+        // Check if 2FA setup is required (admin first login)
+        if (data.requires2FASetup) {
+          // Hide sign in modal and show 2FA setup modal
+          const signInModal = document.getElementById("signInModal");
+          if (signInModal) signInModal.style.display = "none";
+          show2FASetupModal(data.tempToken, data.user);
+          return;
+        }
+
         // Persist token, user email and role
         if (data && data.accessToken) {
           localStorage.setItem("token", data.accessToken);
@@ -6082,3 +6101,256 @@ window.closeCartoonCharacterDetailPage = closeCartoonCharacterDetailPage;
 window.showCartoonCharacterDetailPage = showCartoonCharacterDetailPage;
 window.loadAllCartoonCharacters = loadAllCartoonCharacters;
 window.displayCartoonCharacters = displayCartoonCharacters;
+
+// ============================================
+// === TWO-FACTOR AUTHENTICATION (2FA) ===
+// ============================================
+
+// Show 2FA Setup Modal for admin first-time login
+async function show2FASetupModal(tempToken, user) {
+  const modal = document.getElementById("twoFactorSetupModal");
+  if (!modal) {
+    console.error("2FA setup modal not found");
+    return;
+  }
+
+  // Store temp token for later use
+  modal.dataset.tempToken = tempToken;
+  modal.dataset.userEmail = user.email;
+  modal.dataset.userRole = user.role;
+
+  // Reset modal state
+  const qrContainer = document.getElementById("twoFactorQRCode");
+  const secretDisplay = document.getElementById("twoFactorSecret");
+  const verifySection = document.getElementById("twoFactorVerifySection");
+  const loadingSection = document.getElementById("twoFactorLoadingSection");
+  const errorDiv = document.getElementById("twoFactorSetupError");
+
+  if (qrContainer) qrContainer.innerHTML = "";
+  if (secretDisplay) secretDisplay.textContent = "";
+  if (verifySection) verifySection.style.display = "none";
+  if (loadingSection) loadingSection.style.display = "flex";
+  if (errorDiv) errorDiv.textContent = "";
+
+  // Show modal
+  modal.classList.remove("hidden");
+  modal.style.display = "flex";
+
+  // Fetch QR code and secret from server
+  try {
+    const res = await fetch("/api/auth/2fa/setup", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tempToken }),
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      if (errorDiv)
+        errorDiv.textContent = data.message || "Failed to setup 2FA";
+      if (loadingSection) loadingSection.style.display = "none";
+      return;
+    }
+
+    // Display QR code
+    if (qrContainer && data.qrCode) {
+      qrContainer.innerHTML = `<img src="${data.qrCode}" alt="2FA QR Code" class="mx-auto rounded-lg shadow-md" style="max-width: 200px;" />`;
+    }
+
+    // Display secret for manual entry
+    if (secretDisplay && data.secret) {
+      secretDisplay.textContent = data.secret;
+    }
+
+    // Show verification section
+    if (loadingSection) loadingSection.style.display = "none";
+    if (verifySection) verifySection.style.display = "block";
+
+    // Focus on the code input
+    const codeInput = document.getElementById("twoFactorSetupCode");
+    if (codeInput) codeInput.focus();
+  } catch (err) {
+    if (errorDiv) errorDiv.textContent = "Network error. Please try again.";
+    if (loadingSection) loadingSection.style.display = "none";
+  }
+}
+
+// Verify 2FA setup code
+async function verify2FASetup() {
+  const modal = document.getElementById("twoFactorSetupModal");
+  const codeInput = document.getElementById("twoFactorSetupCode");
+  const errorDiv = document.getElementById("twoFactorSetupError");
+  const verifyBtn = document.getElementById("twoFactorSetupVerifyBtn");
+
+  if (!modal || !codeInput) return;
+
+  const tempToken = modal.dataset.tempToken;
+  const totpCode = codeInput.value.trim().replace(/\s/g, "");
+
+  if (!totpCode || totpCode.length !== 6 || !/^\d+$/.test(totpCode)) {
+    if (errorDiv) errorDiv.textContent = "Please enter a valid 6-digit code";
+    return;
+  }
+
+  if (verifyBtn) verifyBtn.disabled = true;
+
+  try {
+    const res = await fetch("/api/auth/2fa/setup/verify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tempToken, totpCode }),
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      if (errorDiv) errorDiv.textContent = data.message || "Invalid code";
+      return;
+    }
+
+    // Success! Store credentials and proceed to dashboard
+    if (data.accessToken) {
+      localStorage.setItem("token", data.accessToken);
+    }
+    if (data.user) {
+      localStorage.setItem("userEmail", data.user.email);
+      localStorage.setItem("userRole", data.user.role);
+    }
+
+    // Close modal and show dashboard
+    close2FASetupModal();
+
+    // Show success message
+    alert("2FA has been set up successfully! You are now logged in.");
+
+    // Show main UI and initialize
+    document
+      .querySelectorAll(
+        "main, aside, header, .tab-content, #tab-dashboard, #tab-filters, #tab-photo-filters, #tab-templates"
+      )
+      .forEach((el) => {
+        if (el) el.style.display = "";
+      });
+    initializeDashboard();
+  } catch (err) {
+    if (errorDiv) errorDiv.textContent = "Network error. Please try again.";
+  } finally {
+    if (verifyBtn) verifyBtn.disabled = false;
+  }
+}
+
+// Close 2FA setup modal
+function close2FASetupModal() {
+  const modal = document.getElementById("twoFactorSetupModal");
+  if (modal) {
+    modal.classList.add("hidden");
+    modal.style.display = "none";
+  }
+}
+
+// Show 2FA Verification Modal for admin login
+function show2FAVerifyModal(tempToken, user) {
+  const modal = document.getElementById("twoFactorVerifyModal");
+  if (!modal) {
+    console.error("2FA verify modal not found");
+    return;
+  }
+
+  // Store temp token for later use
+  modal.dataset.tempToken = tempToken;
+  modal.dataset.userEmail = user.email;
+  modal.dataset.userRole = user.role;
+
+  // Reset modal state
+  const codeInput = document.getElementById("twoFactorVerifyCode");
+  const errorDiv = document.getElementById("twoFactorVerifyError");
+
+  if (codeInput) codeInput.value = "";
+  if (errorDiv) errorDiv.textContent = "";
+
+  // Show modal
+  modal.classList.remove("hidden");
+  modal.style.display = "flex";
+
+  // Focus on the code input
+  if (codeInput) codeInput.focus();
+}
+
+// Verify 2FA login code
+async function verify2FALogin() {
+  const modal = document.getElementById("twoFactorVerifyModal");
+  const codeInput = document.getElementById("twoFactorVerifyCode");
+  const errorDiv = document.getElementById("twoFactorVerifyError");
+  const verifyBtn = document.getElementById("twoFactorVerifyBtn");
+
+  if (!modal || !codeInput) return;
+
+  const tempToken = modal.dataset.tempToken;
+  const totpCode = codeInput.value.trim().replace(/\s/g, "");
+
+  if (!totpCode || totpCode.length !== 6 || !/^\d+$/.test(totpCode)) {
+    if (errorDiv) errorDiv.textContent = "Please enter a valid 6-digit code";
+    return;
+  }
+
+  if (verifyBtn) verifyBtn.disabled = true;
+
+  try {
+    const res = await fetch("/api/auth/2fa/verify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tempToken, totpCode }),
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      if (errorDiv) errorDiv.textContent = data.message || "Invalid code";
+      return;
+    }
+
+    // Success! Store credentials and proceed to dashboard
+    if (data.accessToken) {
+      localStorage.setItem("token", data.accessToken);
+    }
+    if (data.user) {
+      localStorage.setItem("userEmail", data.user.email);
+      localStorage.setItem("userRole", data.user.role);
+    }
+
+    // Close modal and show dashboard
+    close2FAVerifyModal();
+
+    // Show main UI and initialize
+    document
+      .querySelectorAll(
+        "main, aside, header, .tab-content, #tab-dashboard, #tab-filters, #tab-photo-filters, #tab-templates"
+      )
+      .forEach((el) => {
+        if (el) el.style.display = "";
+      });
+    initializeDashboard();
+  } catch (err) {
+    if (errorDiv) errorDiv.textContent = "Network error. Please try again.";
+  } finally {
+    if (verifyBtn) verifyBtn.disabled = false;
+  }
+}
+
+// Close 2FA verify modal
+function close2FAVerifyModal() {
+  const modal = document.getElementById("twoFactorVerifyModal");
+  if (modal) {
+    modal.classList.add("hidden");
+    modal.style.display = "none";
+  }
+}
+
+// Make 2FA functions globally available
+window.show2FASetupModal = show2FASetupModal;
+window.verify2FASetup = verify2FASetup;
+window.close2FASetupModal = close2FASetupModal;
+window.show2FAVerifyModal = show2FAVerifyModal;
+window.verify2FALogin = verify2FALogin;
+window.close2FAVerifyModal = close2FAVerifyModal;

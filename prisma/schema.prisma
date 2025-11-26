@@ -28,6 +28,8 @@ model User {
   email        String        @unique
   password     String
   role         String
+  totpSecret   String? // Secret key for TOTP 2FA (encrypted)
+  totpEnabled  Boolean       @default(false) // Whether 2FA is enabled
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
   sessions     Session[]

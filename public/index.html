@@ -1428,6 +1428,169 @@
       </div>
     </div>
 
+    <!-- 2FA Setup Modal -->
+    <div
+      id="twoFactorSetupModal"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 hidden"
+    >
+      <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md p-8 relative">
+        <button
+          onclick="close2FASetupModal(); showSignInModal();"
+          class="absolute top-4 right-4 text-gray-400 hover:text-gray-700 text-xl"
+        >
+          <i class="fa fa-times"></i>
+        </button>
+        
+        <div class="text-center mb-6">
+          <div class="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <i class="fa fa-shield-halved text-blue-600 text-2xl"></i>
+          </div>
+          <h2 class="text-2xl font-bold text-gray-800">Set Up Two-Factor Authentication</h2>
+          <p class="text-gray-500 mt-2">Admin accounts require 2FA for enhanced security</p>
+        </div>
+
+        <!-- Loading Section -->
+        <div id="twoFactorLoadingSection" class="flex flex-col items-center py-8">
+          <svg class="animate-spin h-10 w-10 text-blue-600 mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+          </svg>
+          <p class="text-gray-600">Generating QR code...</p>
+        </div>
+
+        <!-- QR Code and Verification Section -->
+        <div id="twoFactorVerifySection" style="display: none;">
+          <div class="space-y-6">
+            <!-- Step 1: Install App -->
+            <div class="bg-gray-50 rounded-xl p-4">
+              <div class="flex items-start gap-3">
+                <span class="bg-blue-600 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm font-bold flex-shrink-0">1</span>
+                <div>
+                  <h3 class="font-semibold text-gray-800">Install Google Authenticator</h3>
+                  <p class="text-sm text-gray-500 mt-1">Download from the App Store or Google Play</p>
+                </div>
+              </div>
+            </div>
+
+            <!-- Step 2: Scan QR Code -->
+            <div class="bg-gray-50 rounded-xl p-4">
+              <div class="flex items-start gap-3">
+                <span class="bg-blue-600 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm font-bold flex-shrink-0">2</span>
+                <div class="flex-1">
+                  <h3 class="font-semibold text-gray-800">Scan this QR code</h3>
+                  <p class="text-sm text-gray-500 mt-1">Open the app and scan the code below</p>
+                </div>
+              </div>
+              <div id="twoFactorQRCode" class="mt-4 flex justify-center"></div>
+              <div class="mt-4 text-center">
+                <p class="text-xs text-gray-500 mb-1">Or enter this code manually:</p>
+                <code id="twoFactorSecret" class="bg-gray-200 px-3 py-1 rounded text-sm font-mono select-all"></code>
+              </div>
+            </div>
+
+            <!-- Step 3: Enter Code -->
+            <div class="bg-gray-50 rounded-xl p-4">
+              <div class="flex items-start gap-3">
+                <span class="bg-blue-600 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm font-bold flex-shrink-0">3</span>
+                <div class="flex-1">
+                  <h3 class="font-semibold text-gray-800">Enter verification code</h3>
+                  <p class="text-sm text-gray-500 mt-1">Enter the 6-digit code from the app</p>
+                </div>
+              </div>
+              <div class="mt-4">
+                <input
+                  type="text"
+                  id="twoFactorSetupCode"
+                  maxlength="6"
+                  placeholder="000000"
+                  class="w-full text-center text-2xl font-mono tracking-widest border border-gray-300 rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  autocomplete="one-time-code"
+                  inputmode="numeric"
+                  pattern="[0-9]*"
+                  onkeypress="if(event.key === 'Enter') verify2FASetup();"
+                />
+              </div>
+            </div>
+
+            <div id="twoFactorSetupError" class="text-red-500 text-sm text-center"></div>
+
+            <button
+              id="twoFactorSetupVerifyBtn"
+              onclick="verify2FASetup()"
+              class="w-full py-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+            >
+              <i class="fa fa-check"></i>
+              Verify & Enable 2FA
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 2FA Verification Modal (for login) -->
+    <div
+      id="twoFactorVerifyModal"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 hidden"
+    >
+      <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md p-8 relative">
+        <button
+          onclick="close2FAVerifyModal(); showSignInModal();"
+          class="absolute top-4 right-4 text-gray-400 hover:text-gray-700 text-xl"
+        >
+          <i class="fa fa-times"></i>
+        </button>
+        
+        <div class="text-center mb-6">
+          <div class="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <i class="fa fa-lock text-green-600 text-2xl"></i>
+          </div>
+          <h2 class="text-2xl font-bold text-gray-800">Two-Factor Authentication</h2>
+          <p class="text-gray-500 mt-2">Enter the code from your authenticator app</p>
+        </div>
+
+        <div class="space-y-6">
+          <div>
+            <label class="block text-gray-700 font-semibold mb-2 text-center">Verification Code</label>
+            <input
+              type="text"
+              id="twoFactorVerifyCode"
+              maxlength="6"
+              placeholder="000000"
+              class="w-full text-center text-3xl font-mono tracking-widest border border-gray-300 rounded-lg px-4 py-4 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+              autocomplete="one-time-code"
+              inputmode="numeric"
+              pattern="[0-9]*"
+              onkeypress="if(event.key === 'Enter') verify2FALogin();"
+            />
+            <p class="text-xs text-gray-500 mt-2 text-center">
+              Open Google Authenticator and enter the 6-digit code
+            </p>
+          </div>
+
+          <div id="twoFactorVerifyError" class="text-red-500 text-sm text-center"></div>
+
+          <button
+            id="twoFactorVerifyBtn"
+            onclick="verify2FALogin()"
+            class="w-full py-3 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+          >
+            <i class="fa fa-unlock"></i>
+            Verify & Sign In
+          </button>
+
+          <div class="text-center">
+            <button
+              type="button"
+              class="text-sm text-gray-500 hover:text-gray-700"
+              onclick="close2FAVerifyModal(); showSignInModal();"
+            >
+              ← Back to Sign In
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <script src="/dashboard.js"></script>
   </body>
 </html>
