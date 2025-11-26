@@ -172,10 +172,12 @@ model App {
   updatedAt DateTime @updatedAt
 
   // Permission relationships
-  allowedFeatures      AppFeature[]
-  allowedPhotoFeatures AppPhotoFeature[]
-  allowedVideos        AppGeneratedVideo[]
-  allowedPhotos        AppGeneratedPhoto[]
+  allowedFeatures          AppFeature[]
+  allowedPhotoFeatures     AppPhotoFeature[]
+  allowedVideos            AppGeneratedVideo[]
+  allowedPhotos            AppGeneratedPhoto[]
+  allowedCartoonCharacters AppCartoonCharacter[]
+  allowedCartoonVideos     AppGeneratedCartoonVideo[]
 }
 
 // Junction table for App <-> Features (video filters)
@@ -232,4 +234,67 @@ model AppGeneratedPhoto {
   @@unique([appId, generatedPhotoId])
   @@index([appId])
   @@index([generatedPhotoId])
+}
+
+// Cartoon Characters feature model
+model Cartoon_Characters {
+  id        Int      @id @default(autoincrement())
+  endpoint  String   @unique
+  prompt    String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  apps AppCartoonCharacter[]
+
+  @@index([endpoint, createdAt])
+}
+
+// Generated cartoon videos table
+model Generated_Cartoon_Video {
+  id        Int      @id @default(autoincrement())
+  feature   String
+  url       String // S3 URL
+  createdAt DateTime @default(now())
+
+  apps AppGeneratedCartoonVideo[]
+
+  @@index([feature, createdAt])
+}
+
+// Cartoon character graphic (selected video for card display)
+model CartoonCharacterGraphic {
+  id         Int      @id @default(autoincrement())
+  endpoint   String   @unique
+  graphicUrl String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+// Junction table for App <-> Cartoon_Characters
+model AppCartoonCharacter {
+  id                 Int                @id @default(autoincrement())
+  app                App                @relation(fields: [appId], references: [id], onDelete: Cascade)
+  appId              Int
+  cartoonCharacter   Cartoon_Characters @relation(fields: [cartoonCharacterId], references: [id], onDelete: Cascade)
+  cartoonCharacterId Int
+  createdAt          DateTime           @default(now())
+
+  @@unique([appId, cartoonCharacterId])
+  @@index([appId])
+  @@index([cartoonCharacterId])
+}
+
+// Junction table for App <-> Generated_Cartoon_Video
+model AppGeneratedCartoonVideo {
+  id                      Int                     @id @default(autoincrement())
+  app                     App                     @relation(fields: [appId], references: [id], onDelete: Cascade)
+  appId                   Int
+  generatedCartoonVideo   Generated_Cartoon_Video @relation(fields: [generatedCartoonVideoId], references: [id], onDelete: Cascade)
+  generatedCartoonVideoId Int
+  createdAt               DateTime                @default(now())
+
+  @@unique([appId, generatedCartoonVideoId])
+  @@index([appId])
+  @@index([generatedCartoonVideoId])
 }

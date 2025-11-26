@@ -541,8 +541,22 @@ window.addEventListener("DOMContentLoaded", function () {
     addPhotoFeatureBtn.addEventListener("click", openFeatureCrudModal);
   }
 
+  // Wire up Add Cartoon Character button to open the modal
+  const addCartoonCharacterBtn = document.getElementById(
+    "addCartoonCharacterBtn"
+  );
+  if (addCartoonCharacterBtn) {
+    addCartoonCharacterBtn.addEventListener(
+      "click",
+      openCartoonCharacterCrudModal
+    );
+  }
+
   var modal = document.getElementById("featureCrudModal");
   if (modal) modal.classList.add("hidden");
+
+  var cartoonModal = document.getElementById("cartoonCharacterCrudModal");
+  if (cartoonModal) cartoonModal.classList.add("hidden");
 
   // Tab switching logic
   const sidebarButtons = document.querySelectorAll("aside nav ul li button");
@@ -551,6 +565,7 @@ window.addEventListener("DOMContentLoaded", function () {
     "tab-filters",
     "tab-photo-filters",
     "tab-templates",
+    "tab-cartoon-characters",
     "tab-apps",
   ];
   sidebarButtons.forEach((button, idx) => {
@@ -585,6 +600,13 @@ window.addEventListener("DOMContentLoaded", function () {
         } else {
           displayPhotoFeatures();
         }
+      } else if (showId === "tab-cartoon-characters") {
+        if (!cartoonCharactersInitialRequested && !cartoonCharactersLoading) {
+          loadAllCartoonCharacters().then(() => displayCartoonCharacters());
+          cartoonCharactersInitialRequested = true;
+        } else {
+          displayCartoonCharacters();
+        }
       } else if (showId === "tab-apps") {
         if (!appsInitialRequested && !appsLoading) {
           initAppsTab();
@@ -610,6 +632,7 @@ window.switchTab = function (tabName) {
     "tab-filters",
     "tab-photo-filters",
     "tab-templates",
+    "tab-cartoon-characters",
     "tab-apps",
   ];
   const tabIndex = tabIds.findIndex((id) => id === `tab-${tabName}`);
@@ -653,6 +676,13 @@ window.switchTab = function (tabName) {
       photoFeaturesInitialRequested = true;
     } else {
       displayPhotoFeatures();
+    }
+  } else if (showId === "tab-cartoon-characters") {
+    if (!cartoonCharactersInitialRequested) {
+      loadAllCartoonCharacters().then(() => displayCartoonCharacters());
+      cartoonCharactersInitialRequested = true;
+    } else {
+      displayCartoonCharacters();
     }
   } else if (showId === "tab-apps") {
     if (!appsInitialRequested) {
@@ -725,6 +755,13 @@ let photoFeatures = [];
 let photoFeaturesLoading = false;
 let photoFeaturesInitialRequested = false;
 let savedScrollPosition = 0;
+
+// === Cartoon Characters tab state ===
+let cartoonCharacters = [];
+let cartoonCharactersLoading = false;
+let cartoonCharactersInitialRequested = false;
+let cartoonCharacterGraphics = {};
+let cartoonCharacterLatestVideos = {};
 
 // === Apps tab state ===
 let apps = [];
@@ -5270,3 +5307,618 @@ window.refreshDisplayTest = function () {
 document.addEventListener("DOMContentLoaded", () => {
   if (window.initializeLazyVideos) window.initializeLazyVideos();
 });
+
+// ============================================
+// === CARTOON CHARACTERS SECTION ===
+// ============================================
+
+// Load all cartoon characters at once
+async function loadAllCartoonCharacters() {
+  if (cartoonCharactersLoading) return;
+
+  cartoonCharactersLoading = true;
+  const grid = document.getElementById("cartoonCharactersGrid");
+
+  if (grid) {
+    grid.innerHTML =
+      '<div class="col-span-full text-sm text-gray-500">Loading all cartoon characters...</div>';
+  }
+
+  try {
+    const response = await fetch(`/api/cartoon-characters/all`);
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || "Failed");
+    const incomingCharacters =
+      data.features || (Array.isArray(data) ? data : data.items || []);
+    cartoonCharacters = incomingCharacters.map((character) => ({
+      ...character,
+      featureType: "cartoon",
+    }));
+
+    // Load graphics for cartoon characters
+    await loadCartoonCharacterGraphics();
+
+    if (cartoonCharacters.length === 0) {
+      if (grid) {
+        grid.innerHTML =
+          '<div class="text-sm text-gray-500">No cartoon characters found.</div>';
+      }
+      return;
+    }
+
+    displayCartoonCharacters();
+  } catch (e) {
+    console.error("Error loading cartoon characters", e);
+    if (grid) {
+      grid.innerHTML =
+        '<div class="text-sm text-red-500">Error loading cartoon characters. Please try again.</div>';
+    }
+  } finally {
+    cartoonCharactersLoading = false;
+  }
+}
+
+// Load persisted cartoon character graphics
+async function loadCartoonCharacterGraphics() {
+  try {
+    const response = await fetch("/api/cartoon-character-graphic");
+    if (!response.ok) return;
+    const data = await response.json();
+    if (Array.isArray(data)) {
+      data.forEach((item) => {
+        cartoonCharacterGraphics[item.endpoint] = item.graphicUrl;
+      });
+    }
+  } catch (e) {
+    console.error("Error loading cartoon character graphics:", e);
+  }
+}
+
+// Display cartoon characters
+function displayCartoonCharacters() {
+  const grid = document.getElementById("cartoonCharactersGrid");
+  if (!grid) return;
+
+  const searchInput = document.getElementById("cartoonCharacterSearch");
+  const searchTerm = searchInput ? searchInput.value.toLowerCase() : "";
+
+  function renderCartoonCards(characterArr) {
+    const cardsHtml = characterArr
+      .map((character) => {
+        const videoUrl =
+          cartoonCharacterGraphics[character.endpoint] ||
+          cartoonCharacterLatestVideos[character.endpoint];
+        const playable =
+          videoUrl && typeof videoUrl === "object"
+            ? videoUrl.signedUrl || videoUrl.url
+            : videoUrl;
+        const videoHtml = playable
+          ? `<div class="video-preview lazy-video" data-src="${playable}">
+              <div class="video-skeleton" style="width:100%;height:180px;background:#111;display:flex;align-items:center;justify-content:center;color:#999;font-size:12px;border-radius:4px;">Loading preview...</div>
+            </div>`
+          : `<div class="video-preview">
+               <div class="bg-purple-100 rounded-lg p-8 text-center text-purple-500">
+                 <i class="fas fa-child text-3xl mb-2"></i>
+                 <div>No video generated yet</div>
+               </div>
+             </div>`;
+        return `
+          <div class="feature-card bg-white rounded-lg shadow p-4 flex flex-col gap-2 cursor-pointer border-l-4 border-purple-500" data-endpoint="${character.endpoint}">
+            <div class="feature-name font-semibold text-lg mb-2 text-purple-700">${character.endpoint}</div>
+            ${videoHtml}
+            <div class="text-gray-600 text-sm mt-1"></div>
+            <div class="mt-2">
+              <button class="view-cartoon-details px-3 py-1 bg-purple-600 text-white rounded hover:bg-purple-700">View details</button>
+            </div>
+          </div>
+        `;
+      })
+      .join("");
+    grid.innerHTML = cardsHtml;
+    if (window.initializeLazyVideos) window.initializeLazyVideos();
+    grid.addEventListener("click", (e) => {
+      const btn = e.target.closest(".view-cartoon-details");
+      if (btn) {
+        const card = btn.closest(".feature-card");
+        if (card) {
+          const endpoint = card.getAttribute("data-endpoint");
+          if (endpoint) showCartoonCharacterDetailPage(endpoint);
+        }
+      }
+    });
+  }
+
+  if (searchTerm) {
+    fetch(`/api/cartoon-characters?search=${encodeURIComponent(searchTerm)}`)
+      .then((res) => res.json())
+      .then((data) => {
+        let filtered = [];
+        if (data && data.success && Array.isArray(data.features)) {
+          filtered = data.features;
+        }
+        renderCartoonCards(filtered);
+      })
+      .catch(() => {
+        renderCartoonCards([]);
+      });
+  } else {
+    renderCartoonCards(cartoonCharacters);
+  }
+}
+
+// Cartoon Character search handling
+const cartoonCharacterSearchInput = document.getElementById(
+  "cartoonCharacterSearch"
+);
+if (cartoonCharacterSearchInput) {
+  cartoonCharacterSearchInput.addEventListener("input", () => {
+    if (!cartoonCharactersInitialRequested) return;
+    displayCartoonCharacters();
+  });
+}
+
+// Show cartoon character detail page
+function showCartoonCharacterDetailPage(endpoint) {
+  console.log("showCartoonCharacterDetailPage called with endpoint:", endpoint);
+
+  let character = cartoonCharacters.find((c) => c.endpoint === endpoint);
+  if (!character) {
+    console.error("Cartoon character not found:", endpoint);
+    return;
+  }
+
+  // Hide all tabs and detail pages
+  const tabContents = document.querySelectorAll(".tab-content");
+  tabContents.forEach((el) => el.classList.add("hidden"));
+
+  const featureDetailPage = document.getElementById("featureDetailPage");
+  if (featureDetailPage) featureDetailPage.classList.add("hidden");
+
+  // Show cartoon character detail page
+  const detailPage = document.getElementById("cartoonCharacterDetailPage");
+  if (detailPage) {
+    detailPage.classList.remove("hidden");
+    detailPage.scrollTop = 0;
+  }
+
+  // Update content
+  const titleEl = document.getElementById("cartoonCharacterDetailTitle");
+  const promptEl = document.getElementById("cartoonCharacterDetailPrompt");
+  const videoEl = document.getElementById("cartoonCharacterDetailVideo");
+
+  if (titleEl) titleEl.textContent = character.endpoint;
+  if (promptEl) promptEl.textContent = character.prompt;
+
+  // Set video source if available
+  const videoUrl =
+    cartoonCharacterGraphics[endpoint] ||
+    cartoonCharacterLatestVideos[endpoint];
+  if (videoEl && videoUrl) {
+    const playable =
+      typeof videoUrl === "object"
+        ? videoUrl.signedUrl || videoUrl.url
+        : videoUrl;
+    videoEl.src = playable;
+    videoEl.style.display = "block";
+  } else if (videoEl) {
+    videoEl.src = "";
+    videoEl.style.display = "none";
+  }
+
+  // Clear previous image uploads
+  const ref1Preview = document.getElementById("cartoonRef1Preview");
+  const ref2Preview = document.getElementById("cartoonRef2Preview");
+  const ref3Preview = document.getElementById("cartoonRef3Preview");
+  if (ref1Preview) {
+    ref1Preview.style.display = "none";
+    ref1Preview.src = "";
+  }
+  if (ref2Preview) {
+    ref2Preview.style.display = "none";
+    ref2Preview.src = "";
+  }
+  if (ref3Preview) {
+    ref3Preview.style.display = "none";
+    ref3Preview.src = "";
+  }
+
+  const genStatus = document.getElementById("cartoonGenStatus");
+  if (genStatus) genStatus.textContent = "";
+
+  // Setup image upload handlers
+  let cartoonRef1Url = null;
+  let cartoonRef2Url = null;
+  let cartoonRef3Url = null;
+
+  const ref1Input = document.getElementById("cartoonRef1Input");
+  const ref2Input = document.getElementById("cartoonRef2Input");
+  const ref3Input = document.getElementById("cartoonRef3Input");
+
+  async function uploadCartoonImage(file, previewEl, statusEl, setUrl) {
+    const formData = new FormData();
+    formData.append("image", file);
+    if (statusEl) statusEl.textContent = "Uploading...";
+    try {
+      const res = await fetch("/api/upload-image", {
+        method: "POST",
+        body: formData,
+      });
+      const result = await res.json();
+      const url =
+        result && result.success ? result.signedUrl || result.url : null;
+      if (url) {
+        setUrl(url);
+        if (previewEl) {
+          previewEl.src = url;
+          previewEl.style.display = "block";
+        }
+        if (statusEl) statusEl.textContent = "Image uploaded!";
+      } else {
+        if (statusEl) statusEl.textContent = "Upload failed.";
+      }
+    } catch (e) {
+      if (statusEl) statusEl.textContent = "Upload failed.";
+    }
+  }
+
+  if (ref1Input) {
+    ref1Input.onchange = function () {
+      const file = ref1Input.files && ref1Input.files[0];
+      if (file)
+        uploadCartoonImage(file, ref1Preview, genStatus, (url) => {
+          cartoonRef1Url = url;
+        });
+      ref1Input.value = "";
+    };
+  }
+
+  if (ref2Input) {
+    ref2Input.onchange = function () {
+      const file = ref2Input.files && ref2Input.files[0];
+      if (file)
+        uploadCartoonImage(file, ref2Preview, genStatus, (url) => {
+          cartoonRef2Url = url;
+        });
+      ref2Input.value = "";
+    };
+  }
+
+  if (ref3Input) {
+    ref3Input.onchange = function () {
+      const file = ref3Input.files && ref3Input.files[0];
+      if (file)
+        uploadCartoonImage(file, ref3Preview, genStatus, (url) => {
+          cartoonRef3Url = url;
+        });
+      ref3Input.value = "";
+    };
+  }
+
+  // Generate video button handler
+  const genBtn = document.getElementById("cartoonGenerateVideoBtn");
+  if (genBtn) {
+    genBtn.onclick = async function () {
+      if (!cartoonRef1Url || !cartoonRef2Url) {
+        if (genStatus) {
+          genStatus.textContent = "Please upload at least 2 reference images.";
+          genStatus.style.color = "red";
+        }
+        return;
+      }
+
+      genBtn.disabled = true;
+      if (genStatus) {
+        genStatus.textContent = "Generating video...";
+        genStatus.style.color = "blue";
+      }
+
+      try {
+        const selectedModel =
+          document.getElementById("cartoonModelSelect")?.value ||
+          "vidu-q1-reference-to-video";
+        const promptOverride = character.prompt;
+
+        const payload = {
+          imageUrl: cartoonRef1Url,
+          model: selectedModel,
+          prompt: promptOverride,
+          image_url2: cartoonRef2Url,
+        };
+
+        if (cartoonRef3Url) {
+          payload.image_url3 = cartoonRef3Url;
+        }
+
+        const response = await fetch(
+          `/api/generate-video/${encodeURIComponent(
+            character.endpoint
+          )}?type=cartoon`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          }
+        );
+
+        const data = await response.json();
+
+        if (response.ok && data && data.video && data.video.url) {
+          const videoUrl = data.video.url;
+
+          if (videoEl) {
+            videoEl.src = videoUrl;
+            videoEl.style.display = "block";
+          }
+
+          if (genStatus) {
+            genStatus.textContent = "Video generated!";
+            genStatus.style.color = "green";
+          }
+
+          // Update local cache
+          cartoonCharacterLatestVideos[character.endpoint] = videoUrl;
+          cartoonCharacterGraphics[character.endpoint] = videoUrl;
+
+          // Refresh the display
+          displayCartoonCharacters();
+        } else {
+          const msg =
+            (data &&
+              (data.error ||
+                data.provider_output ||
+                data.provider_message ||
+                data.message)) ||
+            "Failed to generate video";
+          throw new Error(msg);
+        }
+      } catch (e) {
+        if (genStatus) {
+          genStatus.textContent = `Error: ${e.message || e}`;
+          genStatus.style.color = "red";
+        }
+      } finally {
+        genBtn.disabled = false;
+      }
+    };
+  }
+
+  // Edit name button
+  const editNameBtn = document.getElementById("editCartoonCharacterNameBtn");
+  if (editNameBtn && titleEl) {
+    editNameBtn.onclick = function () {
+      const input = document.createElement("input");
+      input.type = "text";
+      input.value = character.endpoint;
+      input.className =
+        "border border-gray-300 rounded px-2 py-1 text-xl font-bold mr-2";
+      input.style.minWidth = "150px";
+
+      const saveBtn = document.createElement("button");
+      saveBtn.textContent = "Save";
+      saveBtn.className =
+        "ml-2 px-2 py-1 bg-purple-600 text-white rounded hover:bg-purple-700";
+
+      const cancelBtn = document.createElement("button");
+      cancelBtn.textContent = "Cancel";
+      cancelBtn.className =
+        "ml-2 px-2 py-1 bg-gray-300 text-gray-700 rounded hover:bg-gray-400";
+
+      const parent = titleEl.parentElement;
+      parent.replaceChild(input, titleEl);
+      parent.insertBefore(
+        saveBtn,
+        parent.querySelector("#editCartoonCharacterNameBtn")
+      );
+      parent.insertBefore(cancelBtn, saveBtn.nextSibling);
+      parent.querySelector("#editCartoonCharacterNameBtn").style.display =
+        "none";
+      input.focus();
+
+      saveBtn.onclick = async function (e) {
+        e.preventDefault();
+        const newName = input.value.trim();
+        if (!newName || newName === character.endpoint) {
+          cancelBtn.onclick();
+          return;
+        }
+        const res = await fetch(
+          `/api/cartoon-characters/${encodeURIComponent(
+            character.endpoint
+          )}/rename`,
+          {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ newEndpoint: newName }),
+          }
+        );
+        if (res.ok) {
+          character.endpoint = newName;
+          titleEl.textContent = newName;
+          parent.replaceChild(titleEl, input);
+          parent.querySelector("#editCartoonCharacterNameBtn").style.display =
+            "inline-block";
+          saveBtn.remove();
+          cancelBtn.remove();
+          loadAllCartoonCharacters();
+        } else {
+          alert("Failed to update character name");
+        }
+      };
+
+      cancelBtn.onclick = function (e) {
+        if (e) e.preventDefault();
+        parent.replaceChild(titleEl, input);
+        parent.querySelector("#editCartoonCharacterNameBtn").style.display =
+          "inline-block";
+        saveBtn.remove();
+        cancelBtn.remove();
+      };
+    };
+  }
+
+  // Edit prompt button
+  const editPromptBtn = document.getElementById(
+    "editCartoonCharacterPromptBtn"
+  );
+  if (editPromptBtn && promptEl) {
+    editPromptBtn.onclick = function () {
+      const textarea = document.createElement("textarea");
+      textarea.value = character.prompt;
+      textarea.className =
+        "border border-gray-300 rounded px-2 py-1 w-full text-base";
+      textarea.rows = 3;
+
+      const saveBtn = document.createElement("button");
+      saveBtn.textContent = "Save";
+      saveBtn.className =
+        "ml-2 px-2 py-1 bg-purple-600 text-white rounded hover:bg-purple-700";
+
+      const cancelBtn = document.createElement("button");
+      cancelBtn.textContent = "Cancel";
+      cancelBtn.className =
+        "ml-2 px-2 py-1 bg-gray-300 text-gray-700 rounded hover:bg-gray-400";
+
+      const parent = promptEl.parentElement;
+      parent.replaceChild(textarea, promptEl);
+      parent.appendChild(saveBtn);
+      parent.appendChild(cancelBtn);
+      editPromptBtn.style.display = "none";
+      textarea.focus();
+
+      saveBtn.onclick = async function (e) {
+        e.preventDefault();
+        const newPrompt = textarea.value.trim();
+        if (!newPrompt || newPrompt === character.prompt) {
+          cancelBtn.onclick();
+          return;
+        }
+        const res = await fetch(
+          `/api/cartoon-characters/${encodeURIComponent(character.endpoint)}`,
+          {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ prompt: newPrompt }),
+          }
+        );
+        if (res.ok) {
+          character.prompt = newPrompt;
+          promptEl.textContent = newPrompt;
+          parent.replaceChild(promptEl, textarea);
+          editPromptBtn.style.display = "inline-block";
+          saveBtn.remove();
+          cancelBtn.remove();
+        } else {
+          alert("Failed to update prompt");
+        }
+      };
+
+      cancelBtn.onclick = function (e) {
+        if (e) e.preventDefault();
+        parent.replaceChild(promptEl, textarea);
+        editPromptBtn.style.display = "inline-block";
+        saveBtn.remove();
+        cancelBtn.remove();
+      };
+    };
+  }
+
+  // Delete button
+  const deleteBtn = document.getElementById("cartoonCharacterDetailDeleteBtn");
+  if (deleteBtn) {
+    deleteBtn.onclick = async function () {
+      if (!confirm(`Delete cartoon character "${character.endpoint}"?`)) return;
+      try {
+        const res = await fetch(
+          `/api/cartoon-characters/${encodeURIComponent(character.endpoint)}`,
+          {
+            method: "DELETE",
+          }
+        );
+        if (res.ok) {
+          closeCartoonCharacterDetailPage();
+          loadAllCartoonCharacters();
+        } else {
+          alert("Failed to delete cartoon character");
+        }
+      } catch (e) {
+        alert("Error deleting cartoon character");
+      }
+    };
+  }
+}
+
+// Close cartoon character detail page
+function closeCartoonCharacterDetailPage() {
+  const detailPage = document.getElementById("cartoonCharacterDetailPage");
+  if (detailPage) detailPage.classList.add("hidden");
+
+  const tabEl = document.getElementById("tab-cartoon-characters");
+  if (tabEl) tabEl.classList.remove("hidden");
+
+  displayCartoonCharacters();
+}
+
+// Cartoon Character CRUD Modal Functions
+function openCartoonCharacterCrudModal() {
+  const modal = document.getElementById("cartoonCharacterCrudModal");
+  if (modal) {
+    modal.classList.remove("hidden");
+    modal.style.display = "flex";
+  }
+
+  const endpointInput = document.getElementById("cartoonCharacterCrudEndpoint");
+  const promptInput = document.getElementById("cartoonCharacterCrudPrompt");
+  if (endpointInput) endpointInput.value = "";
+  if (promptInput) promptInput.value = "";
+
+  const form = document.getElementById("cartoonCharacterCrudForm");
+  if (form) {
+    form.onsubmit = async function (e) {
+      e.preventDefault();
+      const endpoint = endpointInput?.value?.trim();
+      const prompt = promptInput?.value?.trim();
+
+      if (!endpoint || !prompt) {
+        alert("Endpoint and prompt are required");
+        return;
+      }
+
+      try {
+        const res = await fetch("/api/cartoon-characters", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ endpoint, prompt }),
+        });
+
+        const data = await res.json();
+
+        if (res.ok && data.success) {
+          closeCartoonCharacterCrudModal();
+          // Add to local array and refresh display
+          cartoonCharacters.unshift(data.feature);
+          displayCartoonCharacters();
+        } else {
+          alert(data.message || "Failed to create cartoon character");
+        }
+      } catch (e) {
+        alert("Error creating cartoon character");
+      }
+    };
+  }
+}
+
+function closeCartoonCharacterCrudModal() {
+  const modal = document.getElementById("cartoonCharacterCrudModal");
+  if (modal) {
+    modal.classList.add("hidden");
+    modal.style.display = "none";
+  }
+}
+
+// Make functions globally available
+window.openCartoonCharacterCrudModal = openCartoonCharacterCrudModal;
+window.closeCartoonCharacterCrudModal = closeCartoonCharacterCrudModal;
+window.closeCartoonCharacterDetailPage = closeCartoonCharacterDetailPage;
+window.showCartoonCharacterDetailPage = showCartoonCharacterDetailPage;
+window.loadAllCartoonCharacters = loadAllCartoonCharacters;
+window.displayCartoonCharacters = displayCartoonCharacters;

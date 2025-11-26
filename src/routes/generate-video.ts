@@ -188,7 +188,8 @@ interface VideoGenerationRequest {
 async function uploadGeneratedVideo(
   feature: string,
   variant: string,
-  readable: Readable
+  readable: Readable,
+  videoType: "video" | "cartoon" = "video"
 ): Promise<{ key: string; url: string; signedUrl: string }> {
   const key = makeKey({ type: "video", feature, ext: "mp4" });
   await s3UploadStream(key, readable, "video/mp4");
@@ -200,7 +201,12 @@ async function uploadGeneratedVideo(
     // If signing fails, fall back to canonical (may be inaccessible if bucket is private)
     console.warn("[uploadGeneratedVideo] Failed to sign key", key, e);
   }
-  await prisma.generatedVideo.create({ data: { feature, url } });
+  // Save to appropriate table based on video type
+  if (videoType === "cartoon") {
+    await prisma.generated_Cartoon_Video.create({ data: { feature, url } });
+  } else {
+    await prisma.generatedVideo.create({ data: { feature, url } });
+  }
   return { key, url, signedUrl };
 }
 
@@ -274,6 +280,10 @@ router.post(
   async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const { feature } = req.params;
+      // Check if this is a cartoon character video generation
+      const videoType: "video" | "cartoon" =
+        req.query.type === "cartoon" ? "cartoon" : "video";
+
       const userModel =
         typeof req.body.model === "string" ? req.body.model.trim() : "";
       if (!userModel) {
@@ -314,9 +324,17 @@ router.post(
       }
 
       // Step 2: Get the prompt for the selected feature (allow client override)
-      const featureObj = await prisma.features.findUnique({
-        where: { endpoint: feature },
-      });
+      // Check both Features and Cartoon_Characters tables based on videoType
+      let featureObj: any = null;
+      if (videoType === "cartoon") {
+        featureObj = await prisma.cartoon_Characters.findUnique({
+          where: { endpoint: feature },
+        });
+      } else {
+        featureObj = await prisma.features.findUnique({
+          where: { endpoint: feature },
+        });
+      }
       const prompt =
         typeof promptOverride === "string" && promptOverride.trim().length > 0
           ? promptOverride
@@ -4329,7 +4347,8 @@ router.post(
           uploadedViduQ1 = await uploadGeneratedVideo(
             feature,
             "viduq1-ref",
-            viduStream.data as Readable
+            viduStream.data as Readable,
+            videoType
           );
         } catch (e) {
           res.status(500).json({

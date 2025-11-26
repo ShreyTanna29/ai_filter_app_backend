@@ -165,6 +165,13 @@
             </li>
             <li>
               <button
+                onclick="switchTab('cartoon-characters')"
+                class="flex items-center px-3 py-2 rounded-lg text-gray-700 hover:bg-gray-100 w-full text-left"
+                ><i class="fa fa-child mr-3"></i>Cartoon Characters</button
+              >
+            </li>
+            <li>
+              <button
                 onclick="switchTab('apps')"
                 class="flex items-center px-3 py-2 rounded-lg text-gray-700 hover:bg-gray-100 w-full text-left"
                 ><i class="fa fa-plug mr-3"></i>Apps</button
@@ -493,6 +500,244 @@
             <div id="createAppStatus" class="text-sm mt-2"></div>
           </div>
           <div id="appsList" class="grid grid-cols-1 gap-4"></div>
+        </div>
+
+        <!-- Cartoon Characters Tab -->
+        <div id="tab-cartoon-characters" class="tab-content w-full px-10 py-6 hidden">
+          <div class="flex items-center justify-between mb-4">
+            <h2 class="text-2xl font-bold text-gray-800">Cartoon Characters</h2>
+            <div class="flex gap-2">
+              <input
+                id="cartoonCharacterSearch"
+                type="text"
+                placeholder="Search cartoon characters..."
+                class="border border-gray-300 rounded-lg px-3 py-2 w-64 focus:outline-none focus:ring-2 focus:ring-blue-400"
+              />
+              <button
+                id="addCartoonCharacterBtn"
+                class="ml-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 flex items-center"
+              >
+                <i class="fa fa-plus mr-2"></i>Add Character
+              </button>
+            </div>
+          </div>
+          <div
+            id="cartoonCharactersGrid"
+            class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
+          ></div>
+        </div>
+
+        <!-- Cartoon Character Detail Page (hidden by default) -->
+        <div
+          id="cartoonCharacterDetailPage"
+          class="hidden w-full h-full px-10 py-8 bg-gray-50 overflow-auto"
+        >
+          <div class="max-w-3xl mx-auto bg-white rounded-xl shadow p-8">
+            <div class="flex justify-between items-center mb-6">
+              <div class="flex items-center gap-2">
+                <h2
+                  id="cartoonCharacterDetailTitle"
+                  class="text-2xl font-bold inline-block"
+                >
+                </h2>
+                <button
+                  id="editCartoonCharacterNameBtn"
+                  class="ml-2 text-blue-600 hover:text-blue-800"
+                  title="Edit Name"
+                >
+                  <i class="fa fa-edit"></i>
+                </button>
+              </div>
+              <button
+                onclick="closeCartoonCharacterDetailPage()"
+                class="text-gray-400 hover:text-gray-700 text-2xl"
+              >
+                &times;
+              </button>
+            </div>
+            <video
+              id="cartoonCharacterDetailVideo"
+              controls
+              style="width: 100%; max-height: 300px"
+              class="mb-2 rounded"
+            ></video>
+            
+            <!-- Cartoon Character video generation section -->
+            <div id="cartoonVideoGenSection" class="mb-6">
+              <div class="bg-gradient-to-br from-purple-50 to-pink-50 rounded-2xl p-6 border border-purple-100 shadow-sm">
+                <h3 class="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
+                  <i class="fas fa-child text-purple-600"></i>
+                  Generate Cartoon Character Video (Multi-Reference)
+                </h3>
+                
+                <!-- Reference Image 1 -->
+                <div class="image-upload-section mb-4" id="cartoonImageUploadSection">
+                  <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <!-- Ref 1 -->
+                    <div class="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl p-4 border border-blue-100">
+                      <h4 class="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                        <i class="fas fa-image text-blue-600"></i>
+                        Reference Image 1 <span class="text-red-500">*</span>
+                      </h4>
+                      <div class="flex items-center gap-3">
+                        <label for="cartoonRef1Input" class="upload-label cursor-pointer group">
+                          <div class="border-2 border-dashed border-blue-300 rounded-lg p-4 text-center transition-all duration-300 hover:border-blue-400 hover:bg-blue-50 group-hover:scale-[1.02] min-w-[100px]">
+                            <div class="w-8 h-8 mx-auto bg-blue-100 rounded-full flex items-center justify-center group-hover:bg-blue-200 transition-colors duration-300 mb-2">
+                              <i class="fas fa-plus text-blue-600 text-sm"></i>
+                            </div>
+                            <span class="text-xs font-medium text-gray-600">Add Image</span>
+                            <input type="file" id="cartoonRef1Input" accept="image/*" style="display:none" />
+                          </div>
+                        </label>
+                        <img id="cartoonRef1Preview" style="display:none; max-width:100px; max-height:80px" class="rounded-lg shadow border border-gray-200" />
+                      </div>
+                    </div>
+                    
+                    <!-- Ref 2 -->
+                    <div class="bg-gradient-to-br from-purple-50 to-pink-50 rounded-xl p-4 border border-purple-100">
+                      <h4 class="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                        <i class="fas fa-image text-purple-600"></i>
+                        Reference Image 2 <span class="text-red-500">*</span>
+                      </h4>
+                      <div class="flex items-center gap-3">
+                        <label for="cartoonRef2Input" class="upload-label cursor-pointer group">
+                          <div class="border-2 border-dashed border-purple-300 rounded-lg p-4 text-center transition-all duration-300 hover:border-purple-400 hover:bg-purple-50 group-hover:scale-[1.02] min-w-[100px]">
+                            <div class="w-8 h-8 mx-auto bg-purple-100 rounded-full flex items-center justify-center group-hover:bg-purple-200 transition-colors duration-300 mb-2">
+                              <i class="fas fa-plus text-purple-600 text-sm"></i>
+                            </div>
+                            <span class="text-xs font-medium text-gray-600">Add Image</span>
+                            <input type="file" id="cartoonRef2Input" accept="image/*" style="display:none" />
+                          </div>
+                        </label>
+                        <img id="cartoonRef2Preview" style="display:none; max-width:100px; max-height:80px" class="rounded-lg shadow border border-gray-200" />
+                      </div>
+                    </div>
+                    
+                    <!-- Ref 3 (optional) -->
+                    <div class="bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl p-4 border border-green-100">
+                      <h4 class="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                        <i class="fas fa-image text-green-600"></i>
+                        Reference Image 3 (Optional)
+                      </h4>
+                      <div class="flex items-center gap-3">
+                        <label for="cartoonRef3Input" class="upload-label cursor-pointer group">
+                          <div class="border-2 border-dashed border-green-300 rounded-lg p-4 text-center transition-all duration-300 hover:border-green-400 hover:bg-green-50 group-hover:scale-[1.02] min-w-[100px]">
+                            <div class="w-8 h-8 mx-auto bg-green-100 rounded-full flex items-center justify-center group-hover:bg-green-200 transition-colors duration-300 mb-2">
+                              <i class="fas fa-plus text-green-600 text-sm"></i>
+                            </div>
+                            <span class="text-xs font-medium text-gray-600">Add Image</span>
+                            <input type="file" id="cartoonRef3Input" accept="image/*" style="display:none" />
+                          </div>
+                        </label>
+                        <img id="cartoonRef3Preview" style="display:none; max-width:100px; max-height:80px" class="rounded-lg shadow border border-gray-200" />
+                      </div>
+                    </div>
+                  </div>
+                  <div
+                    id="cartoonUploadStatus"
+                    class="upload-status text-sm mt-3 text-center"
+                  ></div>
+                </div>
+              </div>
+              
+              <div class="flex items-center gap-2 mt-3">
+                <select id="cartoonModelSelect" class="border rounded px-2 py-2">
+                  <option value="vidu-q1-reference-to-video" selected>Vidu Q1 Reference2Video (2-3 images)</option>
+                </select>
+                <button
+                  id="cartoonGenerateVideoBtn"
+                  class="px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white rounded-xl font-semibold transition-all duration-300 hover:shadow-lg hover:scale-105 flex items-center justify-center gap-2"
+                >
+                  <i class="fas fa-magic"></i> Generate Video
+                </button>
+              </div>
+              <div id="cartoonGenStatus" class="text-sm mt-2"></div>
+              <p class="text-xs text-gray-500 mt-2">
+                <i class="fas fa-info-circle mr-1"></i>
+                This section uses models that require at least 2 reference images to generate character videos.
+              </p>
+            </div>
+            
+            <div class="mb-6">
+              <div class="font-semibold mb-1 flex items-center">
+                Prompt:
+                <button
+                  id="editCartoonCharacterPromptBtn"
+                  class="ml-2 text-blue-600 hover:text-blue-800"
+                  title="Edit Prompt"
+                >
+                  <i class="fa fa-edit"></i>
+                </button>
+              </div>
+              <div id="cartoonCharacterDetailPrompt" class="text-gray-700"></div>
+            </div>
+            <div class="flex justify-end gap-2 mt-4">
+              <button
+                id="cartoonCharacterDetailDeleteBtn"
+                class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Cartoon Character CRUD Modal -->
+        <div
+          id="cartoonCharacterCrudModal"
+          class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40 hidden"
+        >
+          <div
+            class="bg-white rounded-lg shadow-lg w-full max-w-md p-6 relative"
+          >
+            <button
+              onclick="closeCartoonCharacterCrudModal()"
+              class="absolute top-2 right-2 text-gray-400 hover:text-gray-700"
+            >
+              <i class="fa fa-times"></i>
+            </button>
+            <h2 id="cartoonCharacterCrudModalTitle" class="text-xl font-bold mb-4">
+              Create Cartoon Character
+            </h2>
+            <form id="cartoonCharacterCrudForm" class="space-y-4">
+              <div>
+                <label class="block text-gray-700 font-semibold mb-1"
+                  >Endpoint</label
+                >
+                <input
+                  id="cartoonCharacterCrudEndpoint"
+                  type="text"
+                  class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-purple-400"
+                  required
+                />
+              </div>
+              <div>
+                <label class="block text-gray-700 font-semibold mb-1"
+                  >Prompt</label
+                >
+                <textarea
+                  id="cartoonCharacterCrudPrompt"
+                  class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-purple-400"
+                  required
+                ></textarea>
+              </div>
+              <div class="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onclick="closeCartoonCharacterCrudModal()"
+                  class="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
+                >
+                  Save
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
 
         <!-- App Detail Page (hidden by default) -->
