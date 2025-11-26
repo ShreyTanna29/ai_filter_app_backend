@@ -20,6 +20,7 @@ exports.deleteObject = deleteObject;
 exports.resizeTo512 = resizeTo512;
 exports.makeKey = makeKey;
 exports.ensure512SquareImageFromUrl = ensure512SquareImageFromUrl;
+exports.ensureImageSizeFromUrl = ensureImageSizeFromUrl;
 const client_s3_1 = require("@aws-sdk/client-s3");
 const lib_storage_1 = require("@aws-sdk/lib-storage");
 const sharp_1 = __importDefault(require("sharp"));
@@ -104,6 +105,20 @@ function ensure512SquareImageFromUrl(url) {
         const arrayBuf = yield resp.arrayBuffer();
         const inputBuf = Buffer.from(arrayBuf);
         const resized = yield resizeTo512(inputBuf);
+        return { buffer: resized, contentType: "image/png" };
+    });
+}
+function ensureImageSizeFromUrl(url, width, height) {
+    return __awaiter(this, void 0, void 0, function* () {
+        const resp = yield fetch(url);
+        if (!resp.ok)
+            throw new Error(`Failed to fetch image: ${resp.status}`);
+        const arrayBuf = yield resp.arrayBuffer();
+        const inputBuf = Buffer.from(arrayBuf);
+        const resized = yield (0, sharp_1.default)(inputBuf)
+            .resize(width, height, { fit: "cover", position: "centre" })
+            .toFormat("png")
+            .toBuffer();
         return { buffer: resized, contentType: "image/png" };
     });
 }

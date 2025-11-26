@@ -9,6 +9,7 @@ import {
   publicUrlFor,
   uploadBuffer,
   ensure512SquareImageFromUrl,
+  ensureImageSizeFromUrl,
 } from "../lib/s3";
 import { signKey } from "../middleware/signedUrl";
 import dotenv from "dotenv";
@@ -99,6 +100,77 @@ function extractRunwareError(raw: any) {
   }
 }
 
+interface RunwareImageMeta {
+  uuid?: string;
+  width?: number;
+  height?: number;
+}
+
+const pickPositiveNumber = (...values: any[]): number | undefined => {
+  for (const value of values) {
+    const num = Number(value);
+    if (Number.isFinite(num) && num > 0) return num;
+  }
+  return undefined;
+};
+
+const extractRunwareImageMeta = (obj: any): RunwareImageMeta => {
+  if (!obj) return {};
+  return {
+    uuid: obj.imageUUID || obj.imageUuid || obj.uuid,
+    width: pickPositiveNumber(
+      obj.width,
+      obj.imageWidth,
+      obj.meta?.width,
+      obj.metadata?.width,
+      obj.dimensions?.width
+    ),
+    height: pickPositiveNumber(
+      obj.height,
+      obj.imageHeight,
+      obj.meta?.height,
+      obj.metadata?.height,
+      obj.dimensions?.height
+    ),
+  };
+};
+
+const buildRunwareErrorPayload = (fallback: string, raw?: any) => {
+  const providerError = extractRunwareError(raw);
+  const message =
+    providerError?.responseContent || providerError?.message || fallback;
+  const detailsSource =
+    providerError?.responseContent ||
+    providerError?.message ||
+    (raw ? safeJson(raw) : fallback);
+  return {
+    message,
+    providerError,
+    details: detailsSource,
+  };
+};
+
+const respondRunwareError = (
+  res: Response,
+  status: number,
+  fallback: string,
+  rawDetails?: any,
+  extra?: Record<string, any>
+) => {
+  const { message, providerError, details } = buildRunwareErrorPayload(
+    fallback,
+    rawDetails
+  );
+  const body: Record<string, any> = {
+    success: false,
+    error: message,
+    details,
+    ...extra,
+  };
+  if (providerError) body.providerError = providerError;
+  res.status(status).json(body);
+};
+
 // Define interfaces for better type safety
 interface VideoGenerationRequest {
   imageUrl?: string; // primary key
@@ -161,6 +233,34 @@ async function prepareImageForProvider(
     console.error("[prepareImageForProvider] failed", e);
     // Fallback to raw URL (will likely fail at provider if not reachable)
     return { providerUrl: rawUrl, storedUrl: rawUrl };
+  }
+}
+
+async function ensureImageDimensionsForProvider(
+  sourceUrl: string,
+  feature: string,
+  width: number,
+  height: number
+): Promise<{ providerUrl: string; storedUrl: string }> {
+  try {
+    const { buffer, contentType } = await ensureImageSizeFromUrl(
+      sourceUrl,
+      width,
+      height
+    );
+    const key = makeKey({ type: "image", feature, ext: "png" });
+    await uploadBuffer(key, buffer, contentType);
+    const storedUrl = publicUrlFor(key);
+    let providerUrl = storedUrl;
+    try {
+      providerUrl = await signKey(key);
+    } catch (e) {
+      console.warn("[ensureImageDimensions] sign failed", e);
+    }
+    return { providerUrl, storedUrl };
+  } catch (err) {
+    console.error("[ensureImageDimensions] failed", err);
+    return { providerUrl: sourceUrl, storedUrl: sourceUrl };
   }
 }
 
@@ -304,11 +404,12 @@ router.post(
               "Runware Seedance imageUpload failed:",
               e?.response?.data || e?.message || e
             );
-            res.status(400).json({
-              success: false,
-              error: "Failed to upload image to Runware (Seedance)",
-              details: serializeError(e),
-            });
+            respondRunwareError(
+              res,
+              400,
+              "Failed to upload image to Runware (Seedance)",
+              e?.response?.data || e
+            );
             return;
           }
           if (!firstUUID) {
@@ -404,11 +505,12 @@ router.post(
                   if (videoUrl) break;
                 }
                 if (status === "error" || status === "failed") {
-                  res.status(502).json({
-                    success: false,
-                    error: "Runware Seedance generation failed during polling",
-                    details: pd,
-                  });
+                  respondRunwareError(
+                    res,
+                    502,
+                    "Runware Seedance generation failed during polling",
+                    pd
+                  );
                   return;
                 }
                 consecutive400 = 0; // reset on successful poll
@@ -440,12 +542,12 @@ router.post(
                     consecutive400 = 0;
                   }
                   if (consecutive400 >= 5) {
-                    res.status(502).json({
-                      success: false,
-                      error:
-                        "Runware Seedance polling returned repeated 400 errors",
-                      details: body || serializeError(e),
-                    });
+                    respondRunwareError(
+                      res,
+                      502,
+                      "Runware Seedance polling returned repeated 400 errors",
+                      body || e?.response?.data || e
+                    );
                     return;
                   }
                 }
@@ -458,12 +560,12 @@ router.post(
             console.log(
               "[Seedance] Timeout - no video URL returned after polling"
             );
-            res.status(502).json({
-              success: false,
-              error:
-                "Runware Seedance 1.0 Pro Fast did not return a video URL (timeout or missing)",
-              details: createData,
-            });
+            respondRunwareError(
+              res,
+              502,
+              "Runware Seedance 1.0 Pro Fast did not return a video URL (timeout or missing)",
+              createData
+            );
             return;
           }
 
@@ -572,11 +674,12 @@ router.post(
               "[LTX2] imageUpload failed:",
               e?.response?.data || e?.message || e
             );
-            res.status(400).json({
-              success: false,
-              error: "Failed to upload image to Runware (LTX-2)",
-              details: serializeError(e),
-            });
+            respondRunwareError(
+              res,
+              400,
+              "Failed to upload image to Runware (LTX-2)",
+              e?.response?.data || e
+            );
             return;
           }
           if (!firstUUID) {
@@ -684,11 +787,12 @@ router.post(
                   if (videoUrl) break;
                 }
                 if (status === "error" || status === "failed") {
-                  res.status(502).json({
-                    success: false,
-                    error: "LTX-2 generation failed during polling",
-                    details: pd,
-                  });
+                  respondRunwareError(
+                    res,
+                    502,
+                    "LTX-2 generation failed during polling",
+                    pd
+                  );
                   return;
                 }
                 consecutive400 = 0;
@@ -719,11 +823,12 @@ router.post(
                     consecutive400 = 0;
                   }
                   if (consecutive400 >= 5) {
-                    res.status(502).json({
-                      success: false,
-                      error: "LTX-2 polling returned repeated 400 errors",
-                      details: body || serializeError(e),
-                    });
+                    respondRunwareError(
+                      res,
+                      502,
+                      "LTX-2 polling returned repeated 400 errors",
+                      body || e?.response?.data || e
+                    );
                     return;
                   }
                 }
@@ -734,11 +839,12 @@ router.post(
 
           if (!videoUrl) {
             console.log("[LTX2] Timeout - no video URL returned after polling");
-            res.status(502).json({
-              success: false,
-              error: "LTX-2 did not return a video URL (timeout or missing)",
-              details: data,
-            });
+            respondRunwareError(
+              res,
+              502,
+              "LTX-2 did not return a video URL (timeout or missing)",
+              data
+            );
             return;
           }
 
@@ -836,11 +942,12 @@ router.post(
               "[LTX2F] imageUpload failed:",
               e?.response?.data || e?.message || e
             );
-            res.status(400).json({
-              success: false,
-              error: "Failed to upload image to Runware (LTX-2 Fast)",
-              details: serializeError(e),
-            });
+            respondRunwareError(
+              res,
+              400,
+              "Failed to upload image to Runware (LTX-2 Fast)",
+              e?.response?.data || e
+            );
             return;
           }
           if (!firstUUID) {
@@ -948,11 +1055,12 @@ router.post(
                   if (videoUrl) break;
                 }
                 if (status === "error" || status === "failed") {
-                  res.status(502).json({
-                    success: false,
-                    error: "LTX-2 Fast generation failed during polling",
-                    details: pd,
-                  });
+                  respondRunwareError(
+                    res,
+                    502,
+                    "LTX-2 Fast generation failed during polling",
+                    pd
+                  );
                   return;
                 }
                 consecutive400 = 0;
@@ -983,11 +1091,12 @@ router.post(
                     consecutive400 = 0;
                   }
                   if (consecutive400 >= 5) {
-                    res.status(502).json({
-                      success: false,
-                      error: "LTX-2 Fast polling returned repeated 400 errors",
-                      details: body || serializeError(e),
-                    });
+                    respondRunwareError(
+                      res,
+                      502,
+                      "LTX-2 Fast polling returned repeated 400 errors",
+                      body || e?.response?.data || e
+                    );
                     return;
                   }
                 }
@@ -1000,12 +1109,12 @@ router.post(
             console.log(
               "[LTX2F] Timeout - no video URL returned after polling"
             );
-            res.status(502).json({
-              success: false,
-              error:
-                "LTX-2 Fast did not return a video URL (timeout or missing)",
-              details: data,
-            });
+            respondRunwareError(
+              res,
+              502,
+              "LTX-2 Fast did not return a video URL (timeout or missing)",
+              data
+            );
             return;
           }
 
@@ -1103,11 +1212,12 @@ router.post(
               "[VIDUQ2] imageUpload first failed:",
               e?.response?.data || e?.message || e
             );
-            res.status(400).json({
-              success: false,
-              error: "Failed to upload first frame to Runware (Vidu Q2)",
-              details: serializeError(e),
-            });
+            respondRunwareError(
+              res,
+              400,
+              "Failed to upload first frame to Runware (Vidu Q2)",
+              e?.response?.data || e
+            );
             return;
           }
           if (!firstUUID) {
@@ -1224,11 +1334,12 @@ router.post(
                   if (videoUrl) break;
                 }
                 if (status === "error" || status === "failed") {
-                  res.status(502).json({
-                    success: false,
-                    error: "Vidu Q2 Turbo generation failed during polling",
-                    details: pd,
-                  });
+                  respondRunwareError(
+                    res,
+                    502,
+                    "Vidu Q2 Turbo generation failed during polling",
+                    pd
+                  );
                   return;
                 }
                 consecutive400 = 0;
@@ -1259,12 +1370,12 @@ router.post(
                     consecutive400 = 0;
                   }
                   if (consecutive400 >= 5) {
-                    res.status(502).json({
-                      success: false,
-                      error:
-                        "Vidu Q2 Turbo polling returned repeated 400 errors",
-                      details: body || serializeError(e),
-                    });
+                    respondRunwareError(
+                      res,
+                      502,
+                      "Vidu Q2 Turbo polling returned repeated 400 errors",
+                      body || e?.response?.data || e
+                    );
                     return;
                   }
                 }
@@ -1277,12 +1388,12 @@ router.post(
             console.log(
               "[VIDUQ2] Timeout - no video URL returned after polling"
             );
-            res.status(502).json({
-              success: false,
-              error:
-                "Vidu Q2 Turbo did not return a video URL (timeout or missing)",
-              details: data,
-            });
+            respondRunwareError(
+              res,
+              502,
+              "Vidu Q2 Turbo did not return a video URL (timeout or missing)",
+              data
+            );
             return;
           }
 
@@ -1483,16 +1594,12 @@ router.post(
                   if (videoUrl) break;
                 }
                 if (status === "error" || status === "failed") {
-                  const providerErr: any = extractRunwareError(pd) || {};
-                  res.status(422).json({
-                    success: false,
-                    error:
-                      providerErr.responseContent ||
-                      providerErr.message ||
-                      "Runware Veo 3.1 returned error during polling",
-                    providerError: providerErr,
-                    details: pd,
-                  });
+                  respondRunwareError(
+                    res,
+                    422,
+                    "Runware Veo 3.1 returned error during polling",
+                    pd
+                  );
                   return;
                 }
                 consecutive400 = 0;
@@ -1519,16 +1626,12 @@ router.post(
                     consecutive400 = 0;
                   }
                   if (consecutive400 >= 5) {
-                    const providerErr: any = extractRunwareError(body) || {};
-                    res.status(422).json({
-                      success: false,
-                      error:
-                        providerErr.responseContent ||
-                        providerErr.message ||
-                        "Runware Veo 3.1 polling returned repeated 400 errors",
-                      providerError: providerErr,
-                      details: body || e?.message,
-                    });
+                    respondRunwareError(
+                      res,
+                      422,
+                      "Runware Veo 3.1 polling returned repeated 400 errors",
+                      body || e?.response?.data || e
+                    );
                     return;
                   }
                 }
@@ -1538,12 +1641,12 @@ router.post(
           }
 
           if (!videoUrl) {
-            res.status(502).json({
-              success: false,
-              error:
-                "Runware Veo 3.1 did not return video URL (timeout or missing)",
-              details: data,
-            });
+            respondRunwareError(
+              res,
+              502,
+              "Runware Veo 3.1 did not return video URL (timeout or missing)",
+              data
+            );
             return;
           }
 
@@ -1751,16 +1854,12 @@ router.post(
                   if (videoUrl) break;
                 }
                 if (status === "error" || status === "failed") {
-                  const providerErr: any = extractRunwareError(pd) || {};
-                  res.status(422).json({
-                    success: false,
-                    error:
-                      providerErr.responseContent ||
-                      providerErr.message ||
-                      "Runware Veo 3.1 Fast returned error during polling",
-                    providerError: providerErr,
-                    details: pd,
-                  });
+                  respondRunwareError(
+                    res,
+                    422,
+                    "Runware Veo 3.1 Fast returned error during polling",
+                    pd
+                  );
                   return;
                 }
                 consecutive400 = 0;
@@ -1794,16 +1893,12 @@ router.post(
                     console.log(
                       "[VEO31F] Aborting after repeated 400s during polling"
                     );
-                    const providerErr: any = extractRunwareError(body) || {};
-                    res.status(422).json({
-                      success: false,
-                      error:
-                        providerErr.responseContent ||
-                        providerErr.message ||
-                        "Runware Veo 3.1 Fast polling returned repeated 400 errors",
-                      providerError: providerErr,
-                      details: body || e?.message,
-                    });
+                    respondRunwareError(
+                      res,
+                      422,
+                      "Runware Veo 3.1 Fast polling returned repeated 400 errors",
+                      body || e?.response?.data || e
+                    );
                     return;
                   }
                 }
@@ -1813,12 +1908,12 @@ router.post(
           }
 
           if (!videoUrl) {
-            res.status(502).json({
-              success: false,
-              error:
-                "Runware Veo 3.1 Fast did not return video URL (timeout or missing)",
-              details: data,
-            });
+            respondRunwareError(
+              res,
+              502,
+              "Runware Veo 3.1 Fast did not return video URL (timeout or missing)",
+              data
+            );
             return;
           }
 
@@ -2037,17 +2132,12 @@ router.post(
                 if (videoUrl) break;
               }
               if (status === "error" || status === "failed") {
-                // surface provider error with provider fields
-                const providerErr: any = extractRunwareError(pd) || {};
-                res.status(422).json({
-                  success: false,
-                  error:
-                    providerErr.responseContent ||
-                    providerErr.message ||
-                    "Runware Veo3@fast returned error during polling",
-                  providerError: providerErr,
-                  details: pd,
-                });
+                respondRunwareError(
+                  res,
+                  422,
+                  "Runware Veo3@fast returned error during polling",
+                  pd
+                );
                 return;
               }
             }
@@ -2056,12 +2146,12 @@ router.post(
             console.log(
               "[VEO3F] Timeout - no video URL returned after polling"
             );
-            res.status(502).json({
-              success: false,
-              error:
-                "Runware Veo3@fast did not return video URL (timeout or missing)",
-              details: data,
-            });
+            respondRunwareError(
+              res,
+              502,
+              "Runware Veo3@fast did not return video URL (timeout or missing)",
+              data
+            );
             return;
           }
           // Download & upload to S3 (normalize hosting)
@@ -2164,11 +2254,12 @@ router.post(
               "[Runway Gen4] imageUpload first failed:",
               e?.response?.data || e?.message || e
             );
-            res.status(400).json({
-              success: false,
-              error: "Failed to upload first frame to Runway Gen-4 Turbo",
-              details: serializeError(e),
-            });
+            respondRunwareError(
+              res,
+              400,
+              "Failed to upload first frame to Runway Gen-4 Turbo",
+              e?.response?.data || e
+            );
             return;
           }
           if (!firstUUID) {
@@ -2336,12 +2427,12 @@ router.post(
                   if (videoUrl) break;
                 }
                 if (status === "error" || status === "failed") {
-                  res.status(502).json({
-                    success: false,
-                    error:
-                      "Runway Gen-4 Turbo generation failed during polling",
-                    details: pd,
-                  });
+                  respondRunwareError(
+                    res,
+                    502,
+                    "Runway Gen-4 Turbo generation failed during polling",
+                    pd
+                  );
                   return;
                 }
                 consecutive400 = 0;
@@ -2384,16 +2475,16 @@ router.post(
                     consecutive400 = 0;
                   }
                   if (consecutive400 >= 5) {
-                    res.status(502).json({
-                      success: false,
-                      error:
-                        runwareMessage?.trim() ||
+                    respondRunwareError(
+                      res,
+                      502,
+                      runwareMessage?.trim() ||
                         "Runway Gen-4 Turbo polling returned repeated 400 errors",
-                      code: runwareMessage
-                        ? "RUNWAY_PROVIDER_ERROR"
-                        : undefined,
-                      details: parsedBody || body || serializeError(e),
-                    });
+                      parsedBody || body || e,
+                      runwareMessage
+                        ? { code: "RUNWAY_PROVIDER_ERROR" }
+                        : undefined
+                    );
                     return;
                   }
                 }
@@ -2403,11 +2494,12 @@ router.post(
           }
 
           if (!videoUrl) {
-            res.status(502).json({
-              success: false,
-              error: "Runway Gen-4 Turbo did not return a video URL",
-              details: data,
-            });
+            respondRunwareError(
+              res,
+              502,
+              "Runway Gen-4 Turbo did not return a video URL",
+              data
+            );
             return;
           }
 
@@ -2513,7 +2605,9 @@ router.post(
             "Content-Type": "application/json",
           };
 
-          const uploadFrame = async (imgUrl: string) => {
+          const uploadFrame = async (
+            imgUrl: string
+          ): Promise<RunwareImageMeta> => {
             const payload = [
               {
                 taskType: "imageUpload",
@@ -2531,32 +2625,8 @@ router.post(
             );
             const data = resp.data;
             const obj = Array.isArray(data?.data) ? data.data[0] : data?.data;
-            return obj?.imageUUID || obj?.imageUuid;
+            return extractRunwareImageMeta(obj);
           };
-
-          let firstUUID: string | undefined;
-          try {
-            firstUUID = await uploadFrame(imageCloudUrl);
-            console.log("[Sora2] imageUpload success", { firstUUID });
-          } catch (e: any) {
-            console.error(
-              "[Sora2] imageUpload failed:",
-              e?.response?.data || e?.message || e
-            );
-            res.status(400).json({
-              success: false,
-              error: "Failed to upload image to Runware (Sora 2)",
-              details: serializeError(e),
-            });
-            return;
-          }
-          if (!firstUUID) {
-            res.status(400).json({
-              success: false,
-              error: "Runware imageUpload did not return imageUUID",
-            });
-            return;
-          }
 
           const pickDuration = () => {
             const allowed = [4, 8, 12];
@@ -2573,8 +2643,52 @@ router.post(
           const usePortrait = /portrait|vertical|9[:x]16|720x1280/.test(
             orientation
           );
-          const width = usePortrait ? 720 : 1280;
-          const height = usePortrait ? 1280 : 720;
+          const targetWidth = usePortrait ? 720 : 1280;
+          const targetHeight = usePortrait ? 1280 : 720;
+
+          const { providerUrl: soraReadyImageUrl } =
+            await ensureImageDimensionsForProvider(
+              imageCloudUrl,
+              feature,
+              targetWidth,
+              targetHeight
+            );
+
+          let firstUUID: string | undefined;
+          let taskWidth = targetWidth;
+          let taskHeight = targetHeight;
+          try {
+            const uploadMeta = await uploadFrame(soraReadyImageUrl);
+            firstUUID = uploadMeta.uuid;
+            taskWidth = uploadMeta.width || targetWidth;
+            taskHeight = uploadMeta.height || targetHeight;
+            console.log("[Sora2] imageUpload success", {
+              firstUUID,
+              taskWidth,
+              taskHeight,
+              uploadWidth: uploadMeta.width,
+              uploadHeight: uploadMeta.height,
+            });
+          } catch (e: any) {
+            console.error(
+              "[Sora2] imageUpload failed:",
+              e?.response?.data || e?.message || e
+            );
+            respondRunwareError(
+              res,
+              400,
+              "Failed to upload image to Runware (Sora 2)",
+              e?.response?.data || e
+            );
+            return;
+          }
+          if (!firstUUID) {
+            res.status(400).json({
+              success: false,
+              error: "Runware imageUpload did not return imageUUID",
+            });
+            return;
+          }
 
           const createdTaskUUID = randomUUID();
           const frameImages: any[] = [
@@ -2589,12 +2703,14 @@ router.post(
             duration,
             deliveryMethod: "async",
             frameImages,
+            width: taskWidth,
+            height: taskHeight,
           };
           console.log("[Sora2] Created task", {
             taskUUID: createdTaskUUID,
             duration,
-            width,
-            height,
+            width: taskWidth,
+            height: taskHeight,
           });
 
           const createResp = await axios.post(
@@ -2662,11 +2778,12 @@ router.post(
                   if (videoUrl) break;
                 }
                 if (status === "error" || status === "failed") {
-                  res.status(502).json({
-                    success: false,
-                    error: "Sora 2 generation failed during polling",
-                    details: pd,
-                  });
+                  respondRunwareError(
+                    res,
+                    502,
+                    "Sora 2 generation failed during polling",
+                    pd
+                  );
                   return;
                 }
                 consecutive400 = 0;
@@ -2697,11 +2814,12 @@ router.post(
                     consecutive400 = 0;
                   }
                   if (consecutive400 >= 5) {
-                    res.status(502).json({
-                      success: false,
-                      error: "Sora 2 polling returned repeated 400 errors",
-                      details: body || serializeError(e),
-                    });
+                    respondRunwareError(
+                      res,
+                      502,
+                      "Sora 2 polling returned repeated 400 errors",
+                      body || e?.response?.data || serializeError(e)
+                    );
                     return;
                   }
                 }
@@ -2711,11 +2829,12 @@ router.post(
           }
 
           if (!videoUrl) {
-            res.status(502).json({
-              success: false,
-              error: "Sora 2 did not return a video URL",
-              details: data,
-            });
+            respondRunwareError(
+              res,
+              502,
+              "Sora 2 did not return a video URL",
+              data
+            );
             return;
           }
 
@@ -2762,11 +2881,12 @@ router.post(
           return;
         } catch (err: any) {
           console.error("Sora 2 error:", err?.response?.data || err);
-          res.status(500).json({
-            success: false,
-            error: "Sora 2 generation failed",
-            details: serializeError(err),
-          });
+          respondRunwareError(
+            res,
+            500,
+            "Sora 2 generation failed",
+            err?.response?.data || err
+          );
           return;
         }
       }
@@ -2801,7 +2921,9 @@ router.post(
             "Content-Type": "application/json",
           };
 
-          const uploadFrame = async (imgUrl: string) => {
+          const uploadFrame = async (
+            imgUrl: string
+          ): Promise<RunwareImageMeta> => {
             const payload = [
               {
                 taskType: "imageUpload",
@@ -2819,33 +2941,8 @@ router.post(
             );
             const data = resp.data;
             const obj = Array.isArray(data?.data) ? data.data[0] : data?.data;
-            return obj?.imageUUID || obj?.imageUuid;
+            return extractRunwareImageMeta(obj);
           };
-
-          let firstUUID: string | undefined;
-          try {
-            firstUUID = await uploadFrame(imageCloudUrl);
-            console.log("[Sora2Pro] imageUpload success", { firstUUID });
-          } catch (e: any) {
-            console.error(
-              "[Sora2Pro] imageUpload failed:",
-              e?.response?.data || e?.message || e
-            );
-            res.status(400).json({
-              success: false,
-              error: "Failed to upload image to Runware (Sora 2 Pro)",
-              details: serializeError(e),
-            });
-            return;
-          }
-          if (!firstUUID) {
-            res.status(400).json({
-              success: false,
-              error: "Runware imageUpload did not return imageUUID",
-            });
-            return;
-          }
-
           const allowedDurations = [4, 8, 12];
           const pickDuration = () => {
             const envVal = Number(process.env.SORA2PRO_DURATION);
@@ -2885,7 +2982,53 @@ router.post(
             }
             return combos[2];
           };
-          const { width, height } = pickDims();
+          const dims = pickDims();
+          const targetWidth = dims.width;
+          const targetHeight = dims.height;
+
+          const { providerUrl: soraProReadyImageUrl } =
+            await ensureImageDimensionsForProvider(
+              imageCloudUrl,
+              feature,
+              targetWidth,
+              targetHeight
+            );
+
+          let firstUUID: string | undefined;
+          let taskWidth = targetWidth;
+          let taskHeight = targetHeight;
+          try {
+            const uploadMeta = await uploadFrame(soraProReadyImageUrl);
+            firstUUID = uploadMeta.uuid;
+            taskWidth = uploadMeta.width || targetWidth;
+            taskHeight = uploadMeta.height || targetHeight;
+            console.log("[Sora2Pro] imageUpload success", {
+              firstUUID,
+              taskWidth,
+              taskHeight,
+              uploadWidth: uploadMeta.width,
+              uploadHeight: uploadMeta.height,
+            });
+          } catch (e: any) {
+            console.error(
+              "[Sora2Pro] imageUpload failed:",
+              e?.response?.data || e?.message || e
+            );
+            respondRunwareError(
+              res,
+              400,
+              "Failed to upload image to Runware (Sora 2 Pro)",
+              e?.response?.data || e
+            );
+            return;
+          }
+          if (!firstUUID) {
+            res.status(400).json({
+              success: false,
+              error: "Runware imageUpload did not return imageUUID",
+            });
+            return;
+          }
 
           const createdTaskUUID = randomUUID();
           const frameImages: any[] = [
@@ -2898,16 +3041,16 @@ router.post(
             model: "openai:3@2",
             positivePrompt: prompt,
             duration,
-            width,
-            height,
+            width: taskWidth,
+            height: taskHeight,
             deliveryMethod: "async",
             frameImages,
           };
           console.log("[Sora2Pro] Created task", {
             taskUUID: createdTaskUUID,
             duration,
-            width,
-            height,
+            width: taskWidth,
+            height: taskHeight,
           });
 
           const createResp = await axios.post(
@@ -2975,11 +3118,12 @@ router.post(
                   if (videoUrl) break;
                 }
                 if (status === "error" || status === "failed") {
-                  res.status(502).json({
-                    success: false,
-                    error: "Sora 2 Pro generation failed during polling",
-                    details: pd,
-                  });
+                  respondRunwareError(
+                    res,
+                    502,
+                    "Sora 2 Pro generation failed during polling",
+                    pd
+                  );
                   return;
                 }
                 consecutive400 = 0;
@@ -3010,11 +3154,12 @@ router.post(
                     consecutive400 = 0;
                   }
                   if (consecutive400 >= 5) {
-                    res.status(502).json({
-                      success: false,
-                      error: "Sora 2 Pro polling returned repeated 400 errors",
-                      details: body || serializeError(e),
-                    });
+                    respondRunwareError(
+                      res,
+                      502,
+                      "Sora 2 Pro polling returned repeated 400 errors",
+                      body || e?.response?.data || e
+                    );
                     return;
                   }
                 }
@@ -3024,11 +3169,12 @@ router.post(
           }
 
           if (!videoUrl) {
-            res.status(502).json({
-              success: false,
-              error: "Sora 2 Pro did not return a video URL",
-              details: data,
-            });
+            respondRunwareError(
+              res,
+              502,
+              "Sora 2 Pro did not return a video URL",
+              data
+            );
             return;
           }
 
@@ -3075,10 +3221,12 @@ router.post(
           return;
         } catch (err: any) {
           console.error("Sora 2 Pro error:", err?.response?.data || err);
+          const providerErr = extractRunwareError(err?.response?.data);
           res.status(500).json({
             success: false,
             error: "Sora 2 Pro generation failed",
-            details: serializeError(err),
+            details: providerErr?.responseContent || serializeError(err),
+            providerError: providerErr,
           });
           return;
         }
@@ -3136,11 +3284,12 @@ router.post(
               "[Hailuo2.3Fast] imageUpload failed:",
               e?.response?.data || e?.message || e
             );
-            res.status(400).json({
-              success: false,
-              error: "Failed to upload image to Runware (Hailuo 2.3 Fast)",
-              details: serializeError(e),
-            });
+            respondRunwareError(
+              res,
+              400,
+              "Failed to upload image to Runware (Hailuo 2.3 Fast)",
+              e?.response?.data || e
+            );
             return;
           }
           if (!firstUUID) {
@@ -3262,11 +3411,12 @@ router.post(
                   if (videoUrl) break;
                 }
                 if (status === "error" || status === "failed") {
-                  res.status(502).json({
-                    success: false,
-                    error: "Hailuo 2.3 Fast generation failed during polling",
-                    details: pd,
-                  });
+                  respondRunwareError(
+                    res,
+                    502,
+                    "Hailuo 2.3 Fast generation failed during polling",
+                    pd
+                  );
                   return;
                 }
                 consecutive400 = 0;
@@ -3297,12 +3447,12 @@ router.post(
                     consecutive400 = 0;
                   }
                   if (consecutive400 >= 5) {
-                    res.status(502).json({
-                      success: false,
-                      error:
-                        "Hailuo 2.3 Fast polling returned repeated 400 errors",
-                      details: body || serializeError(e),
-                    });
+                    respondRunwareError(
+                      res,
+                      502,
+                      "Hailuo 2.3 Fast polling returned repeated 400 errors",
+                      body || e?.response?.data || e
+                    );
                     return;
                   }
                 }
@@ -3312,11 +3462,12 @@ router.post(
           }
 
           if (!videoUrl) {
-            res.status(502).json({
-              success: false,
-              error: "Hailuo 2.3 Fast did not return a video URL",
-              details: data,
-            });
+            respondRunwareError(
+              res,
+              502,
+              "Hailuo 2.3 Fast did not return a video URL",
+              data
+            );
             return;
           }
 
@@ -3424,11 +3575,12 @@ router.post(
               "[Hailuo2.3] imageUpload failed:",
               e?.response?.data || e?.message || e
             );
-            res.status(400).json({
-              success: false,
-              error: "Failed to upload image to Runware (Hailuo 2.3)",
-              details: serializeError(e),
-            });
+            respondRunwareError(
+              res,
+              400,
+              "Failed to upload image to Runware (Hailuo 2.3)",
+              e?.response?.data || e
+            );
             return;
           }
           if (!firstUUID) {
@@ -3546,11 +3698,12 @@ router.post(
                   if (videoUrl) break;
                 }
                 if (status === "error" || status === "failed") {
-                  res.status(502).json({
-                    success: false,
-                    error: "Hailuo 2.3 generation failed during polling",
-                    details: pd,
-                  });
+                  respondRunwareError(
+                    res,
+                    502,
+                    "Hailuo 2.3 generation failed during polling",
+                    pd
+                  );
                   return;
                 }
                 consecutive400 = 0;
@@ -3581,11 +3734,12 @@ router.post(
                     consecutive400 = 0;
                   }
                   if (consecutive400 >= 5) {
-                    res.status(502).json({
-                      success: false,
-                      error: "Hailuo 2.3 polling returned repeated 400 errors",
-                      details: body || serializeError(e),
-                    });
+                    respondRunwareError(
+                      res,
+                      502,
+                      "Hailuo 2.3 polling returned repeated 400 errors",
+                      body || e?.response?.data || e
+                    );
                     return;
                   }
                 }
@@ -3595,11 +3749,12 @@ router.post(
           }
 
           if (!videoUrl) {
-            res.status(502).json({
-              success: false,
-              error: "Hailuo 2.3 did not return a video URL",
-              details: data,
-            });
+            respondRunwareError(
+              res,
+              502,
+              "Hailuo 2.3 did not return a video URL",
+              data
+            );
             return;
           }
 

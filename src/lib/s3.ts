@@ -113,3 +113,19 @@ export async function ensure512SquareImageFromUrl(
   const resized = await resizeTo512(inputBuf);
   return { buffer: resized, contentType: "image/png" };
 }
+
+export async function ensureImageSizeFromUrl(
+  url: string,
+  width: number,
+  height: number
+): Promise<{ buffer: Buffer; contentType: string }> {
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error(`Failed to fetch image: ${resp.status}`);
+  const arrayBuf = await resp.arrayBuffer();
+  const inputBuf = Buffer.from(arrayBuf);
+  const resized = await Sharp(inputBuf)
+    .resize(width, height, { fit: "cover", position: "centre" })
+    .toFormat("png")
+    .toBuffer();
+  return { buffer: resized, contentType: "image/png" };
+}

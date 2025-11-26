@@ -108,6 +108,43 @@ function extractRunwareError(raw) {
         return undefined;
     }
 }
+const pickPositiveNumber = (...values) => {
+    for (const value of values) {
+        const num = Number(value);
+        if (Number.isFinite(num) && num > 0)
+            return num;
+    }
+    return undefined;
+};
+const extractRunwareImageMeta = (obj) => {
+    var _a, _b, _c, _d, _e, _f;
+    if (!obj)
+        return {};
+    return {
+        uuid: obj.imageUUID || obj.imageUuid || obj.uuid,
+        width: pickPositiveNumber(obj.width, obj.imageWidth, (_a = obj.meta) === null || _a === void 0 ? void 0 : _a.width, (_b = obj.metadata) === null || _b === void 0 ? void 0 : _b.width, (_c = obj.dimensions) === null || _c === void 0 ? void 0 : _c.width),
+        height: pickPositiveNumber(obj.height, obj.imageHeight, (_d = obj.meta) === null || _d === void 0 ? void 0 : _d.height, (_e = obj.metadata) === null || _e === void 0 ? void 0 : _e.height, (_f = obj.dimensions) === null || _f === void 0 ? void 0 : _f.height),
+    };
+};
+const buildRunwareErrorPayload = (fallback, raw) => {
+    const providerError = extractRunwareError(raw);
+    const message = (providerError === null || providerError === void 0 ? void 0 : providerError.responseContent) || (providerError === null || providerError === void 0 ? void 0 : providerError.message) || fallback;
+    const detailsSource = (providerError === null || providerError === void 0 ? void 0 : providerError.responseContent) ||
+        (providerError === null || providerError === void 0 ? void 0 : providerError.message) ||
+        (raw ? safeJson(raw) : fallback);
+    return {
+        message,
+        providerError,
+        details: detailsSource,
+    };
+};
+const respondRunwareError = (res, status, fallback, rawDetails, extra) => {
+    const { message, providerError, details } = buildRunwareErrorPayload(fallback, rawDetails);
+    const body = Object.assign({ success: false, error: message, details }, extra);
+    if (providerError)
+        body.providerError = providerError;
+    res.status(status).json(body);
+};
 // Helper: upload generated video stream to S3 and return signed + canonical URLs
 function uploadGeneratedVideo(feature, variant, readable) {
     return __awaiter(this, void 0, void 0, function* () {
@@ -157,11 +194,33 @@ function prepareImageForProvider(rawUrl, feature) {
         }
     });
 }
+function ensureImageDimensionsForProvider(sourceUrl, feature, width, height) {
+    return __awaiter(this, void 0, void 0, function* () {
+        try {
+            const { buffer, contentType } = yield (0, s3_1.ensureImageSizeFromUrl)(sourceUrl, width, height);
+            const key = (0, s3_1.makeKey)({ type: "image", feature, ext: "png" });
+            yield (0, s3_1.uploadBuffer)(key, buffer, contentType);
+            const storedUrl = (0, s3_1.publicUrlFor)(key);
+            let providerUrl = storedUrl;
+            try {
+                providerUrl = yield (0, signedUrl_1.signKey)(key);
+            }
+            catch (e) {
+                console.warn("[ensureImageDimensions] sign failed", e);
+            }
+            return { providerUrl, storedUrl };
+        }
+        catch (err) {
+            console.error("[ensureImageDimensions] failed", err);
+            return { providerUrl: sourceUrl, storedUrl: sourceUrl };
+        }
+    });
+}
 // Multer setup for audio upload (memory storage)
 const upload = (0, multer_1.default)({ storage: multer_1.default.memoryStorage() });
 // Generate video from feature endpoint
 router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _0, _1, _2, _3, _4, _5, _6, _7, _8, _9, _10, _11, _12, _13, _14, _15, _16, _17, _18, _19, _20, _21, _22, _23, _24, _25, _26, _27, _28, _29, _30, _31, _32, _33, _34, _35, _36, _37, _38, _39, _40, _41, _42, _43, _44, _45, _46, _47, _48, _49, _50, _51, _52, _53, _54, _55, _56, _57, _58, _59, _60, _61, _62, _63, _64, _65, _66, _67, _68, _69, _70, _71, _72, _73, _74, _75, _76, _77, _78, _79, _80, _81, _82, _83, _84, _85, _86, _87, _88;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _0, _1, _2, _3, _4, _5, _6, _7, _8, _9, _10, _11, _12, _13, _14, _15, _16, _17, _18, _19, _20, _21, _22, _23, _24, _25, _26, _27, _28, _29, _30, _31, _32, _33, _34, _35, _36, _37, _38, _39, _40, _41, _42, _43, _44, _45, _46, _47, _48, _49, _50, _51, _52, _53, _54, _55, _56, _57, _58, _59, _60, _61, _62, _63, _64, _65, _66, _67, _68, _69, _70, _71, _72, _73, _74, _75, _76, _77, _78, _79, _80, _81, _82, _83, _84, _85, _86, _87, _88, _89, _90, _91, _92, _93, _94, _95, _96, _97, _98, _99, _100, _101, _102, _103, _104, _105, _106, _107, _108, _109;
     try {
         const { feature } = req.params;
         const userModel = typeof req.body.model === "string" ? req.body.model.trim() : "";
@@ -257,11 +316,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                 }
                 catch (e) {
                     console.error("Runware Seedance imageUpload failed:", ((_a = e === null || e === void 0 ? void 0 : e.response) === null || _a === void 0 ? void 0 : _a.data) || (e === null || e === void 0 ? void 0 : e.message) || e);
-                    res.status(400).json({
-                        success: false,
-                        error: "Failed to upload image to Runware (Seedance)",
-                        details: serializeError(e),
-                    });
+                    respondRunwareError(res, 400, "Failed to upload image to Runware (Seedance)", ((_b = e === null || e === void 0 ? void 0 : e.response) === null || _b === void 0 ? void 0 : _b.data) || e);
                     return;
                 }
                 if (!firstUUID) {
@@ -342,18 +397,14 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                                     break;
                             }
                             if (status === "error" || status === "failed") {
-                                res.status(502).json({
-                                    success: false,
-                                    error: "Runware Seedance generation failed during polling",
-                                    details: pd,
-                                });
+                                respondRunwareError(res, 502, "Runware Seedance generation failed during polling", pd);
                                 return;
                             }
                             consecutive400 = 0; // reset on successful poll
                         }
                         catch (e) {
-                            const statusCode = (_b = e === null || e === void 0 ? void 0 : e.response) === null || _b === void 0 ? void 0 : _b.status;
-                            const body = (_c = e === null || e === void 0 ? void 0 : e.response) === null || _c === void 0 ? void 0 : _c.data;
+                            const statusCode = (_c = e === null || e === void 0 ? void 0 : e.response) === null || _c === void 0 ? void 0 : _c.status;
+                            const body = (_d = e === null || e === void 0 ? void 0 : e.response) === null || _d === void 0 ? void 0 : _d.data;
                             console.log("[Seedance] Poll error", {
                                 attempt,
                                 statusCode,
@@ -373,11 +424,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                                     consecutive400 = 0;
                                 }
                                 if (consecutive400 >= 5) {
-                                    res.status(502).json({
-                                        success: false,
-                                        error: "Runware Seedance polling returned repeated 400 errors",
-                                        details: body || serializeError(e),
-                                    });
+                                    respondRunwareError(res, 502, "Runware Seedance polling returned repeated 400 errors", body || ((_e = e === null || e === void 0 ? void 0 : e.response) === null || _e === void 0 ? void 0 : _e.data) || e);
                                     return;
                                 }
                             }
@@ -387,11 +434,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                 }
                 if (!videoUrl) {
                     console.log("[Seedance] Timeout - no video URL returned after polling");
-                    res.status(502).json({
-                        success: false,
-                        error: "Runware Seedance 1.0 Pro Fast did not return a video URL (timeout or missing)",
-                        details: createData,
-                    });
+                    respondRunwareError(res, 502, "Runware Seedance 1.0 Pro Fast did not return a video URL (timeout or missing)", createData);
                     return;
                 }
                 // 4) Download and upload to S3
@@ -442,7 +485,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                 return;
             }
             catch (err) {
-                console.error("Runware Seedance 1.0 Pro Fast error:", ((_d = err === null || err === void 0 ? void 0 : err.response) === null || _d === void 0 ? void 0 : _d.data) || err);
+                console.error("Runware Seedance 1.0 Pro Fast error:", ((_f = err === null || err === void 0 ? void 0 : err.response) === null || _f === void 0 ? void 0 : _f.data) || err);
                 res.status(500).json({
                     success: false,
                     error: "Seedance 1.0 Pro Fast generation failed",
@@ -483,12 +526,8 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                     console.log("[LTX2] imageUpload success", { firstUUID });
                 }
                 catch (e) {
-                    console.error("[LTX2] imageUpload failed:", ((_e = e === null || e === void 0 ? void 0 : e.response) === null || _e === void 0 ? void 0 : _e.data) || (e === null || e === void 0 ? void 0 : e.message) || e);
-                    res.status(400).json({
-                        success: false,
-                        error: "Failed to upload image to Runware (LTX-2)",
-                        details: serializeError(e),
-                    });
+                    console.error("[LTX2] imageUpload failed:", ((_g = e === null || e === void 0 ? void 0 : e.response) === null || _g === void 0 ? void 0 : _g.data) || (e === null || e === void 0 ? void 0 : e.message) || e);
+                    respondRunwareError(res, 400, "Failed to upload image to Runware (LTX-2)", ((_h = e === null || e === void 0 ? void 0 : e.response) === null || _h === void 0 ? void 0 : _h.data) || e);
                     return;
                 }
                 if (!firstUUID) {
@@ -581,18 +620,14 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                                     break;
                             }
                             if (status === "error" || status === "failed") {
-                                res.status(502).json({
-                                    success: false,
-                                    error: "LTX-2 generation failed during polling",
-                                    details: pd,
-                                });
+                                respondRunwareError(res, 502, "LTX-2 generation failed during polling", pd);
                                 return;
                             }
                             consecutive400 = 0;
                         }
                         catch (e) {
-                            const statusCode = (_f = e === null || e === void 0 ? void 0 : e.response) === null || _f === void 0 ? void 0 : _f.status;
-                            const body = (_g = e === null || e === void 0 ? void 0 : e.response) === null || _g === void 0 ? void 0 : _g.data;
+                            const statusCode = (_j = e === null || e === void 0 ? void 0 : e.response) === null || _j === void 0 ? void 0 : _j.status;
+                            const body = (_k = e === null || e === void 0 ? void 0 : e.response) === null || _k === void 0 ? void 0 : _k.data;
                             console.log("[LTX2] Poll error", {
                                 attempt,
                                 statusCode,
@@ -611,11 +646,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                                     consecutive400 = 0;
                                 }
                                 if (consecutive400 >= 5) {
-                                    res.status(502).json({
-                                        success: false,
-                                        error: "LTX-2 polling returned repeated 400 errors",
-                                        details: body || serializeError(e),
-                                    });
+                                    respondRunwareError(res, 502, "LTX-2 polling returned repeated 400 errors", body || ((_l = e === null || e === void 0 ? void 0 : e.response) === null || _l === void 0 ? void 0 : _l.data) || e);
                                     return;
                                 }
                             }
@@ -625,11 +656,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                 }
                 if (!videoUrl) {
                     console.log("[LTX2] Timeout - no video URL returned after polling");
-                    res.status(502).json({
-                        success: false,
-                        error: "LTX-2 did not return a video URL (timeout or missing)",
-                        details: data,
-                    });
+                    respondRunwareError(res, 502, "LTX-2 did not return a video URL (timeout or missing)", data);
                     return;
                 }
                 // 4) Download and upload to S3
@@ -672,7 +699,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                 return;
             }
             catch (err) {
-                console.error("[LTX2] Fatal error:", ((_h = err === null || err === void 0 ? void 0 : err.response) === null || _h === void 0 ? void 0 : _h.data) || err);
+                console.error("[LTX2] Fatal error:", ((_m = err === null || err === void 0 ? void 0 : err.response) === null || _m === void 0 ? void 0 : _m.data) || err);
                 res.status(500).json({
                     success: false,
                     error: "LTX-2 Pro generation failed",
@@ -713,12 +740,8 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                     console.log("[LTX2F] imageUpload success", { firstUUID });
                 }
                 catch (e) {
-                    console.error("[LTX2F] imageUpload failed:", ((_j = e === null || e === void 0 ? void 0 : e.response) === null || _j === void 0 ? void 0 : _j.data) || (e === null || e === void 0 ? void 0 : e.message) || e);
-                    res.status(400).json({
-                        success: false,
-                        error: "Failed to upload image to Runware (LTX-2 Fast)",
-                        details: serializeError(e),
-                    });
+                    console.error("[LTX2F] imageUpload failed:", ((_o = e === null || e === void 0 ? void 0 : e.response) === null || _o === void 0 ? void 0 : _o.data) || (e === null || e === void 0 ? void 0 : e.message) || e);
+                    respondRunwareError(res, 400, "Failed to upload image to Runware (LTX-2 Fast)", ((_p = e === null || e === void 0 ? void 0 : e.response) === null || _p === void 0 ? void 0 : _p.data) || e);
                     return;
                 }
                 if (!firstUUID) {
@@ -811,18 +834,14 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                                     break;
                             }
                             if (status === "error" || status === "failed") {
-                                res.status(502).json({
-                                    success: false,
-                                    error: "LTX-2 Fast generation failed during polling",
-                                    details: pd,
-                                });
+                                respondRunwareError(res, 502, "LTX-2 Fast generation failed during polling", pd);
                                 return;
                             }
                             consecutive400 = 0;
                         }
                         catch (e) {
-                            const statusCode = (_k = e === null || e === void 0 ? void 0 : e.response) === null || _k === void 0 ? void 0 : _k.status;
-                            const body = (_l = e === null || e === void 0 ? void 0 : e.response) === null || _l === void 0 ? void 0 : _l.data;
+                            const statusCode = (_q = e === null || e === void 0 ? void 0 : e.response) === null || _q === void 0 ? void 0 : _q.status;
+                            const body = (_r = e === null || e === void 0 ? void 0 : e.response) === null || _r === void 0 ? void 0 : _r.data;
                             console.log("[LTX2F] Poll error", {
                                 attempt,
                                 statusCode,
@@ -841,11 +860,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                                     consecutive400 = 0;
                                 }
                                 if (consecutive400 >= 5) {
-                                    res.status(502).json({
-                                        success: false,
-                                        error: "LTX-2 Fast polling returned repeated 400 errors",
-                                        details: body || serializeError(e),
-                                    });
+                                    respondRunwareError(res, 502, "LTX-2 Fast polling returned repeated 400 errors", body || ((_s = e === null || e === void 0 ? void 0 : e.response) === null || _s === void 0 ? void 0 : _s.data) || e);
                                     return;
                                 }
                             }
@@ -855,11 +870,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                 }
                 if (!videoUrl) {
                     console.log("[LTX2F] Timeout - no video URL returned after polling");
-                    res.status(502).json({
-                        success: false,
-                        error: "LTX-2 Fast did not return a video URL (timeout or missing)",
-                        details: data,
-                    });
+                    respondRunwareError(res, 502, "LTX-2 Fast did not return a video URL (timeout or missing)", data);
                     return;
                 }
                 // 4) Download and upload to S3
@@ -902,7 +913,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                 return;
             }
             catch (err) {
-                console.error("[LTX2F] Fatal error:", ((_m = err === null || err === void 0 ? void 0 : err.response) === null || _m === void 0 ? void 0 : _m.data) || err);
+                console.error("[LTX2F] Fatal error:", ((_t = err === null || err === void 0 ? void 0 : err.response) === null || _t === void 0 ? void 0 : _t.data) || err);
                 res.status(500).json({
                     success: false,
                     error: "LTX-2 Fast generation failed",
@@ -947,12 +958,8 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                     console.log("[VIDUQ2] imageUpload first success", { firstUUID });
                 }
                 catch (e) {
-                    console.error("[VIDUQ2] imageUpload first failed:", ((_o = e === null || e === void 0 ? void 0 : e.response) === null || _o === void 0 ? void 0 : _o.data) || (e === null || e === void 0 ? void 0 : e.message) || e);
-                    res.status(400).json({
-                        success: false,
-                        error: "Failed to upload first frame to Runware (Vidu Q2)",
-                        details: serializeError(e),
-                    });
+                    console.error("[VIDUQ2] imageUpload first failed:", ((_u = e === null || e === void 0 ? void 0 : e.response) === null || _u === void 0 ? void 0 : _u.data) || (e === null || e === void 0 ? void 0 : e.message) || e);
+                    respondRunwareError(res, 400, "Failed to upload first frame to Runware (Vidu Q2)", ((_v = e === null || e === void 0 ? void 0 : e.response) === null || _v === void 0 ? void 0 : _v.data) || e);
                     return;
                 }
                 if (!firstUUID) {
@@ -969,7 +976,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                         console.log("[VIDUQ2] imageUpload last success", { lastUUID });
                     }
                     catch (e) {
-                        console.warn("[VIDUQ2] imageUpload last failed (continuing as single frame)", ((_p = e === null || e === void 0 ? void 0 : e.response) === null || _p === void 0 ? void 0 : _p.data) || (e === null || e === void 0 ? void 0 : e.message) || e);
+                        console.warn("[VIDUQ2] imageUpload last failed (continuing as single frame)", ((_w = e === null || e === void 0 ? void 0 : e.response) === null || _w === void 0 ? void 0 : _w.data) || (e === null || e === void 0 ? void 0 : e.message) || e);
                     }
                 }
                 // Model-specific params
@@ -1051,18 +1058,14 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                                     break;
                             }
                             if (status === "error" || status === "failed") {
-                                res.status(502).json({
-                                    success: false,
-                                    error: "Vidu Q2 Turbo generation failed during polling",
-                                    details: pd,
-                                });
+                                respondRunwareError(res, 502, "Vidu Q2 Turbo generation failed during polling", pd);
                                 return;
                             }
                             consecutive400 = 0;
                         }
                         catch (e) {
-                            const statusCode = (_q = e === null || e === void 0 ? void 0 : e.response) === null || _q === void 0 ? void 0 : _q.status;
-                            const body = (_r = e === null || e === void 0 ? void 0 : e.response) === null || _r === void 0 ? void 0 : _r.data;
+                            const statusCode = (_x = e === null || e === void 0 ? void 0 : e.response) === null || _x === void 0 ? void 0 : _x.status;
+                            const body = (_y = e === null || e === void 0 ? void 0 : e.response) === null || _y === void 0 ? void 0 : _y.data;
                             console.log("[VIDUQ2] Poll error", {
                                 attempt,
                                 statusCode,
@@ -1081,11 +1084,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                                     consecutive400 = 0;
                                 }
                                 if (consecutive400 >= 5) {
-                                    res.status(502).json({
-                                        success: false,
-                                        error: "Vidu Q2 Turbo polling returned repeated 400 errors",
-                                        details: body || serializeError(e),
-                                    });
+                                    respondRunwareError(res, 502, "Vidu Q2 Turbo polling returned repeated 400 errors", body || ((_z = e === null || e === void 0 ? void 0 : e.response) === null || _z === void 0 ? void 0 : _z.data) || e);
                                     return;
                                 }
                             }
@@ -1095,11 +1094,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                 }
                 if (!videoUrl) {
                     console.log("[VIDUQ2] Timeout - no video URL returned after polling");
-                    res.status(502).json({
-                        success: false,
-                        error: "Vidu Q2 Turbo did not return a video URL (timeout or missing)",
-                        details: data,
-                    });
+                    respondRunwareError(res, 502, "Vidu Q2 Turbo did not return a video URL (timeout or missing)", data);
                     return;
                 }
                 // 4) Download and upload to S3
@@ -1142,7 +1137,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                 return;
             }
             catch (err) {
-                console.error("[VIDUQ2] Fatal error:", ((_s = err === null || err === void 0 ? void 0 : err.response) === null || _s === void 0 ? void 0 : _s.data) || err);
+                console.error("[VIDUQ2] Fatal error:", ((_0 = err === null || err === void 0 ? void 0 : err.response) === null || _0 === void 0 ? void 0 : _0.data) || err);
                 res.status(500).json({
                     success: false,
                     error: "Vidu Q2 Turbo generation failed",
@@ -1262,22 +1257,14 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                                     break;
                             }
                             if (status === "error" || status === "failed") {
-                                const providerErr = extractRunwareError(pd) || {};
-                                res.status(422).json({
-                                    success: false,
-                                    error: providerErr.responseContent ||
-                                        providerErr.message ||
-                                        "Runware Veo 3.1 returned error during polling",
-                                    providerError: providerErr,
-                                    details: pd,
-                                });
+                                respondRunwareError(res, 422, "Runware Veo 3.1 returned error during polling", pd);
                                 return;
                             }
                             consecutive400 = 0;
                         }
                         catch (e) {
-                            const statusCode = (_t = e === null || e === void 0 ? void 0 : e.response) === null || _t === void 0 ? void 0 : _t.status;
-                            const body = (_u = e === null || e === void 0 ? void 0 : e.response) === null || _u === void 0 ? void 0 : _u.data;
+                            const statusCode = (_1 = e === null || e === void 0 ? void 0 : e.response) === null || _1 === void 0 ? void 0 : _1.status;
+                            const body = (_2 = e === null || e === void 0 ? void 0 : e.response) === null || _2 === void 0 ? void 0 : _2.data;
                             console.log("Veo 3.1 poll error", {
                                 attempt,
                                 statusCode,
@@ -1295,15 +1282,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                                     consecutive400 = 0;
                                 }
                                 if (consecutive400 >= 5) {
-                                    const providerErr = extractRunwareError(body) || {};
-                                    res.status(422).json({
-                                        success: false,
-                                        error: providerErr.responseContent ||
-                                            providerErr.message ||
-                                            "Runware Veo 3.1 polling returned repeated 400 errors",
-                                        providerError: providerErr,
-                                        details: body || (e === null || e === void 0 ? void 0 : e.message),
-                                    });
+                                    respondRunwareError(res, 422, "Runware Veo 3.1 polling returned repeated 400 errors", body || ((_3 = e === null || e === void 0 ? void 0 : e.response) === null || _3 === void 0 ? void 0 : _3.data) || e);
                                     return;
                                 }
                             }
@@ -1312,11 +1291,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                     }
                 }
                 if (!videoUrl) {
-                    res.status(502).json({
-                        success: false,
-                        error: "Runware Veo 3.1 did not return video URL (timeout or missing)",
-                        details: data,
-                    });
+                    respondRunwareError(res, 502, "Runware Veo 3.1 did not return video URL (timeout or missing)", data);
                     return;
                 }
                 // Download & upload to S3
@@ -1359,7 +1334,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                 return;
             }
             catch (err) {
-                console.error("Runware Veo 3.1 error:", ((_v = err === null || err === void 0 ? void 0 : err.response) === null || _v === void 0 ? void 0 : _v.data) || err);
+                console.error("Runware Veo 3.1 error:", ((_4 = err === null || err === void 0 ? void 0 : err.response) === null || _4 === void 0 ? void 0 : _4.data) || err);
                 res.status(500).json({
                     success: false,
                     error: "Runware Veo 3.1 generation failed",
@@ -1492,22 +1467,14 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                                     break;
                             }
                             if (status === "error" || status === "failed") {
-                                const providerErr = extractRunwareError(pd) || {};
-                                res.status(422).json({
-                                    success: false,
-                                    error: providerErr.responseContent ||
-                                        providerErr.message ||
-                                        "Runware Veo 3.1 Fast returned error during polling",
-                                    providerError: providerErr,
-                                    details: pd,
-                                });
+                                respondRunwareError(res, 422, "Runware Veo 3.1 Fast returned error during polling", pd);
                                 return;
                             }
                             consecutive400 = 0;
                         }
                         catch (e) {
-                            const statusCode = (_w = e === null || e === void 0 ? void 0 : e.response) === null || _w === void 0 ? void 0 : _w.status;
-                            const body = (_x = e === null || e === void 0 ? void 0 : e.response) === null || _x === void 0 ? void 0 : _x.data;
+                            const statusCode = (_5 = e === null || e === void 0 ? void 0 : e.response) === null || _5 === void 0 ? void 0 : _5.status;
+                            const body = (_6 = e === null || e === void 0 ? void 0 : e.response) === null || _6 === void 0 ? void 0 : _6.data;
                             console.log("[VEO31F] Poll error", {
                                 attempt,
                                 statusCode,
@@ -1527,15 +1494,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                                 }
                                 if (consecutive400 >= 5) {
                                     console.log("[VEO31F] Aborting after repeated 400s during polling");
-                                    const providerErr = extractRunwareError(body) || {};
-                                    res.status(422).json({
-                                        success: false,
-                                        error: providerErr.responseContent ||
-                                            providerErr.message ||
-                                            "Runware Veo 3.1 Fast polling returned repeated 400 errors",
-                                        providerError: providerErr,
-                                        details: body || (e === null || e === void 0 ? void 0 : e.message),
-                                    });
+                                    respondRunwareError(res, 422, "Runware Veo 3.1 Fast polling returned repeated 400 errors", body || ((_7 = e === null || e === void 0 ? void 0 : e.response) === null || _7 === void 0 ? void 0 : _7.data) || e);
                                     return;
                                 }
                             }
@@ -1544,11 +1503,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                     }
                 }
                 if (!videoUrl) {
-                    res.status(502).json({
-                        success: false,
-                        error: "Runware Veo 3.1 Fast did not return video URL (timeout or missing)",
-                        details: data,
-                    });
+                    respondRunwareError(res, 502, "Runware Veo 3.1 Fast did not return video URL (timeout or missing)", data);
                     return;
                 }
                 let rwStream;
@@ -1591,7 +1546,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                 return;
             }
             catch (err) {
-                console.error("Runware Veo 3.1 Fast error:", ((_y = err === null || err === void 0 ? void 0 : err.response) === null || _y === void 0 ? void 0 : _y.data) || err);
+                console.error("Runware Veo 3.1 Fast error:", ((_8 = err === null || err === void 0 ? void 0 : err.response) === null || _8 === void 0 ? void 0 : _8.data) || err);
                 res.status(500).json({
                     success: false,
                     error: "Runware Veo 3.1 Fast generation failed",
@@ -1710,7 +1665,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                         }
                         catch (e) {
                             // transient errors: continue polling
-                            console.log("[VEO3F] Poll transient error (continuing)", ((_z = e === null || e === void 0 ? void 0 : e.response) === null || _z === void 0 ? void 0 : _z.status) || (e === null || e === void 0 ? void 0 : e.message));
+                            console.log("[VEO3F] Poll transient error (continuing)", ((_9 = e === null || e === void 0 ? void 0 : e.response) === null || _9 === void 0 ? void 0 : _9.status) || (e === null || e === void 0 ? void 0 : e.message));
                             continue;
                         }
                         const pd = pollResp.data;
@@ -1730,27 +1685,14 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                                 break;
                         }
                         if (status === "error" || status === "failed") {
-                            // surface provider error with provider fields
-                            const providerErr = extractRunwareError(pd) || {};
-                            res.status(422).json({
-                                success: false,
-                                error: providerErr.responseContent ||
-                                    providerErr.message ||
-                                    "Runware Veo3@fast returned error during polling",
-                                providerError: providerErr,
-                                details: pd,
-                            });
+                            respondRunwareError(res, 422, "Runware Veo3@fast returned error during polling", pd);
                             return;
                         }
                     }
                 }
                 if (!videoUrl) {
                     console.log("[VEO3F] Timeout - no video URL returned after polling");
-                    res.status(502).json({
-                        success: false,
-                        error: "Runware Veo3@fast did not return video URL (timeout or missing)",
-                        details: data,
-                    });
+                    respondRunwareError(res, 502, "Runware Veo3@fast did not return video URL (timeout or missing)", data);
                     return;
                 }
                 // Download & upload to S3 (normalize hosting)
@@ -1794,7 +1736,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                 return;
             }
             catch (err) {
-                console.error("Runware Veo3@fast error:", ((_0 = err === null || err === void 0 ? void 0 : err.response) === null || _0 === void 0 ? void 0 : _0.data) || err);
+                console.error("Runware Veo3@fast error:", ((_10 = err === null || err === void 0 ? void 0 : err.response) === null || _10 === void 0 ? void 0 : _10.data) || err);
                 res.status(500).json({
                     success: false,
                     error: "Runware Veo3@fast generation failed",
@@ -1839,12 +1781,8 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                     });
                 }
                 catch (e) {
-                    console.error("[Runway Gen4] imageUpload first failed:", ((_1 = e === null || e === void 0 ? void 0 : e.response) === null || _1 === void 0 ? void 0 : _1.data) || (e === null || e === void 0 ? void 0 : e.message) || e);
-                    res.status(400).json({
-                        success: false,
-                        error: "Failed to upload first frame to Runway Gen-4 Turbo",
-                        details: serializeError(e),
-                    });
+                    console.error("[Runway Gen4] imageUpload first failed:", ((_11 = e === null || e === void 0 ? void 0 : e.response) === null || _11 === void 0 ? void 0 : _11.data) || (e === null || e === void 0 ? void 0 : e.message) || e);
+                    respondRunwareError(res, 400, "Failed to upload first frame to Runway Gen-4 Turbo", ((_12 = e === null || e === void 0 ? void 0 : e.response) === null || _12 === void 0 ? void 0 : _12.data) || e);
                     return;
                 }
                 if (!firstUUID) {
@@ -1863,7 +1801,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                         });
                     }
                     catch (e) {
-                        console.warn("[Runway Gen4] imageUpload last failed (continuing with first frame only)", ((_2 = e === null || e === void 0 ? void 0 : e.response) === null || _2 === void 0 ? void 0 : _2.data) || (e === null || e === void 0 ? void 0 : e.message) || e);
+                        console.warn("[Runway Gen4] imageUpload last failed (continuing with first frame only)", ((_13 = e === null || e === void 0 ? void 0 : e.response) === null || _13 === void 0 ? void 0 : _13.data) || (e === null || e === void 0 ? void 0 : e.message) || e);
                     }
                 }
                 const clamp = (val, min, max) => Math.max(min, Math.min(max, val));
@@ -1969,30 +1907,26 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                                     break;
                             }
                             if (status === "error" || status === "failed") {
-                                res.status(502).json({
-                                    success: false,
-                                    error: "Runway Gen-4 Turbo generation failed during polling",
-                                    details: pd,
-                                });
+                                respondRunwareError(res, 502, "Runway Gen-4 Turbo generation failed during polling", pd);
                                 return;
                             }
                             consecutive400 = 0;
                         }
                         catch (e) {
-                            const statusCode = (_3 = e === null || e === void 0 ? void 0 : e.response) === null || _3 === void 0 ? void 0 : _3.status;
-                            const body = (_4 = e === null || e === void 0 ? void 0 : e.response) === null || _4 === void 0 ? void 0 : _4.data;
+                            const statusCode = (_14 = e === null || e === void 0 ? void 0 : e.response) === null || _14 === void 0 ? void 0 : _14.status;
+                            const body = (_15 = e === null || e === void 0 ? void 0 : e.response) === null || _15 === void 0 ? void 0 : _15.data;
                             let parsedBody = body;
                             if (typeof body === "string") {
                                 try {
                                     parsedBody = JSON.parse(body);
                                 }
-                                catch (_89) {
+                                catch (_110) {
                                     parsedBody = undefined;
                                 }
                             }
                             const runwareMessage = Array.isArray(parsedBody === null || parsedBody === void 0 ? void 0 : parsedBody.errors)
-                                ? ((_5 = parsedBody.errors[0]) === null || _5 === void 0 ? void 0 : _5.message) ||
-                                    ((_6 = parsedBody.errors[0]) === null || _6 === void 0 ? void 0 : _6.responseContent)
+                                ? ((_16 = parsedBody.errors[0]) === null || _16 === void 0 ? void 0 : _16.message) ||
+                                    ((_17 = parsedBody.errors[0]) === null || _17 === void 0 ? void 0 : _17.responseContent)
                                 : undefined;
                             console.log("[Runway Gen4] Poll error", {
                                 attempt,
@@ -2012,15 +1946,10 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                                     consecutive400 = 0;
                                 }
                                 if (consecutive400 >= 5) {
-                                    res.status(502).json({
-                                        success: false,
-                                        error: (runwareMessage === null || runwareMessage === void 0 ? void 0 : runwareMessage.trim()) ||
-                                            "Runway Gen-4 Turbo polling returned repeated 400 errors",
-                                        code: runwareMessage
-                                            ? "RUNWAY_PROVIDER_ERROR"
-                                            : undefined,
-                                        details: parsedBody || body || serializeError(e),
-                                    });
+                                    respondRunwareError(res, 502, (runwareMessage === null || runwareMessage === void 0 ? void 0 : runwareMessage.trim()) ||
+                                        "Runway Gen-4 Turbo polling returned repeated 400 errors", parsedBody || body || e, runwareMessage
+                                        ? { code: "RUNWAY_PROVIDER_ERROR" }
+                                        : undefined);
                                     return;
                                 }
                             }
@@ -2029,11 +1958,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                     }
                 }
                 if (!videoUrl) {
-                    res.status(502).json({
-                        success: false,
-                        error: "Runway Gen-4 Turbo did not return a video URL",
-                        details: data,
-                    });
+                    respondRunwareError(res, 502, "Runway Gen-4 Turbo did not return a video URL", data);
                     return;
                 }
                 let runwayStream;
@@ -2075,8 +2000,8 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                 return;
             }
             catch (err) {
-                console.error("Runway Gen-4 Turbo error:", ((_7 = err === null || err === void 0 ? void 0 : err.response) === null || _7 === void 0 ? void 0 : _7.data) || err);
-                const runwareErrors = (_9 = (_8 = err === null || err === void 0 ? void 0 : err.response) === null || _8 === void 0 ? void 0 : _8.data) === null || _9 === void 0 ? void 0 : _9.errors;
+                console.error("Runway Gen-4 Turbo error:", ((_18 = err === null || err === void 0 ? void 0 : err.response) === null || _18 === void 0 ? void 0 : _18.data) || err);
+                const runwareErrors = (_20 = (_19 = err === null || err === void 0 ? void 0 : err.response) === null || _19 === void 0 ? void 0 : _19.data) === null || _20 === void 0 ? void 0 : _20.errors;
                 const invalidPromptError = Array.isArray(runwareErrors)
                     ? runwareErrors.find((e) => (e === null || e === void 0 ? void 0 : e.code) === "invalidPositivePrompt")
                     : null;
@@ -2135,29 +2060,8 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                     });
                     const data = resp.data;
                     const obj = Array.isArray(data === null || data === void 0 ? void 0 : data.data) ? data.data[0] : data === null || data === void 0 ? void 0 : data.data;
-                    return (obj === null || obj === void 0 ? void 0 : obj.imageUUID) || (obj === null || obj === void 0 ? void 0 : obj.imageUuid);
+                    return extractRunwareImageMeta(obj);
                 });
-                let firstUUID;
-                try {
-                    firstUUID = yield uploadFrame(imageCloudUrl);
-                    console.log("[Sora2] imageUpload success", { firstUUID });
-                }
-                catch (e) {
-                    console.error("[Sora2] imageUpload failed:", ((_10 = e === null || e === void 0 ? void 0 : e.response) === null || _10 === void 0 ? void 0 : _10.data) || (e === null || e === void 0 ? void 0 : e.message) || e);
-                    res.status(400).json({
-                        success: false,
-                        error: "Failed to upload image to Runware (Sora 2)",
-                        details: serializeError(e),
-                    });
-                    return;
-                }
-                if (!firstUUID) {
-                    res.status(400).json({
-                        success: false,
-                        error: "Runware imageUpload did not return imageUUID",
-                    });
-                    return;
-                }
                 const pickDuration = () => {
                     const allowed = [4, 8, 12];
                     const envVal = Number(process.env.SORA2_DURATION);
@@ -2170,8 +2074,37 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                     process.env.SORA2_ASPECT ||
                     "").toLowerCase();
                 const usePortrait = /portrait|vertical|9[:x]16|720x1280/.test(orientation);
-                const width = usePortrait ? 720 : 1280;
-                const height = usePortrait ? 1280 : 720;
+                const targetWidth = usePortrait ? 720 : 1280;
+                const targetHeight = usePortrait ? 1280 : 720;
+                const { providerUrl: soraReadyImageUrl } = yield ensureImageDimensionsForProvider(imageCloudUrl, feature, targetWidth, targetHeight);
+                let firstUUID;
+                let taskWidth = targetWidth;
+                let taskHeight = targetHeight;
+                try {
+                    const uploadMeta = yield uploadFrame(soraReadyImageUrl);
+                    firstUUID = uploadMeta.uuid;
+                    taskWidth = uploadMeta.width || targetWidth;
+                    taskHeight = uploadMeta.height || targetHeight;
+                    console.log("[Sora2] imageUpload success", {
+                        firstUUID,
+                        taskWidth,
+                        taskHeight,
+                        uploadWidth: uploadMeta.width,
+                        uploadHeight: uploadMeta.height,
+                    });
+                }
+                catch (e) {
+                    console.error("[Sora2] imageUpload failed:", ((_21 = e === null || e === void 0 ? void 0 : e.response) === null || _21 === void 0 ? void 0 : _21.data) || (e === null || e === void 0 ? void 0 : e.message) || e);
+                    respondRunwareError(res, 400, "Failed to upload image to Runware (Sora 2)", ((_22 = e === null || e === void 0 ? void 0 : e.response) === null || _22 === void 0 ? void 0 : _22.data) || e);
+                    return;
+                }
+                if (!firstUUID) {
+                    res.status(400).json({
+                        success: false,
+                        error: "Runware imageUpload did not return imageUUID",
+                    });
+                    return;
+                }
                 const createdTaskUUID = (0, crypto_1.randomUUID)();
                 const frameImages = [
                     { inputImage: firstUUID, frame: "first" },
@@ -2184,12 +2117,14 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                     duration,
                     deliveryMethod: "async",
                     frameImages,
+                    width: taskWidth,
+                    height: taskHeight,
                 };
                 console.log("[Sora2] Created task", {
                     taskUUID: createdTaskUUID,
                     duration,
-                    width,
-                    height,
+                    width: taskWidth,
+                    height: taskHeight,
                 });
                 const createResp = yield axios_1.default.post("https://api.runware.ai/v1", [task], {
                     headers: runwareHeaders,
@@ -2245,18 +2180,14 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                                     break;
                             }
                             if (status === "error" || status === "failed") {
-                                res.status(502).json({
-                                    success: false,
-                                    error: "Sora 2 generation failed during polling",
-                                    details: pd,
-                                });
+                                respondRunwareError(res, 502, "Sora 2 generation failed during polling", pd);
                                 return;
                             }
                             consecutive400 = 0;
                         }
                         catch (e) {
-                            const statusCode = (_11 = e === null || e === void 0 ? void 0 : e.response) === null || _11 === void 0 ? void 0 : _11.status;
-                            const body = (_12 = e === null || e === void 0 ? void 0 : e.response) === null || _12 === void 0 ? void 0 : _12.data;
+                            const statusCode = (_23 = e === null || e === void 0 ? void 0 : e.response) === null || _23 === void 0 ? void 0 : _23.status;
+                            const body = (_24 = e === null || e === void 0 ? void 0 : e.response) === null || _24 === void 0 ? void 0 : _24.data;
                             console.log("[Sora2] Poll error", {
                                 attempt,
                                 statusCode,
@@ -2275,11 +2206,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                                     consecutive400 = 0;
                                 }
                                 if (consecutive400 >= 5) {
-                                    res.status(502).json({
-                                        success: false,
-                                        error: "Sora 2 polling returned repeated 400 errors",
-                                        details: body || serializeError(e),
-                                    });
+                                    respondRunwareError(res, 502, "Sora 2 polling returned repeated 400 errors", body || ((_25 = e === null || e === void 0 ? void 0 : e.response) === null || _25 === void 0 ? void 0 : _25.data) || serializeError(e));
                                     return;
                                 }
                             }
@@ -2288,11 +2215,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                     }
                 }
                 if (!videoUrl) {
-                    res.status(502).json({
-                        success: false,
-                        error: "Sora 2 did not return a video URL",
-                        details: data,
-                    });
+                    respondRunwareError(res, 502, "Sora 2 did not return a video URL", data);
                     return;
                 }
                 let soraStream;
@@ -2334,12 +2257,8 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                 return;
             }
             catch (err) {
-                console.error("Sora 2 error:", ((_13 = err === null || err === void 0 ? void 0 : err.response) === null || _13 === void 0 ? void 0 : _13.data) || err);
-                res.status(500).json({
-                    success: false,
-                    error: "Sora 2 generation failed",
-                    details: serializeError(err),
-                });
+                console.error("Sora 2 error:", ((_26 = err === null || err === void 0 ? void 0 : err.response) === null || _26 === void 0 ? void 0 : _26.data) || err);
+                respondRunwareError(res, 500, "Sora 2 generation failed", ((_27 = err === null || err === void 0 ? void 0 : err.response) === null || _27 === void 0 ? void 0 : _27.data) || err);
                 return;
             }
         }
@@ -2379,29 +2298,8 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                     });
                     const data = resp.data;
                     const obj = Array.isArray(data === null || data === void 0 ? void 0 : data.data) ? data.data[0] : data === null || data === void 0 ? void 0 : data.data;
-                    return (obj === null || obj === void 0 ? void 0 : obj.imageUUID) || (obj === null || obj === void 0 ? void 0 : obj.imageUuid);
+                    return extractRunwareImageMeta(obj);
                 });
-                let firstUUID;
-                try {
-                    firstUUID = yield uploadFrame(imageCloudUrl);
-                    console.log("[Sora2Pro] imageUpload success", { firstUUID });
-                }
-                catch (e) {
-                    console.error("[Sora2Pro] imageUpload failed:", ((_14 = e === null || e === void 0 ? void 0 : e.response) === null || _14 === void 0 ? void 0 : _14.data) || (e === null || e === void 0 ? void 0 : e.message) || e);
-                    res.status(400).json({
-                        success: false,
-                        error: "Failed to upload image to Runware (Sora 2 Pro)",
-                        details: serializeError(e),
-                    });
-                    return;
-                }
-                if (!firstUUID) {
-                    res.status(400).json({
-                        success: false,
-                        error: "Runware imageUpload did not return imageUUID",
-                    });
-                    return;
-                }
                 const allowedDurations = [4, 8, 12];
                 const pickDuration = () => {
                     const envVal = Number(process.env.SORA2PRO_DURATION);
@@ -2440,7 +2338,38 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                     }
                     return combos[2];
                 };
-                const { width, height } = pickDims();
+                const dims = pickDims();
+                const targetWidth = dims.width;
+                const targetHeight = dims.height;
+                const { providerUrl: soraProReadyImageUrl } = yield ensureImageDimensionsForProvider(imageCloudUrl, feature, targetWidth, targetHeight);
+                let firstUUID;
+                let taskWidth = targetWidth;
+                let taskHeight = targetHeight;
+                try {
+                    const uploadMeta = yield uploadFrame(soraProReadyImageUrl);
+                    firstUUID = uploadMeta.uuid;
+                    taskWidth = uploadMeta.width || targetWidth;
+                    taskHeight = uploadMeta.height || targetHeight;
+                    console.log("[Sora2Pro] imageUpload success", {
+                        firstUUID,
+                        taskWidth,
+                        taskHeight,
+                        uploadWidth: uploadMeta.width,
+                        uploadHeight: uploadMeta.height,
+                    });
+                }
+                catch (e) {
+                    console.error("[Sora2Pro] imageUpload failed:", ((_28 = e === null || e === void 0 ? void 0 : e.response) === null || _28 === void 0 ? void 0 : _28.data) || (e === null || e === void 0 ? void 0 : e.message) || e);
+                    respondRunwareError(res, 400, "Failed to upload image to Runware (Sora 2 Pro)", ((_29 = e === null || e === void 0 ? void 0 : e.response) === null || _29 === void 0 ? void 0 : _29.data) || e);
+                    return;
+                }
+                if (!firstUUID) {
+                    res.status(400).json({
+                        success: false,
+                        error: "Runware imageUpload did not return imageUUID",
+                    });
+                    return;
+                }
                 const createdTaskUUID = (0, crypto_1.randomUUID)();
                 const frameImages = [
                     { inputImage: firstUUID, frame: "first" },
@@ -2451,16 +2380,16 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                     model: "openai:3@2",
                     positivePrompt: prompt,
                     duration,
-                    width,
-                    height,
+                    width: taskWidth,
+                    height: taskHeight,
                     deliveryMethod: "async",
                     frameImages,
                 };
                 console.log("[Sora2Pro] Created task", {
                     taskUUID: createdTaskUUID,
                     duration,
-                    width,
-                    height,
+                    width: taskWidth,
+                    height: taskHeight,
                 });
                 const createResp = yield axios_1.default.post("https://api.runware.ai/v1", [task], {
                     headers: runwareHeaders,
@@ -2516,18 +2445,14 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                                     break;
                             }
                             if (status === "error" || status === "failed") {
-                                res.status(502).json({
-                                    success: false,
-                                    error: "Sora 2 Pro generation failed during polling",
-                                    details: pd,
-                                });
+                                respondRunwareError(res, 502, "Sora 2 Pro generation failed during polling", pd);
                                 return;
                             }
                             consecutive400 = 0;
                         }
                         catch (e) {
-                            const statusCode = (_15 = e === null || e === void 0 ? void 0 : e.response) === null || _15 === void 0 ? void 0 : _15.status;
-                            const body = (_16 = e === null || e === void 0 ? void 0 : e.response) === null || _16 === void 0 ? void 0 : _16.data;
+                            const statusCode = (_30 = e === null || e === void 0 ? void 0 : e.response) === null || _30 === void 0 ? void 0 : _30.status;
+                            const body = (_31 = e === null || e === void 0 ? void 0 : e.response) === null || _31 === void 0 ? void 0 : _31.data;
                             console.log("[Sora2Pro] Poll error", {
                                 attempt,
                                 statusCode,
@@ -2546,11 +2471,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                                     consecutive400 = 0;
                                 }
                                 if (consecutive400 >= 5) {
-                                    res.status(502).json({
-                                        success: false,
-                                        error: "Sora 2 Pro polling returned repeated 400 errors",
-                                        details: body || serializeError(e),
-                                    });
+                                    respondRunwareError(res, 502, "Sora 2 Pro polling returned repeated 400 errors", body || ((_32 = e === null || e === void 0 ? void 0 : e.response) === null || _32 === void 0 ? void 0 : _32.data) || e);
                                     return;
                                 }
                             }
@@ -2559,11 +2480,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                     }
                 }
                 if (!videoUrl) {
-                    res.status(502).json({
-                        success: false,
-                        error: "Sora 2 Pro did not return a video URL",
-                        details: data,
-                    });
+                    respondRunwareError(res, 502, "Sora 2 Pro did not return a video URL", data);
                     return;
                 }
                 let soraProStream;
@@ -2605,11 +2522,13 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                 return;
             }
             catch (err) {
-                console.error("Sora 2 Pro error:", ((_17 = err === null || err === void 0 ? void 0 : err.response) === null || _17 === void 0 ? void 0 : _17.data) || err);
+                console.error("Sora 2 Pro error:", ((_33 = err === null || err === void 0 ? void 0 : err.response) === null || _33 === void 0 ? void 0 : _33.data) || err);
+                const providerErr = extractRunwareError((_34 = err === null || err === void 0 ? void 0 : err.response) === null || _34 === void 0 ? void 0 : _34.data);
                 res.status(500).json({
                     success: false,
                     error: "Sora 2 Pro generation failed",
-                    details: serializeError(err),
+                    details: (providerErr === null || providerErr === void 0 ? void 0 : providerErr.responseContent) || serializeError(err),
+                    providerError: providerErr,
                 });
                 return;
             }
@@ -2651,12 +2570,8 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                     console.log("[Hailuo2.3Fast] imageUpload success", { firstUUID });
                 }
                 catch (e) {
-                    console.error("[Hailuo2.3Fast] imageUpload failed:", ((_18 = e === null || e === void 0 ? void 0 : e.response) === null || _18 === void 0 ? void 0 : _18.data) || (e === null || e === void 0 ? void 0 : e.message) || e);
-                    res.status(400).json({
-                        success: false,
-                        error: "Failed to upload image to Runware (Hailuo 2.3 Fast)",
-                        details: serializeError(e),
-                    });
+                    console.error("[Hailuo2.3Fast] imageUpload failed:", ((_35 = e === null || e === void 0 ? void 0 : e.response) === null || _35 === void 0 ? void 0 : _35.data) || (e === null || e === void 0 ? void 0 : e.message) || e);
+                    respondRunwareError(res, 400, "Failed to upload image to Runware (Hailuo 2.3 Fast)", ((_36 = e === null || e === void 0 ? void 0 : e.response) === null || _36 === void 0 ? void 0 : _36.data) || e);
                     return;
                 }
                 if (!firstUUID) {
@@ -2758,18 +2673,14 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                                     break;
                             }
                             if (status === "error" || status === "failed") {
-                                res.status(502).json({
-                                    success: false,
-                                    error: "Hailuo 2.3 Fast generation failed during polling",
-                                    details: pd,
-                                });
+                                respondRunwareError(res, 502, "Hailuo 2.3 Fast generation failed during polling", pd);
                                 return;
                             }
                             consecutive400 = 0;
                         }
                         catch (e) {
-                            const statusCode = (_19 = e === null || e === void 0 ? void 0 : e.response) === null || _19 === void 0 ? void 0 : _19.status;
-                            const body = (_20 = e === null || e === void 0 ? void 0 : e.response) === null || _20 === void 0 ? void 0 : _20.data;
+                            const statusCode = (_37 = e === null || e === void 0 ? void 0 : e.response) === null || _37 === void 0 ? void 0 : _37.status;
+                            const body = (_38 = e === null || e === void 0 ? void 0 : e.response) === null || _38 === void 0 ? void 0 : _38.data;
                             console.log("[Hailuo2.3Fast] Poll error", {
                                 attempt,
                                 statusCode,
@@ -2788,11 +2699,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                                     consecutive400 = 0;
                                 }
                                 if (consecutive400 >= 5) {
-                                    res.status(502).json({
-                                        success: false,
-                                        error: "Hailuo 2.3 Fast polling returned repeated 400 errors",
-                                        details: body || serializeError(e),
-                                    });
+                                    respondRunwareError(res, 502, "Hailuo 2.3 Fast polling returned repeated 400 errors", body || ((_39 = e === null || e === void 0 ? void 0 : e.response) === null || _39 === void 0 ? void 0 : _39.data) || e);
                                     return;
                                 }
                             }
@@ -2801,11 +2708,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                     }
                 }
                 if (!videoUrl) {
-                    res.status(502).json({
-                        success: false,
-                        error: "Hailuo 2.3 Fast did not return a video URL",
-                        details: data,
-                    });
+                    respondRunwareError(res, 502, "Hailuo 2.3 Fast did not return a video URL", data);
                     return;
                 }
                 let hailuoFastStream;
@@ -2847,7 +2750,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                 return;
             }
             catch (err) {
-                console.error("Hailuo 2.3 Fast error:", ((_21 = err === null || err === void 0 ? void 0 : err.response) === null || _21 === void 0 ? void 0 : _21.data) || err);
+                console.error("Hailuo 2.3 Fast error:", ((_40 = err === null || err === void 0 ? void 0 : err.response) === null || _40 === void 0 ? void 0 : _40.data) || err);
                 res.status(500).json({
                     success: false,
                     error: "Hailuo 2.3 Fast generation failed",
@@ -2893,12 +2796,8 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                     console.log("[Hailuo2.3] imageUpload success", { firstUUID });
                 }
                 catch (e) {
-                    console.error("[Hailuo2.3] imageUpload failed:", ((_22 = e === null || e === void 0 ? void 0 : e.response) === null || _22 === void 0 ? void 0 : _22.data) || (e === null || e === void 0 ? void 0 : e.message) || e);
-                    res.status(400).json({
-                        success: false,
-                        error: "Failed to upload image to Runware (Hailuo 2.3)",
-                        details: serializeError(e),
-                    });
+                    console.error("[Hailuo2.3] imageUpload failed:", ((_41 = e === null || e === void 0 ? void 0 : e.response) === null || _41 === void 0 ? void 0 : _41.data) || (e === null || e === void 0 ? void 0 : e.message) || e);
+                    respondRunwareError(res, 400, "Failed to upload image to Runware (Hailuo 2.3)", ((_42 = e === null || e === void 0 ? void 0 : e.response) === null || _42 === void 0 ? void 0 : _42.data) || e);
                     return;
                 }
                 if (!firstUUID) {
@@ -2996,18 +2895,14 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                                     break;
                             }
                             if (status === "error" || status === "failed") {
-                                res.status(502).json({
-                                    success: false,
-                                    error: "Hailuo 2.3 generation failed during polling",
-                                    details: pd,
-                                });
+                                respondRunwareError(res, 502, "Hailuo 2.3 generation failed during polling", pd);
                                 return;
                             }
                             consecutive400 = 0;
                         }
                         catch (e) {
-                            const statusCode = (_23 = e === null || e === void 0 ? void 0 : e.response) === null || _23 === void 0 ? void 0 : _23.status;
-                            const body = (_24 = e === null || e === void 0 ? void 0 : e.response) === null || _24 === void 0 ? void 0 : _24.data;
+                            const statusCode = (_43 = e === null || e === void 0 ? void 0 : e.response) === null || _43 === void 0 ? void 0 : _43.status;
+                            const body = (_44 = e === null || e === void 0 ? void 0 : e.response) === null || _44 === void 0 ? void 0 : _44.data;
                             console.log("[Hailuo2.3] Poll error", {
                                 attempt,
                                 statusCode,
@@ -3026,11 +2921,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                                     consecutive400 = 0;
                                 }
                                 if (consecutive400 >= 5) {
-                                    res.status(502).json({
-                                        success: false,
-                                        error: "Hailuo 2.3 polling returned repeated 400 errors",
-                                        details: body || serializeError(e),
-                                    });
+                                    respondRunwareError(res, 502, "Hailuo 2.3 polling returned repeated 400 errors", body || ((_45 = e === null || e === void 0 ? void 0 : e.response) === null || _45 === void 0 ? void 0 : _45.data) || e);
                                     return;
                                 }
                             }
@@ -3039,11 +2930,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                     }
                 }
                 if (!videoUrl) {
-                    res.status(502).json({
-                        success: false,
-                        error: "Hailuo 2.3 did not return a video URL",
-                        details: data,
-                    });
+                    respondRunwareError(res, 502, "Hailuo 2.3 did not return a video URL", data);
                     return;
                 }
                 let hailuoStream;
@@ -3085,7 +2972,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                 return;
             }
             catch (err) {
-                console.error("Hailuo 2.3 error:", ((_25 = err === null || err === void 0 ? void 0 : err.response) === null || _25 === void 0 ? void 0 : _25.data) || err);
+                console.error("Hailuo 2.3 error:", ((_46 = err === null || err === void 0 ? void 0 : err.response) === null || _46 === void 0 ? void 0 : _46.data) || err);
                 res.status(500).json({
                     success: false,
                     error: "Hailuo 2.3 generation failed",
@@ -3239,11 +3126,11 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                 console.error("Pixverse create error (single attempt):", {
                     error: pixErr,
                     payload: createPayload,
-                    serverResponse: (_26 = pixErr === null || pixErr === void 0 ? void 0 : pixErr.response) === null || _26 === void 0 ? void 0 : _26.data,
+                    serverResponse: (_47 = pixErr === null || pixErr === void 0 ? void 0 : pixErr.response) === null || _47 === void 0 ? void 0 : _47.data,
                 });
                 const e = err;
-                let provider_message = ((_28 = (_27 = e === null || e === void 0 ? void 0 : e.response) === null || _27 === void 0 ? void 0 : _27.data) === null || _28 === void 0 ? void 0 : _28.message) ||
-                    ((_30 = (_29 = e === null || e === void 0 ? void 0 : e.response) === null || _29 === void 0 ? void 0 : _29.data) === null || _30 === void 0 ? void 0 : _30.error) ||
+                let provider_message = ((_49 = (_48 = e === null || e === void 0 ? void 0 : e.response) === null || _48 === void 0 ? void 0 : _48.data) === null || _49 === void 0 ? void 0 : _49.message) ||
+                    ((_51 = (_50 = e === null || e === void 0 ? void 0 : e.response) === null || _50 === void 0 ? void 0 : _50.data) === null || _51 === void 0 ? void 0 : _51.error) ||
                     (e === null || e === void 0 ? void 0 : e.message) ||
                     "Unknown error";
                 res.status(502).json({
@@ -3275,7 +3162,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                             pixVideoUrl =
                                 out.video_url ||
                                     out.video ||
-                                    (Array.isArray(out) ? ((_31 = out[0]) === null || _31 === void 0 ? void 0 : _31.video_url) || out[0] : null) ||
+                                    (Array.isArray(out) ? ((_52 = out[0]) === null || _52 === void 0 ? void 0 : _52.video_url) || out[0] : null) ||
                                     result.video_url ||
                                     result.video ||
                                     out.url ||
@@ -3484,7 +3371,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                 console.error("Vidu Q1 create error:", {
                     error: viduQ1Err,
                     payload: createPayload,
-                    serverResponse: (_32 = viduQ1Err === null || viduQ1Err === void 0 ? void 0 : viduQ1Err.response) === null || _32 === void 0 ? void 0 : _32.data,
+                    serverResponse: (_53 = viduQ1Err === null || viduQ1Err === void 0 ? void 0 : viduQ1Err.response) === null || _53 === void 0 ? void 0 : _53.data,
                 });
                 res.status(502).json({
                     success: false,
@@ -3511,7 +3398,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                             viduVideoUrl =
                                 out.video_url ||
                                     out.video ||
-                                    (Array.isArray(out) ? ((_33 = out[0]) === null || _33 === void 0 ? void 0 : _33.video_url) || out[0] : null) ||
+                                    (Array.isArray(out) ? ((_54 = out[0]) === null || _54 === void 0 ? void 0 : _54.video_url) || out[0] : null) ||
                                     result.video_url ||
                                     result.video ||
                                     out.url ||
@@ -3662,11 +3549,11 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                 console.error("Vidu 1.5 create error:", {
                     error: vidu15Err,
                     payload: createPayload,
-                    serverResponse: (_34 = vidu15Err === null || vidu15Err === void 0 ? void 0 : vidu15Err.response) === null || _34 === void 0 ? void 0 : _34.data,
+                    serverResponse: (_55 = vidu15Err === null || vidu15Err === void 0 ? void 0 : vidu15Err.response) === null || _55 === void 0 ? void 0 : _55.data,
                 });
                 res.status(502).json({
                     success: false,
-                    error: (_35 = vidu15Err === null || vidu15Err === void 0 ? void 0 : vidu15Err.response) === null || _35 === void 0 ? void 0 : _35.data.details,
+                    error: (_56 = vidu15Err === null || vidu15Err === void 0 ? void 0 : vidu15Err.response) === null || _56 === void 0 ? void 0 : _56.data.details,
                     details: serializeError(err),
                 });
                 return;
@@ -3689,7 +3576,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                             viduVideoUrl =
                                 out.video_url ||
                                     out.video ||
-                                    (Array.isArray(out) ? ((_36 = out[0]) === null || _36 === void 0 ? void 0 : _36.video_url) || out[0] : null) ||
+                                    (Array.isArray(out) ? ((_57 = out[0]) === null || _57 === void 0 ? void 0 : _57.video_url) || out[0] : null) ||
                                     result.video_url ||
                                     result.video ||
                                     out.url ||
@@ -3843,7 +3730,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                 console.error("Vidu Q1 I2V create error:", {
                     error: viduQ1I2VErr,
                     payload: createPayload,
-                    serverResponse: (_37 = viduQ1I2VErr === null || viduQ1I2VErr === void 0 ? void 0 : viduQ1I2VErr.response) === null || _37 === void 0 ? void 0 : _37.data,
+                    serverResponse: (_58 = viduQ1I2VErr === null || viduQ1I2VErr === void 0 ? void 0 : viduQ1I2VErr.response) === null || _58 === void 0 ? void 0 : _58.data,
                 });
                 res.status(502).json({
                     success: false,
@@ -3872,7 +3759,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                             viduVideoUrl =
                                 out.video_url ||
                                     out.video ||
-                                    (Array.isArray(out) ? ((_38 = out[0]) === null || _38 === void 0 ? void 0 : _38.video_url) || out[0] : null) ||
+                                    (Array.isArray(out) ? ((_59 = out[0]) === null || _59 === void 0 ? void 0 : _59.video_url) || out[0] : null) ||
                                     out.url ||
                                     result.data.url ||
                                     null;
@@ -3894,7 +3781,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                                 ? `Vidu Q1 I2V prediction failed: ${provider_message}`
                                 : "Vidu Q1 I2V prediction failed",
                             provider: "ViduQ1I2V",
-                            provider_status: (_39 = result.data) === null || _39 === void 0 ? void 0 : _39.status,
+                            provider_status: (_60 = result.data) === null || _60 === void 0 ? void 0 : _60.status,
                             provider_message,
                             details: safeJson(result.data),
                         });
@@ -4024,7 +3911,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                 console.error("Vidu 2.0 create error:", {
                     error: vidu20Err,
                     payload: createPayload,
-                    serverResponse: (_40 = vidu20Err === null || vidu20Err === void 0 ? void 0 : vidu20Err.response) === null || _40 === void 0 ? void 0 : _40.data,
+                    serverResponse: (_61 = vidu20Err === null || vidu20Err === void 0 ? void 0 : vidu20Err.response) === null || _61 === void 0 ? void 0 : _61.data,
                 });
                 res.status(502).json({
                     success: false,
@@ -4055,7 +3942,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                             viduVideoUrl =
                                 out.video_url ||
                                     out.video ||
-                                    (Array.isArray(out) ? ((_41 = out[0]) === null || _41 === void 0 ? void 0 : _41.video_url) || out[0] : null) ||
+                                    (Array.isArray(out) ? ((_62 = out[0]) === null || _62 === void 0 ? void 0 : _62.video_url) || out[0] : null) ||
                                     result.video_url ||
                                     result.video ||
                                     out.url ||
@@ -4210,7 +4097,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                 console.error("Veo 2 Image to Video create error:", {
                     error: veo2Err,
                     payload: createPayload,
-                    serverResponse: (_42 = veo2Err === null || veo2Err === void 0 ? void 0 : veo2Err.response) === null || _42 === void 0 ? void 0 : _42.data,
+                    serverResponse: (_63 = veo2Err === null || veo2Err === void 0 ? void 0 : veo2Err.response) === null || _63 === void 0 ? void 0 : _63.data,
                 });
                 res.status(502).json({
                     success: false,
@@ -4241,7 +4128,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                             veoVideoUrl =
                                 out.video_url ||
                                     out.video ||
-                                    (Array.isArray(out) ? ((_43 = out[0]) === null || _43 === void 0 ? void 0 : _43.video_url) || out[0] : null) ||
+                                    (Array.isArray(out) ? ((_64 = out[0]) === null || _64 === void 0 ? void 0 : _64.video_url) || out[0] : null) ||
                                     result.video_url ||
                                     result.video ||
                                     out.url ||
@@ -4394,7 +4281,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                 console.error("Veo 3 Image to Video create error:", {
                     error: veo3Err,
                     payload: createPayload,
-                    serverResponse: (_44 = veo3Err === null || veo3Err === void 0 ? void 0 : veo3Err.response) === null || _44 === void 0 ? void 0 : _44.data,
+                    serverResponse: (_65 = veo3Err === null || veo3Err === void 0 ? void 0 : veo3Err.response) === null || _65 === void 0 ? void 0 : _65.data,
                 });
                 res.status(502).json({
                     success: false,
@@ -4425,7 +4312,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                             veoVideoUrl =
                                 out.video_url ||
                                     out.video ||
-                                    (Array.isArray(out) ? ((_45 = out[0]) === null || _45 === void 0 ? void 0 : _45.video_url) || out[0] : null) ||
+                                    (Array.isArray(out) ? ((_66 = out[0]) === null || _66 === void 0 ? void 0 : _66.video_url) || out[0] : null) ||
                                     result.video_url ||
                                     result.video ||
                                     out.url ||
@@ -4548,7 +4435,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                     try {
                         audioUrl = yield (0, signedUrl_1.signKey)(audioKey);
                     }
-                    catch (_90) {
+                    catch (_111) {
                         audioUrl = (0, s3_1.publicUrlFor)(audioKey); // fallback (may be private)
                     }
                 }
@@ -4627,8 +4514,8 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
             }
             catch (e) {
                 console.error("[Bytedance] Creation error:", serializeError(e));
-                const provider_message = ((_47 = (_46 = e === null || e === void 0 ? void 0 : e.response) === null || _46 === void 0 ? void 0 : _46.data) === null || _47 === void 0 ? void 0 : _47.message) ||
-                    ((_49 = (_48 = e === null || e === void 0 ? void 0 : e.response) === null || _48 === void 0 ? void 0 : _48.data) === null || _49 === void 0 ? void 0 : _49.error) ||
+                const provider_message = ((_68 = (_67 = e === null || e === void 0 ? void 0 : e.response) === null || _67 === void 0 ? void 0 : _67.data) === null || _68 === void 0 ? void 0 : _68.message) ||
+                    ((_70 = (_69 = e === null || e === void 0 ? void 0 : e.response) === null || _69 === void 0 ? void 0 : _69.data) === null || _70 === void 0 ? void 0 : _70.error) ||
                     (e === null || e === void 0 ? void 0 : e.message) ||
                     "Unknown error";
                 res.status(502).json({
@@ -4803,7 +4690,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
             }
             catch (e) {
                 // already using e as any here, so no change needed
-                const respData = (_50 = e === null || e === void 0 ? void 0 : e.response) === null || _50 === void 0 ? void 0 : _50.data;
+                const respData = (_71 = e === null || e === void 0 ? void 0 : e.response) === null || _71 === void 0 ? void 0 : _71.data;
                 const base = (respData === null || respData === void 0 ? void 0 : respData.base_resp) || {};
                 const provider_code = base === null || base === void 0 ? void 0 : base.status_code;
                 const provider_message = (base === null || base === void 0 ? void 0 : base.status_msg) || (respData === null || respData === void 0 ? void 0 : respData.message) || (e === null || e === void 0 ? void 0 : e.message);
@@ -4831,26 +4718,26 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                         params: { task_id: taskId },
                         timeout: 20000,
                     });
-                    const status = (_51 = pollResp.data) === null || _51 === void 0 ? void 0 : _51.status;
+                    const status = (_72 = pollResp.data) === null || _72 === void 0 ? void 0 : _72.status;
                     if (status === "Success" || status === "success") {
                         // Assume file_id -> downloadable endpoint
-                        const fileId = (_52 = pollResp.data) === null || _52 === void 0 ? void 0 : _52.file_id;
+                        const fileId = (_73 = pollResp.data) === null || _73 === void 0 ? void 0 : _73.file_id;
                         console.log("MiniMax generation success payload:", safeJson(pollResp.data));
                         mmFileId = fileId || null;
                         // If API already provides a direct downloadable URL use it, else will fetch below
                         mmVideoUrl =
-                            ((_53 = pollResp.data) === null || _53 === void 0 ? void 0 : _53.video_url) || ((_54 = pollResp.data) === null || _54 === void 0 ? void 0 : _54.file_url) || null;
+                            ((_74 = pollResp.data) === null || _74 === void 0 ? void 0 : _74.video_url) || ((_75 = pollResp.data) === null || _75 === void 0 ? void 0 : _75.file_url) || null;
                         break; // exit loop, will handle retrieval next
                     }
                     if (status === "Fail" ||
                         status === "failed" ||
                         status === "error") {
-                        const base = ((_55 = pollResp.data) === null || _55 === void 0 ? void 0 : _55.base_resp) || {};
+                        const base = ((_76 = pollResp.data) === null || _76 === void 0 ? void 0 : _76.base_resp) || {};
                         const provider_code = base === null || base === void 0 ? void 0 : base.status_code;
                         const provider_message = (base === null || base === void 0 ? void 0 : base.status_msg) ||
-                            ((_56 = pollResp.data) === null || _56 === void 0 ? void 0 : _56.status_reason) ||
-                            ((_57 = pollResp.data) === null || _57 === void 0 ? void 0 : _57.message) ||
-                            ((_58 = pollResp.data) === null || _58 === void 0 ? void 0 : _58.status);
+                            ((_77 = pollResp.data) === null || _77 === void 0 ? void 0 : _77.status_reason) ||
+                            ((_78 = pollResp.data) === null || _78 === void 0 ? void 0 : _78.message) ||
+                            ((_79 = pollResp.data) === null || _79 === void 0 ? void 0 : _79.status);
                         res.status(500).json({
                             success: false,
                             error: provider_message
@@ -4859,7 +4746,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                             provider: "MiniMax",
                             provider_code,
                             provider_message,
-                            provider_status: (_59 = pollResp.data) === null || _59 === void 0 ? void 0 : _59.status,
+                            provider_status: (_80 = pollResp.data) === null || _80 === void 0 ? void 0 : _80.status,
                             details: safeJson(pollResp.data),
                         });
                         return;
@@ -4892,8 +4779,8 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                         timeout: 30000,
                     });
                     mmVideoUrl =
-                        ((_61 = (_60 = retrieveResp.data) === null || _60 === void 0 ? void 0 : _60.file) === null || _61 === void 0 ? void 0 : _61.download_url) ||
-                            ((_62 = retrieveResp.data) === null || _62 === void 0 ? void 0 : _62.download_url) ||
+                        ((_82 = (_81 = retrieveResp.data) === null || _81 === void 0 ? void 0 : _81.file) === null || _82 === void 0 ? void 0 : _82.download_url) ||
+                            ((_83 = retrieveResp.data) === null || _83 === void 0 ? void 0 : _83.download_url) ||
                             null;
                     if (!mmVideoUrl) {
                         console.error("MiniMax retrieve missing download_url", safeJson(retrieveResp.data));
@@ -4909,7 +4796,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                 }
                 catch (e) {
                     console.error("MiniMax retrieve error:", serializeError(e));
-                    const respData = (_63 = e === null || e === void 0 ? void 0 : e.response) === null || _63 === void 0 ? void 0 : _63.data;
+                    const respData = (_84 = e === null || e === void 0 ? void 0 : e.response) === null || _84 === void 0 ? void 0 : _84.data;
                     const base = (respData === null || respData === void 0 ? void 0 : respData.base_resp) || {};
                     const provider_code = base === null || base === void 0 ? void 0 : base.status_code;
                     const provider_message = (base === null || base === void 0 ? void 0 : base.status_msg) || (respData === null || respData === void 0 ? void 0 : respData.message) || (e === null || e === void 0 ? void 0 : e.message);
@@ -4944,7 +4831,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                 });
             }
             catch (e) {
-                const respData = (_64 = e === null || e === void 0 ? void 0 : e.response) === null || _64 === void 0 ? void 0 : _64.data;
+                const respData = (_85 = e === null || e === void 0 ? void 0 : e.response) === null || _85 === void 0 ? void 0 : _85.data;
                 const base = (respData === null || respData === void 0 ? void 0 : respData.base_resp) || {};
                 const provider_code = base === null || base === void 0 ? void 0 : base.status_code;
                 const provider_message = (base === null || base === void 0 ? void 0 : base.status_msg) || (respData === null || respData === void 0 ? void 0 : respData.message) || (e === null || e === void 0 ? void 0 : e.message);
@@ -5063,9 +4950,9 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                 console.error("Luma create generation error:", {
                     error: serializeError(e),
                     payload: lumaPayload,
-                    serverResponse: (_65 = e === null || e === void 0 ? void 0 : e.response) === null || _65 === void 0 ? void 0 : _65.data,
+                    serverResponse: (_86 = e === null || e === void 0 ? void 0 : e.response) === null || _86 === void 0 ? void 0 : _86.data,
                 });
-                const respData = (_66 = e === null || e === void 0 ? void 0 : e.response) === null || _66 === void 0 ? void 0 : _66.data;
+                const respData = (_87 = e === null || e === void 0 ? void 0 : e.response) === null || _87 === void 0 ? void 0 : _87.data;
                 // Prefer detail/message/error from server response for user-facing error
                 const userMessage = (respData === null || respData === void 0 ? void 0 : respData.detail) ||
                     (respData === null || respData === void 0 ? void 0 : respData.message) ||
@@ -5091,7 +4978,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
             });
             return;
         }
-        const generationId = ((_67 = createGenRes.data) === null || _67 === void 0 ? void 0 : _67.id) || ((_69 = (_68 = createGenRes.data) === null || _68 === void 0 ? void 0 : _68.data) === null || _69 === void 0 ? void 0 : _69.id);
+        const generationId = ((_88 = createGenRes.data) === null || _88 === void 0 ? void 0 : _88.id) || ((_90 = (_89 = createGenRes.data) === null || _89 === void 0 ? void 0 : _89.data) === null || _90 === void 0 ? void 0 : _90.id);
         if (!generationId) {
             res.status(500).json({
                 success: false,
@@ -5136,33 +5023,33 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
             }
             // Try to read state/status and the video URL in a robust way
             state =
-                ((_70 = pollRes.data) === null || _70 === void 0 ? void 0 : _70.state) ||
-                    ((_71 = pollRes.data) === null || _71 === void 0 ? void 0 : _71.status) ||
-                    ((_73 = (_72 = pollRes.data) === null || _72 === void 0 ? void 0 : _72.data) === null || _73 === void 0 ? void 0 : _73.state) ||
+                ((_91 = pollRes.data) === null || _91 === void 0 ? void 0 : _91.state) ||
+                    ((_92 = pollRes.data) === null || _92 === void 0 ? void 0 : _92.status) ||
+                    ((_94 = (_93 = pollRes.data) === null || _93 === void 0 ? void 0 : _93.data) === null || _94 === void 0 ? void 0 : _94.state) ||
                     "";
             if (state === "completed") {
                 videoUrl =
-                    ((_75 = (_74 = pollRes.data) === null || _74 === void 0 ? void 0 : _74.assets) === null || _75 === void 0 ? void 0 : _75.video) ||
-                        ((_76 = pollRes.data) === null || _76 === void 0 ? void 0 : _76.video) ||
-                        ((_78 = (_77 = pollRes.data) === null || _77 === void 0 ? void 0 : _77.data) === null || _78 === void 0 ? void 0 : _78.video_url) ||
-                        ((_82 = (_81 = (_80 = (_79 = pollRes.data) === null || _79 === void 0 ? void 0 : _79.assets) === null || _80 === void 0 ? void 0 : _80.mp4) === null || _81 === void 0 ? void 0 : _81[0]) === null || _82 === void 0 ? void 0 : _82.url) ||
+                    ((_96 = (_95 = pollRes.data) === null || _95 === void 0 ? void 0 : _95.assets) === null || _96 === void 0 ? void 0 : _96.video) ||
+                        ((_97 = pollRes.data) === null || _97 === void 0 ? void 0 : _97.video) ||
+                        ((_99 = (_98 = pollRes.data) === null || _98 === void 0 ? void 0 : _98.data) === null || _99 === void 0 ? void 0 : _99.video_url) ||
+                        ((_103 = (_102 = (_101 = (_100 = pollRes.data) === null || _100 === void 0 ? void 0 : _100.assets) === null || _101 === void 0 ? void 0 : _101.mp4) === null || _102 === void 0 ? void 0 : _102[0]) === null || _103 === void 0 ? void 0 : _103.url) ||
                         null;
                 console.log("Luma poll response:", pollRes.data);
                 break;
             }
             if (state === "failed") {
                 console.error("Luma generation failed:", pollRes.data);
-                const provider_message = ((_83 = pollRes.data) === null || _83 === void 0 ? void 0 : _83.failure_reason) ||
-                    ((_84 = pollRes.data) === null || _84 === void 0 ? void 0 : _84.error) ||
-                    ((_85 = pollRes.data) === null || _85 === void 0 ? void 0 : _85.message) ||
-                    ((_86 = pollRes.data) === null || _86 === void 0 ? void 0 : _86.state);
+                const provider_message = ((_104 = pollRes.data) === null || _104 === void 0 ? void 0 : _104.failure_reason) ||
+                    ((_105 = pollRes.data) === null || _105 === void 0 ? void 0 : _105.error) ||
+                    ((_106 = pollRes.data) === null || _106 === void 0 ? void 0 : _106.message) ||
+                    ((_107 = pollRes.data) === null || _107 === void 0 ? void 0 : _107.state);
                 res.status(500).json({
                     success: false,
                     error: provider_message
                         ? `Luma generation failed: ${provider_message}`
                         : "Luma generation failed",
                     provider: "Luma",
-                    provider_status: (_87 = pollRes.data) === null || _87 === void 0 ? void 0 : _87.state,
+                    provider_status: (_108 = pollRes.data) === null || _108 === void 0 ? void 0 : _108.state,
                     provider_message,
                     details: safeJson(pollRes.data),
                 });
@@ -5190,7 +5077,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
         }
         catch (err) {
             const e = err;
-            console.error("Error downloading Luma video:", ((_88 = e === null || e === void 0 ? void 0 : e.response) === null || _88 === void 0 ? void 0 : _88.data) || e);
+            console.error("Error downloading Luma video:", ((_109 = e === null || e === void 0 ? void 0 : e.response) === null || _109 === void 0 ? void 0 : _109.data) || e);
             res.status(500).json({
                 success: false,
                 error: "Failed to download Luma video",
