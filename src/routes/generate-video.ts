@@ -463,6 +463,10 @@ router.post(
       const isRunwareHailuo23 = /hailuo[\s-]*2\.?3(?!.*fast)|minimax:4@1/i.test(
         rawModel
       );
+      const isRunwareControlNetXL =
+        /controlnet[\s-]*xl[\s-]*video|civitai:136070@267493/i.test(rawModel);
+      const isRunwareClaymotionF1 =
+        /claymotion[\s-]*f1|civitai:855822@957548/i.test(rawModel);
       const isLumaModel =
         /(^|\s)(ray|luma)(?=\b)/i.test(rawModel) ||
         /dream\s*machine/i.test(rawModel) ||
@@ -3908,6 +3912,552 @@ router.post(
           res.status(500).json({
             success: false,
             error: "Hailuo 2.3 generation failed",
+            details: serializeError(err),
+          });
+          return;
+        }
+      }
+
+      // Runware ControlNet XL Video (Image-to-Video)
+      if (isRunwareControlNetXL) {
+        try {
+          console.log("[ControlNet XL Video] Start generation", {
+            feature,
+            rawModel,
+            imageCloudUrlInitial: imageCloudUrl?.slice(0, 120),
+          });
+
+          const runwareHeaders = {
+            Authorization: `Bearer ${
+              process.env.RUNWARE_API_KEY || process.env.RUNWARE_KEY
+            }`,
+            "Content-Type": "application/json",
+          };
+
+          // 1) Upload first frame image to get imageUUID
+          const uploadPayload = [
+            {
+              taskType: "imageUpload",
+              taskUUID: randomUUID(),
+              image: imageCloudUrl,
+            },
+          ];
+          let firstUUID: string | undefined;
+          try {
+            const up = await axios.post(
+              "https://api.runware.ai/v1",
+              uploadPayload,
+              { headers: runwareHeaders, timeout: 180000 }
+            );
+            const d = up.data;
+            const obj = Array.isArray(d?.data) ? d.data[0] : d?.data;
+            firstUUID = obj?.imageUUID || obj?.imageUuid;
+            console.log("[ControlNet XL Video] imageUpload success", {
+              firstUUID,
+            });
+          } catch (e: any) {
+            console.error(
+              "Runware ControlNet XL Video imageUpload failed:",
+              e?.response?.data || e?.message || e
+            );
+            respondRunwareError(
+              res,
+              400,
+              "Failed to upload image to Runware (ControlNet XL Video)",
+              e?.response?.data || e
+            );
+            return;
+          }
+          if (!firstUUID) {
+            res.status(400).json({
+              success: false,
+              error: "Runware imageUpload did not return imageUUID",
+            });
+            return;
+          }
+
+          // 2) Create videoInference task for ControlNet XL Video
+          const taskUUIDCreated = randomUUID();
+          const task: any = {
+            taskType: "videoInference",
+            taskUUID: taskUUIDCreated,
+            model: "civitai:136070@267493",
+            positivePrompt: prompt || "",
+            width: 512,
+            height: 512,
+            duration: 4,
+            deliveryMethod: "async",
+            frameImages: [{ inputImage: firstUUID, frame: "first" }],
+          };
+          console.log("[ControlNet XL Video] Created task", {
+            taskUUID: taskUUIDCreated,
+            width: 512,
+            height: 512,
+            duration: 4,
+          });
+
+          const createResp = await axios.post(
+            "https://api.runware.ai/v1",
+            [task],
+            { headers: runwareHeaders, timeout: 180000 }
+          );
+          const createData = createResp.data;
+          const ackItem = Array.isArray(createData?.data)
+            ? createData.data.find(
+                (d: any) => d?.taskType === "videoInference"
+              ) || createData.data[0]
+            : createData?.data;
+          let videoUrl =
+            ackItem?.videoURL ||
+            ackItem?.url ||
+            ackItem?.video ||
+            (Array.isArray(ackItem?.videos) ? ackItem.videos[0] : null);
+          let pollTaskUUID: string = ackItem?.taskUUID || taskUUIDCreated;
+          console.log("[ControlNet XL Video] Ack response", {
+            ackTaskUUID: ackItem?.taskUUID,
+            createdTaskUUID: taskUUIDCreated,
+            chosenPollTaskUUID: pollTaskUUID,
+            immediateVideo: !!videoUrl,
+            status: ackItem?.status || ackItem?.taskStatus,
+          });
+
+          // 3) Poll if no immediate URL
+          if (!videoUrl && pollTaskUUID) {
+            const maxAttempts = 100; // ~5 min
+            const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
+            let consecutive400 = 0;
+            let switchedToCreated = false;
+            for (let attempt = 0; attempt < maxAttempts; attempt++) {
+              await delay(3000);
+              const pollPayload = [
+                { taskType: "getResponse", taskUUID: pollTaskUUID },
+              ];
+              console.log("[ControlNet XL Video] Poll attempt", {
+                attempt,
+                pollPayload: pollPayload[0],
+              });
+              try {
+                const poll = await axios.post(
+                  "https://api.runware.ai/v1",
+                  pollPayload,
+                  { headers: runwareHeaders, timeout: 60000 }
+                );
+                const pd = poll.data;
+                const item = Array.isArray(pd?.data)
+                  ? pd.data.find(
+                      (d: any) => d?.taskUUID === pollTaskUUID || d?.videoURL
+                    ) || pd.data[0]
+                  : pd?.data;
+                const status = item?.status || item?.taskStatus;
+                if (status)
+                  console.log("[ControlNet XL Video] Poll status", {
+                    attempt,
+                    status,
+                  });
+                if (status === "success" || item?.videoURL || item?.url) {
+                  videoUrl =
+                    item?.videoURL ||
+                    item?.url ||
+                    item?.video ||
+                    (Array.isArray(item?.videos) ? item.videos[0] : null);
+                  if (videoUrl) break;
+                }
+                if (status === "error" || status === "failed") {
+                  respondRunwareError(
+                    res,
+                    502,
+                    "Runware ControlNet XL Video generation failed during polling",
+                    pd
+                  );
+                  return;
+                }
+                consecutive400 = 0; // reset on successful poll
+              } catch (e: any) {
+                const statusCode = e?.response?.status;
+                const body = e?.response?.data;
+                console.log("[ControlNet XL Video] Poll error", {
+                  attempt,
+                  statusCode,
+                  body:
+                    typeof body === "object"
+                      ? JSON.stringify(body).slice(0, 500)
+                      : body,
+                });
+                if (statusCode === 400) {
+                  consecutive400++;
+                  // If repeated 400 and ack UUID differs, try switching to created taskUUID once
+                  if (
+                    !switchedToCreated &&
+                    pollTaskUUID !== taskUUIDCreated &&
+                    consecutive400 >= 2
+                  ) {
+                    console.log(
+                      "[ControlNet XL Video] Switching to created taskUUID due to repeated 400",
+                      { from: pollTaskUUID, to: taskUUIDCreated }
+                    );
+                    pollTaskUUID = taskUUIDCreated;
+                    switchedToCreated = true;
+                    consecutive400 = 0;
+                  }
+                  if (consecutive400 >= 5) {
+                    respondRunwareError(
+                      res,
+                      502,
+                      "Runware ControlNet XL Video polling returned repeated 400 errors",
+                      body || e?.response?.data || e
+                    );
+                    return;
+                  }
+                }
+                continue;
+              }
+            }
+          }
+
+          if (!videoUrl) {
+            console.log(
+              "[ControlNet XL Video] Timeout - no video URL returned after polling"
+            );
+            respondRunwareError(
+              res,
+              502,
+              "Runware ControlNet XL Video did not return a video URL (timeout or missing)",
+              createData
+            );
+            return;
+          }
+
+          // 4) Download and upload to S3
+          let rwStream;
+          try {
+            rwStream = await axios.get(videoUrl, {
+              responseType: "stream",
+              timeout: 600000,
+            });
+            console.log("[ControlNet XL Video] Download started");
+          } catch (e) {
+            console.log("[ControlNet XL Video] Download error", {
+              error: serializeError(e),
+            });
+            res.status(500).json({
+              success: false,
+              error: "Failed to download ControlNet XL Video",
+              details: serializeError(e),
+            });
+            return;
+          }
+          let uploaded;
+          try {
+            uploaded = await uploadGeneratedVideo(
+              feature,
+              "controlnet-xl-video",
+              rwStream.data as Readable,
+              videoType
+            );
+            console.log("[ControlNet XL Video] S3 upload success", {
+              key: uploaded.key,
+            });
+          } catch (e) {
+            console.log("[ControlNet XL Video] S3 upload error", {
+              error: serializeError(e),
+            });
+            res.status(500).json({
+              success: false,
+              error: "Failed to upload ControlNet XL Video to S3",
+              details: serializeError(e),
+            });
+            return;
+          }
+          res.status(200).json({
+            success: true,
+            video: {
+              url: uploaded.signedUrl,
+              signedUrl: uploaded.signedUrl,
+              key: uploaded.key,
+            },
+            s3Key: uploaded.key,
+          });
+          return;
+        } catch (err: any) {
+          console.error(
+            "Runware ControlNet XL Video error:",
+            err?.response?.data || err
+          );
+          res.status(500).json({
+            success: false,
+            error: "ControlNet XL Video generation failed",
+            details: serializeError(err),
+          });
+          return;
+        }
+      }
+
+      // Runware Claymotion F1 (Image-to-Video)
+      if (isRunwareClaymotionF1) {
+        try {
+          console.log("[Claymotion F1] Start generation", {
+            feature,
+            rawModel,
+            imageCloudUrlInitial: imageCloudUrl?.slice(0, 120),
+          });
+
+          const runwareHeaders = {
+            Authorization: `Bearer ${
+              process.env.RUNWARE_API_KEY || process.env.RUNWARE_KEY
+            }`,
+            "Content-Type": "application/json",
+          };
+
+          // 1) Upload first frame image to get imageUUID
+          const uploadPayload = [
+            {
+              taskType: "imageUpload",
+              taskUUID: randomUUID(),
+              image: imageCloudUrl,
+            },
+          ];
+          let firstUUID: string | undefined;
+          try {
+            const up = await axios.post(
+              "https://api.runware.ai/v1",
+              uploadPayload,
+              { headers: runwareHeaders, timeout: 180000 }
+            );
+            const d = up.data;
+            const obj = Array.isArray(d?.data) ? d.data[0] : d?.data;
+            firstUUID = obj?.imageUUID || obj?.imageUuid;
+            console.log("[Claymotion F1] imageUpload success", { firstUUID });
+          } catch (e: any) {
+            console.error(
+              "Runware Claymotion F1 imageUpload failed:",
+              e?.response?.data || e?.message || e
+            );
+            respondRunwareError(
+              res,
+              400,
+              "Failed to upload image to Runware (Claymotion F1)",
+              e?.response?.data || e
+            );
+            return;
+          }
+          if (!firstUUID) {
+            res.status(400).json({
+              success: false,
+              error: "Runware imageUpload did not return imageUUID",
+            });
+            return;
+          }
+
+          // 2) Create videoInference task for Claymotion F1
+          const taskUUIDCreated = randomUUID();
+          const task: any = {
+            taskType: "videoInference",
+            taskUUID: taskUUIDCreated,
+            model: "civitai:855822@957548",
+            positivePrompt: prompt || "",
+            width: 512,
+            height: 512,
+            duration: 4,
+            deliveryMethod: "async",
+            frameImages: [{ inputImage: firstUUID, frame: "first" }],
+          };
+          console.log("[Claymotion F1] Created task", {
+            taskUUID: taskUUIDCreated,
+            width: 512,
+            height: 512,
+            duration: 4,
+          });
+
+          const createResp = await axios.post(
+            "https://api.runware.ai/v1",
+            [task],
+            { headers: runwareHeaders, timeout: 180000 }
+          );
+          const createData = createResp.data;
+          const ackItem = Array.isArray(createData?.data)
+            ? createData.data.find(
+                (d: any) => d?.taskType === "videoInference"
+              ) || createData.data[0]
+            : createData?.data;
+          let videoUrl =
+            ackItem?.videoURL ||
+            ackItem?.url ||
+            ackItem?.video ||
+            (Array.isArray(ackItem?.videos) ? ackItem.videos[0] : null);
+          let pollTaskUUID: string = ackItem?.taskUUID || taskUUIDCreated;
+          console.log("[Claymotion F1] Ack response", {
+            ackTaskUUID: ackItem?.taskUUID,
+            createdTaskUUID: taskUUIDCreated,
+            chosenPollTaskUUID: pollTaskUUID,
+            immediateVideo: !!videoUrl,
+            status: ackItem?.status || ackItem?.taskStatus,
+          });
+
+          // 3) Poll if no immediate URL
+          if (!videoUrl && pollTaskUUID) {
+            const maxAttempts = 100; // ~5 min
+            const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
+            let consecutive400 = 0;
+            let switchedToCreated = false;
+            for (let attempt = 0; attempt < maxAttempts; attempt++) {
+              await delay(3000);
+              const pollPayload = [
+                { taskType: "getResponse", taskUUID: pollTaskUUID },
+              ];
+              console.log("[Claymotion F1] Poll attempt", {
+                attempt,
+                pollPayload: pollPayload[0],
+              });
+              try {
+                const poll = await axios.post(
+                  "https://api.runware.ai/v1",
+                  pollPayload,
+                  { headers: runwareHeaders, timeout: 60000 }
+                );
+                const pd = poll.data;
+                const item = Array.isArray(pd?.data)
+                  ? pd.data.find(
+                      (d: any) => d?.taskUUID === pollTaskUUID || d?.videoURL
+                    ) || pd.data[0]
+                  : pd?.data;
+                const status = item?.status || item?.taskStatus;
+                if (status)
+                  console.log("[Claymotion F1] Poll status", {
+                    attempt,
+                    status,
+                  });
+                if (status === "success" || item?.videoURL || item?.url) {
+                  videoUrl =
+                    item?.videoURL ||
+                    item?.url ||
+                    item?.video ||
+                    (Array.isArray(item?.videos) ? item.videos[0] : null);
+                  if (videoUrl) break;
+                }
+                if (status === "error" || status === "failed") {
+                  respondRunwareError(
+                    res,
+                    502,
+                    "Runware Claymotion F1 generation failed during polling",
+                    pd
+                  );
+                  return;
+                }
+                consecutive400 = 0; // reset on successful poll
+              } catch (e: any) {
+                const statusCode = e?.response?.status;
+                const body = e?.response?.data;
+                console.log("[Claymotion F1] Poll error", {
+                  attempt,
+                  statusCode,
+                  body:
+                    typeof body === "object"
+                      ? JSON.stringify(body).slice(0, 500)
+                      : body,
+                });
+                if (statusCode === 400) {
+                  consecutive400++;
+                  // If repeated 400 and ack UUID differs, try switching to created taskUUID once
+                  if (
+                    !switchedToCreated &&
+                    pollTaskUUID !== taskUUIDCreated &&
+                    consecutive400 >= 2
+                  ) {
+                    console.log(
+                      "[Claymotion F1] Switching to created taskUUID due to repeated 400",
+                      { from: pollTaskUUID, to: taskUUIDCreated }
+                    );
+                    pollTaskUUID = taskUUIDCreated;
+                    switchedToCreated = true;
+                    consecutive400 = 0;
+                  }
+                  if (consecutive400 >= 5) {
+                    respondRunwareError(
+                      res,
+                      502,
+                      "Runware Claymotion F1 polling returned repeated 400 errors",
+                      body || e?.response?.data || e
+                    );
+                    return;
+                  }
+                }
+                continue;
+              }
+            }
+          }
+
+          if (!videoUrl) {
+            console.log(
+              "[Claymotion F1] Timeout - no video URL returned after polling"
+            );
+            respondRunwareError(
+              res,
+              502,
+              "Runware Claymotion F1 did not return a video URL (timeout or missing)",
+              createData
+            );
+            return;
+          }
+
+          // 4) Download and upload to S3
+          let rwStream;
+          try {
+            rwStream = await axios.get(videoUrl, {
+              responseType: "stream",
+              timeout: 600000,
+            });
+            console.log("[Claymotion F1] Download started");
+          } catch (e) {
+            console.log("[Claymotion F1] Download error", {
+              error: serializeError(e),
+            });
+            res.status(500).json({
+              success: false,
+              error: "Failed to download Claymotion F1 video",
+              details: serializeError(e),
+            });
+            return;
+          }
+          let uploaded;
+          try {
+            uploaded = await uploadGeneratedVideo(
+              feature,
+              "claymotion-f1",
+              rwStream.data as Readable,
+              videoType
+            );
+            console.log("[Claymotion F1] S3 upload success", {
+              key: uploaded.key,
+            });
+          } catch (e) {
+            console.log("[Claymotion F1] S3 upload error", {
+              error: serializeError(e),
+            });
+            res.status(500).json({
+              success: false,
+              error: "Failed to upload Claymotion F1 video to S3",
+              details: serializeError(e),
+            });
+            return;
+          }
+          res.status(200).json({
+            success: true,
+            video: {
+              url: uploaded.signedUrl,
+              signedUrl: uploaded.signedUrl,
+              key: uploaded.key,
+            },
+            s3Key: uploaded.key,
+          });
+          return;
+        } catch (err: any) {
+          console.error(
+            "Runware Claymotion F1 error:",
+            err?.response?.data || err
+          );
+          res.status(500).json({
+            success: false,
+            error: "Claymotion F1 generation failed",
             details: serializeError(err),
           });
           return;
