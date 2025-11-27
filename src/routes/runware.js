@@ -1102,7 +1102,8 @@ router.post("/runware/generate-photo", (req, res) => __awaiter(void 0, void 0, v
             ? requestedResults
             : undefined;
         const providerSettings = {};
-        const allowsSeedImage = !isIdeogramFamily && !isImagen4;
+        // Seed image is not supported by Ideogram, Google (Imagen/Nano Banana), or OpenAI models
+        const allowsSeedImage = !isIdeogramFamily && !isGoogleFamily && !isOpenAIFamily;
         if (isSeeddream && seeddreamSequentialResults) {
             providerSettings.bytedance = {
                 maxSequentialImages: seeddreamSequentialResults,
@@ -1182,12 +1183,19 @@ router.post("/runware/generate-photo", (req, res) => __awaiter(void 0, void 0, v
         if (allowsSeedImage && seedImage && typeof seedImage === "string") {
             task.seedImage = seedImage; // UUID, URL, base64, or data URI supported by Runware
         }
-        if (steps)
-            task.steps = Math.min(Math.max(parseInt(steps) || 15, 1), 100);
-        else
-            task.steps = 15;
-        if (cfgScale)
+        // Only add steps for models that support it (FLUX/SD based models)
+        // Google (Imagen, Nano Banana), OpenAI (GPT Image), and Ideogram models do NOT support steps
+        const supportsSteps = !isGoogleFamily && !isOpenAIFamily && !isIdeogramFamily;
+        if (supportsSteps) {
+            if (steps)
+                task.steps = Math.min(Math.max(parseInt(steps) || 15, 1), 100);
+            else
+                task.steps = 15;
+        }
+        // Only add CFGScale for models that support it
+        if (supportsSteps && cfgScale) {
             task.CFGScale = Math.min(Math.max(parseFloat(cfgScale) || 7, 0), 50);
+        }
         const payload = [task];
         let response;
         try {
@@ -1222,7 +1230,10 @@ router.post("/runware/generate-photo", (req, res) => __awaiter(void 0, void 0, v
                         smaller.width = Math.min(640, task.width || defaultSize);
                         smaller.height = Math.min(640, task.height || defaultSize);
                     }
-                    smaller.steps = Math.min(12, task.steps || 12);
+                    // Only reduce steps for models that support it
+                    if (supportsSteps) {
+                        smaller.steps = Math.min(12, task.steps || 12);
+                    }
                     const fallbackPayload = [smaller];
                     response = yield postRunwareWithRetry(fallbackPayload, 180000, 0);
                 }
