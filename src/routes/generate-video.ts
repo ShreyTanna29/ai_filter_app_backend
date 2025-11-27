@@ -351,6 +351,41 @@ router.post(
         });
       }
 
+      // Check if app has permission to use this feature endpoint
+      const apiKeyOwner = (req as any).apiKeyOwner;
+      if (apiKeyOwner?.type === "app" && apiKeyOwner.app) {
+        const appId = apiKeyOwner.app.id;
+        let hasPermission = false;
+
+        if (videoType === "cartoon") {
+          // Check if the cartoon character is allowed for this app
+          if (featureObj) {
+            const allowed = await prisma.appCartoonCharacter.findFirst({
+              where: { appId, cartoonCharacterId: featureObj.id },
+            });
+            hasPermission = !!allowed;
+          }
+        } else {
+          // Check if the feature is allowed for this app
+          if (featureObj) {
+            const allowed = await prisma.appFeature.findFirst({
+              where: { appId, featureId: featureObj.id },
+            });
+            hasPermission = !!allowed;
+          }
+        }
+
+        if (!hasPermission) {
+          res.status(403).json({
+            success: false,
+            error: `This app does not have permission to use the "${feature}" ${
+              videoType === "cartoon" ? "cartoon character" : "feature"
+            }`,
+          });
+          return;
+        }
+      }
+
       // Determine the model: use request body if provided, otherwise fall back to DB
       const userModelFromRequest =
         typeof req.body.model === "string" ? req.body.model.trim() : "";
