@@ -15,6 +15,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
 const multer_1 = __importDefault(require("multer"));
 const prisma_1 = __importDefault(require("../lib/prisma"));
+const apiKey_1 = require("../middleware/apiKey");
 const s3_1 = require("../lib/s3");
 const signedUrl_1 = require("../middleware/signedUrl");
 const dotenv_1 = __importDefault(require("dotenv"));
@@ -106,6 +107,48 @@ function extractRunwareError(raw) {
     }
     catch (_a) {
         return undefined;
+    }
+}
+// Extract Eachlabs/Pixverse error message from axios error response
+// Handles nested JSON in details field like: 'API request failed with status 422: {"message":"Fix these fields..."}'
+function extractEachlabsErrorMessage(err) {
+    var _a;
+    try {
+        const responseData = (_a = err === null || err === void 0 ? void 0 : err.response) === null || _a === void 0 ? void 0 : _a.data;
+        if (!responseData) {
+            return (err === null || err === void 0 ? void 0 : err.message) || "Unknown error";
+        }
+        // Try to extract from details field which may contain embedded JSON
+        const details = responseData.details;
+        if (typeof details === "string") {
+            // Try to parse embedded JSON from the details string
+            const jsonMatch = details.match(/\{[\s\S]*\}/);
+            if (jsonMatch) {
+                try {
+                    const parsed = JSON.parse(jsonMatch[0]);
+                    // Return the most user-friendly message
+                    if (parsed.message)
+                        return parsed.message;
+                    if (parsed.detail)
+                        return parsed.detail;
+                    if (parsed.title)
+                        return parsed.title;
+                }
+                catch (_b) {
+                    // If JSON parsing fails, return the raw details
+                    return details;
+                }
+            }
+            return details;
+        }
+        // Fallback to other common error fields
+        return (responseData.message ||
+            responseData.error ||
+            (err === null || err === void 0 ? void 0 : err.message) ||
+            "Unknown error");
+    }
+    catch (_c) {
+        return (err === null || err === void 0 ? void 0 : err.message) || "Unknown error";
     }
 }
 const pickPositiveNumber = (...values) => {
@@ -225,20 +268,12 @@ function ensureImageDimensionsForProvider(sourceUrl, feature, width, height) {
 // Multer setup for audio upload (memory storage)
 const upload = (0, multer_1.default)({ storage: multer_1.default.memoryStorage() });
 // Generate video from feature endpoint
-router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _0, _1, _2, _3, _4, _5, _6, _7, _8, _9, _10, _11, _12, _13, _14, _15, _16, _17, _18, _19, _20, _21, _22, _23, _24, _25, _26, _27, _28, _29, _30, _31, _32, _33, _34, _35, _36, _37, _38, _39, _40, _41, _42, _43, _44, _45, _46, _47, _48, _49, _50, _51, _52, _53, _54, _55, _56, _57, _58, _59, _60, _61, _62, _63, _64, _65, _66, _67, _68, _69, _70, _71, _72, _73, _74, _75, _76, _77, _78, _79, _80, _81, _82, _83, _84, _85, _86, _87, _88, _89, _90, _91, _92, _93, _94, _95, _96, _97, _98, _99, _100, _101, _102, _103, _104, _105, _106, _107, _108, _109;
+router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _0, _1, _2, _3, _4, _5, _6, _7, _8, _9, _10, _11, _12, _13, _14, _15, _16, _17, _18, _19, _20, _21, _22, _23, _24, _25, _26, _27, _28, _29, _30, _31, _32, _33, _34, _35, _36, _37, _38, _39, _40, _41, _42, _43, _44, _45, _46, _47, _48, _49, _50, _51, _52, _53, _54, _55, _56, _57, _58, _59, _60, _61, _62, _63, _64, _65, _66, _67, _68, _69, _70, _71, _72, _73, _74, _75, _76, _77, _78, _79, _80, _81, _82, _83, _84, _85, _86, _87, _88, _89, _90, _91, _92, _93, _94, _95, _96, _97, _98, _99, _100;
     try {
         const { feature } = req.params;
         // Check if this is a cartoon character video generation
         const videoType = req.query.type === "cartoon" ? "cartoon" : "video";
-        const userModel = typeof req.body.model === "string" ? req.body.model.trim() : "";
-        if (!userModel) {
-            res.status(400).json({
-                success: false,
-                error: "Model is required",
-            });
-            return;
-        }
         const promptOverride = req.body.prompt;
         const imageUrl = req.body.imageUrl || req.body.image_url;
         if (!imageUrl) {
@@ -248,7 +283,31 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
             });
             return;
         }
-        // Step 1: Prepare image for provider (S3 private bucket migration)
+        // Step 1: Get the feature from DB (for prompt and model fallback)
+        // Check both Features and Cartoon_Characters tables based on videoType
+        let featureObj = null;
+        if (videoType === "cartoon") {
+            featureObj = yield prisma_1.default.cartoon_Characters.findUnique({
+                where: { endpoint: feature },
+            });
+        }
+        else {
+            featureObj = yield prisma_1.default.features.findUnique({
+                where: { endpoint: feature },
+            });
+        }
+        // Determine the model: use request body if provided, otherwise fall back to DB
+        const userModelFromRequest = typeof req.body.model === "string" ? req.body.model.trim() : "";
+        const modelFromDb = (featureObj === null || featureObj === void 0 ? void 0 : featureObj.model) || "";
+        const userModel = userModelFromRequest || modelFromDb;
+        if (!userModel) {
+            res.status(400).json({
+                success: false,
+                error: "Model is required (either in request body or configured in the feature)",
+            });
+            return;
+        }
+        // Step 2: Prepare image for provider (S3 private bucket migration)
         const { providerUrl: imageCloudUrl } = yield prepareImageForProvider(imageUrl, feature);
         // Optional: second image for transition models (Pixverse) - treat similarly
         const lastFrameRaw = req.body.lastFrameUrl || req.body.last_frame_url;
@@ -262,25 +321,13 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                 console.warn("[lastFrame] prepare failed; ignoring", e);
             }
         }
-        // Step 2: Get the prompt for the selected feature (allow client override)
-        // Check both Features and Cartoon_Characters tables based on videoType
-        let featureObj = null;
-        if (videoType === "cartoon") {
-            featureObj = yield prisma_1.default.cartoon_Characters.findUnique({
-                where: { endpoint: feature },
-            });
-        }
-        else {
-            featureObj = yield prisma_1.default.features.findUnique({
-                where: { endpoint: feature },
-            });
-        }
+        // Step 3: Determine the prompt (allow client override, else use DB)
         const prompt = typeof promptOverride === "string" && promptOverride.trim().length > 0
             ? promptOverride
             : featureObj
                 ? featureObj.prompt
                 : "";
-        // Step 3: Provider branching (Pixverse transition, then MiniMax, else Luma)
+        // Step 4: Provider branching (Pixverse transition, then MiniMax, else Luma)
         const rawModel = userModel;
         const isPixverseTransition = /pixverse-v4-transition/i.test(rawModel);
         // Support v4, v4.5 and v5 image to video variants
@@ -1937,7 +1984,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                                 try {
                                     parsedBody = JSON.parse(body);
                                 }
-                                catch (_110) {
+                                catch (_101) {
                                     parsedBody = undefined;
                                 }
                             }
@@ -3145,15 +3192,11 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                     payload: createPayload,
                     serverResponse: (_47 = pixErr === null || pixErr === void 0 ? void 0 : pixErr.response) === null || _47 === void 0 ? void 0 : _47.data,
                 });
-                const e = err;
-                let provider_message = ((_49 = (_48 = e === null || e === void 0 ? void 0 : e.response) === null || _48 === void 0 ? void 0 : _48.data) === null || _49 === void 0 ? void 0 : _49.message) ||
-                    ((_51 = (_50 = e === null || e === void 0 ? void 0 : e.response) === null || _50 === void 0 ? void 0 : _50.data) === null || _51 === void 0 ? void 0 : _51.error) ||
-                    (e === null || e === void 0 ? void 0 : e.message) ||
-                    "Unknown error";
+                const provider_message = extractEachlabsErrorMessage(err);
                 res.status(502).json({
                     success: false,
                     error: provider_message,
-                    details: serializeError(e),
+                    details: serializeError(err),
                 });
                 return;
             }
@@ -3179,7 +3222,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                             pixVideoUrl =
                                 out.video_url ||
                                     out.video ||
-                                    (Array.isArray(out) ? ((_52 = out[0]) === null || _52 === void 0 ? void 0 : _52.video_url) || out[0] : null) ||
+                                    (Array.isArray(out) ? ((_48 = out[0]) === null || _48 === void 0 ? void 0 : _48.video_url) || out[0] : null) ||
                                     result.video_url ||
                                     result.video ||
                                     out.url ||
@@ -3388,11 +3431,12 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                 console.error("Vidu Q1 create error:", {
                     error: viduQ1Err,
                     payload: createPayload,
-                    serverResponse: (_53 = viduQ1Err === null || viduQ1Err === void 0 ? void 0 : viduQ1Err.response) === null || _53 === void 0 ? void 0 : _53.data,
+                    serverResponse: (_49 = viduQ1Err === null || viduQ1Err === void 0 ? void 0 : viduQ1Err.response) === null || _49 === void 0 ? void 0 : _49.data,
                 });
+                const provider_message = extractEachlabsErrorMessage(err);
                 res.status(502).json({
                     success: false,
-                    error: "Failed to create Vidu Q1 prediction",
+                    error: `Vidu Q1 creation failed: ${provider_message}`,
                     details: serializeError(err),
                 });
                 return;
@@ -3415,7 +3459,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                             viduVideoUrl =
                                 out.video_url ||
                                     out.video ||
-                                    (Array.isArray(out) ? ((_54 = out[0]) === null || _54 === void 0 ? void 0 : _54.video_url) || out[0] : null) ||
+                                    (Array.isArray(out) ? ((_50 = out[0]) === null || _50 === void 0 ? void 0 : _50.video_url) || out[0] : null) ||
                                     result.video_url ||
                                     result.video ||
                                     out.url ||
@@ -3566,11 +3610,12 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                 console.error("Vidu 1.5 create error:", {
                     error: vidu15Err,
                     payload: createPayload,
-                    serverResponse: (_55 = vidu15Err === null || vidu15Err === void 0 ? void 0 : vidu15Err.response) === null || _55 === void 0 ? void 0 : _55.data,
+                    serverResponse: (_51 = vidu15Err === null || vidu15Err === void 0 ? void 0 : vidu15Err.response) === null || _51 === void 0 ? void 0 : _51.data,
                 });
+                const provider_message = extractEachlabsErrorMessage(err);
                 res.status(502).json({
                     success: false,
-                    error: (_56 = vidu15Err === null || vidu15Err === void 0 ? void 0 : vidu15Err.response) === null || _56 === void 0 ? void 0 : _56.data.details,
+                    error: `Vidu 1.5 creation failed: ${provider_message}`,
                     details: serializeError(err),
                 });
                 return;
@@ -3593,7 +3638,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                             viduVideoUrl =
                                 out.video_url ||
                                     out.video ||
-                                    (Array.isArray(out) ? ((_57 = out[0]) === null || _57 === void 0 ? void 0 : _57.video_url) || out[0] : null) ||
+                                    (Array.isArray(out) ? ((_52 = out[0]) === null || _52 === void 0 ? void 0 : _52.video_url) || out[0] : null) ||
                                     result.video_url ||
                                     result.video ||
                                     out.url ||
@@ -3747,11 +3792,12 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                 console.error("Vidu Q1 I2V create error:", {
                     error: viduQ1I2VErr,
                     payload: createPayload,
-                    serverResponse: (_58 = viduQ1I2VErr === null || viduQ1I2VErr === void 0 ? void 0 : viduQ1I2VErr.response) === null || _58 === void 0 ? void 0 : _58.data,
+                    serverResponse: (_53 = viduQ1I2VErr === null || viduQ1I2VErr === void 0 ? void 0 : viduQ1I2VErr.response) === null || _53 === void 0 ? void 0 : _53.data,
                 });
+                const provider_message = extractEachlabsErrorMessage(err);
                 res.status(502).json({
                     success: false,
-                    error: "Failed to create Vidu Q1 I2V prediction",
+                    error: `Vidu Q1 I2V creation failed: ${provider_message}`,
                     details: serializeError(err),
                 });
                 return;
@@ -3776,7 +3822,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                             viduVideoUrl =
                                 out.video_url ||
                                     out.video ||
-                                    (Array.isArray(out) ? ((_59 = out[0]) === null || _59 === void 0 ? void 0 : _59.video_url) || out[0] : null) ||
+                                    (Array.isArray(out) ? ((_54 = out[0]) === null || _54 === void 0 ? void 0 : _54.video_url) || out[0] : null) ||
                                     out.url ||
                                     result.data.url ||
                                     null;
@@ -3798,7 +3844,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                                 ? `Vidu Q1 I2V prediction failed: ${provider_message}`
                                 : "Vidu Q1 I2V prediction failed",
                             provider: "ViduQ1I2V",
-                            provider_status: (_60 = result.data) === null || _60 === void 0 ? void 0 : _60.status,
+                            provider_status: (_55 = result.data) === null || _55 === void 0 ? void 0 : _55.status,
                             provider_message,
                             details: safeJson(result.data),
                         });
@@ -3928,11 +3974,12 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                 console.error("Vidu 2.0 create error:", {
                     error: vidu20Err,
                     payload: createPayload,
-                    serverResponse: (_61 = vidu20Err === null || vidu20Err === void 0 ? void 0 : vidu20Err.response) === null || _61 === void 0 ? void 0 : _61.data,
+                    serverResponse: (_56 = vidu20Err === null || vidu20Err === void 0 ? void 0 : vidu20Err.response) === null || _56 === void 0 ? void 0 : _56.data,
                 });
+                const provider_message = extractEachlabsErrorMessage(err);
                 res.status(502).json({
                     success: false,
-                    error: "Failed to create Vidu 2.0 prediction",
+                    error: `Vidu 2.0 creation failed: ${provider_message}`,
                     details: serializeError(err),
                 });
                 return;
@@ -3959,7 +4006,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                             viduVideoUrl =
                                 out.video_url ||
                                     out.video ||
-                                    (Array.isArray(out) ? ((_62 = out[0]) === null || _62 === void 0 ? void 0 : _62.video_url) || out[0] : null) ||
+                                    (Array.isArray(out) ? ((_57 = out[0]) === null || _57 === void 0 ? void 0 : _57.video_url) || out[0] : null) ||
                                     result.video_url ||
                                     result.video ||
                                     out.url ||
@@ -4114,11 +4161,12 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                 console.error("Veo 2 Image to Video create error:", {
                     error: veo2Err,
                     payload: createPayload,
-                    serverResponse: (_63 = veo2Err === null || veo2Err === void 0 ? void 0 : veo2Err.response) === null || _63 === void 0 ? void 0 : _63.data,
+                    serverResponse: (_58 = veo2Err === null || veo2Err === void 0 ? void 0 : veo2Err.response) === null || _58 === void 0 ? void 0 : _58.data,
                 });
+                const provider_message = extractEachlabsErrorMessage(err);
                 res.status(502).json({
                     success: false,
-                    error: "Failed to create Veo 2 Image to Video prediction",
+                    error: `Veo 2 I2V creation failed: ${provider_message}`,
                     details: serializeError(err),
                 });
                 return;
@@ -4145,7 +4193,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                             veoVideoUrl =
                                 out.video_url ||
                                     out.video ||
-                                    (Array.isArray(out) ? ((_64 = out[0]) === null || _64 === void 0 ? void 0 : _64.video_url) || out[0] : null) ||
+                                    (Array.isArray(out) ? ((_59 = out[0]) === null || _59 === void 0 ? void 0 : _59.video_url) || out[0] : null) ||
                                     result.video_url ||
                                     result.video ||
                                     out.url ||
@@ -4298,11 +4346,12 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                 console.error("Veo 3 Image to Video create error:", {
                     error: veo3Err,
                     payload: createPayload,
-                    serverResponse: (_65 = veo3Err === null || veo3Err === void 0 ? void 0 : veo3Err.response) === null || _65 === void 0 ? void 0 : _65.data,
+                    serverResponse: (_60 = veo3Err === null || veo3Err === void 0 ? void 0 : veo3Err.response) === null || _60 === void 0 ? void 0 : _60.data,
                 });
+                const provider_message = extractEachlabsErrorMessage(err);
                 res.status(502).json({
                     success: false,
-                    error: "Failed to create Veo 3 Image to Video prediction",
+                    error: `Veo 3 I2V creation failed: ${provider_message}`,
                     details: serializeError(err),
                 });
                 return;
@@ -4329,7 +4378,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                             veoVideoUrl =
                                 out.video_url ||
                                     out.video ||
-                                    (Array.isArray(out) ? ((_66 = out[0]) === null || _66 === void 0 ? void 0 : _66.video_url) || out[0] : null) ||
+                                    (Array.isArray(out) ? ((_61 = out[0]) === null || _61 === void 0 ? void 0 : _61.video_url) || out[0] : null) ||
                                     result.video_url ||
                                     result.video ||
                                     out.url ||
@@ -4452,7 +4501,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                     try {
                         audioUrl = yield (0, signedUrl_1.signKey)(audioKey);
                     }
-                    catch (_111) {
+                    catch (_102) {
                         audioUrl = (0, s3_1.publicUrlFor)(audioKey); // fallback (may be private)
                     }
                 }
@@ -4531,10 +4580,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
             }
             catch (e) {
                 console.error("[Bytedance] Creation error:", serializeError(e));
-                const provider_message = ((_68 = (_67 = e === null || e === void 0 ? void 0 : e.response) === null || _67 === void 0 ? void 0 : _67.data) === null || _68 === void 0 ? void 0 : _68.message) ||
-                    ((_70 = (_69 = e === null || e === void 0 ? void 0 : e.response) === null || _69 === void 0 ? void 0 : _69.data) === null || _70 === void 0 ? void 0 : _70.error) ||
-                    (e === null || e === void 0 ? void 0 : e.message) ||
-                    "Unknown error";
+                const provider_message = extractEachlabsErrorMessage(e);
                 res.status(502).json({
                     success: false,
                     error: `Bytedance creation failed: ${provider_message}`,
@@ -4707,7 +4753,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
             }
             catch (e) {
                 // already using e as any here, so no change needed
-                const respData = (_71 = e === null || e === void 0 ? void 0 : e.response) === null || _71 === void 0 ? void 0 : _71.data;
+                const respData = (_62 = e === null || e === void 0 ? void 0 : e.response) === null || _62 === void 0 ? void 0 : _62.data;
                 const base = (respData === null || respData === void 0 ? void 0 : respData.base_resp) || {};
                 const provider_code = base === null || base === void 0 ? void 0 : base.status_code;
                 const provider_message = (base === null || base === void 0 ? void 0 : base.status_msg) || (respData === null || respData === void 0 ? void 0 : respData.message) || (e === null || e === void 0 ? void 0 : e.message);
@@ -4735,26 +4781,26 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                         params: { task_id: taskId },
                         timeout: 20000,
                     });
-                    const status = (_72 = pollResp.data) === null || _72 === void 0 ? void 0 : _72.status;
+                    const status = (_63 = pollResp.data) === null || _63 === void 0 ? void 0 : _63.status;
                     if (status === "Success" || status === "success") {
                         // Assume file_id -> downloadable endpoint
-                        const fileId = (_73 = pollResp.data) === null || _73 === void 0 ? void 0 : _73.file_id;
+                        const fileId = (_64 = pollResp.data) === null || _64 === void 0 ? void 0 : _64.file_id;
                         console.log("MiniMax generation success payload:", safeJson(pollResp.data));
                         mmFileId = fileId || null;
                         // If API already provides a direct downloadable URL use it, else will fetch below
                         mmVideoUrl =
-                            ((_74 = pollResp.data) === null || _74 === void 0 ? void 0 : _74.video_url) || ((_75 = pollResp.data) === null || _75 === void 0 ? void 0 : _75.file_url) || null;
+                            ((_65 = pollResp.data) === null || _65 === void 0 ? void 0 : _65.video_url) || ((_66 = pollResp.data) === null || _66 === void 0 ? void 0 : _66.file_url) || null;
                         break; // exit loop, will handle retrieval next
                     }
                     if (status === "Fail" ||
                         status === "failed" ||
                         status === "error") {
-                        const base = ((_76 = pollResp.data) === null || _76 === void 0 ? void 0 : _76.base_resp) || {};
+                        const base = ((_67 = pollResp.data) === null || _67 === void 0 ? void 0 : _67.base_resp) || {};
                         const provider_code = base === null || base === void 0 ? void 0 : base.status_code;
                         const provider_message = (base === null || base === void 0 ? void 0 : base.status_msg) ||
-                            ((_77 = pollResp.data) === null || _77 === void 0 ? void 0 : _77.status_reason) ||
-                            ((_78 = pollResp.data) === null || _78 === void 0 ? void 0 : _78.message) ||
-                            ((_79 = pollResp.data) === null || _79 === void 0 ? void 0 : _79.status);
+                            ((_68 = pollResp.data) === null || _68 === void 0 ? void 0 : _68.status_reason) ||
+                            ((_69 = pollResp.data) === null || _69 === void 0 ? void 0 : _69.message) ||
+                            ((_70 = pollResp.data) === null || _70 === void 0 ? void 0 : _70.status);
                         res.status(500).json({
                             success: false,
                             error: provider_message
@@ -4763,7 +4809,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                             provider: "MiniMax",
                             provider_code,
                             provider_message,
-                            provider_status: (_80 = pollResp.data) === null || _80 === void 0 ? void 0 : _80.status,
+                            provider_status: (_71 = pollResp.data) === null || _71 === void 0 ? void 0 : _71.status,
                             details: safeJson(pollResp.data),
                         });
                         return;
@@ -4796,8 +4842,8 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                         timeout: 30000,
                     });
                     mmVideoUrl =
-                        ((_82 = (_81 = retrieveResp.data) === null || _81 === void 0 ? void 0 : _81.file) === null || _82 === void 0 ? void 0 : _82.download_url) ||
-                            ((_83 = retrieveResp.data) === null || _83 === void 0 ? void 0 : _83.download_url) ||
+                        ((_73 = (_72 = retrieveResp.data) === null || _72 === void 0 ? void 0 : _72.file) === null || _73 === void 0 ? void 0 : _73.download_url) ||
+                            ((_74 = retrieveResp.data) === null || _74 === void 0 ? void 0 : _74.download_url) ||
                             null;
                     if (!mmVideoUrl) {
                         console.error("MiniMax retrieve missing download_url", safeJson(retrieveResp.data));
@@ -4813,7 +4859,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                 }
                 catch (e) {
                     console.error("MiniMax retrieve error:", serializeError(e));
-                    const respData = (_84 = e === null || e === void 0 ? void 0 : e.response) === null || _84 === void 0 ? void 0 : _84.data;
+                    const respData = (_75 = e === null || e === void 0 ? void 0 : e.response) === null || _75 === void 0 ? void 0 : _75.data;
                     const base = (respData === null || respData === void 0 ? void 0 : respData.base_resp) || {};
                     const provider_code = base === null || base === void 0 ? void 0 : base.status_code;
                     const provider_message = (base === null || base === void 0 ? void 0 : base.status_msg) || (respData === null || respData === void 0 ? void 0 : respData.message) || (e === null || e === void 0 ? void 0 : e.message);
@@ -4848,7 +4894,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                 });
             }
             catch (e) {
-                const respData = (_85 = e === null || e === void 0 ? void 0 : e.response) === null || _85 === void 0 ? void 0 : _85.data;
+                const respData = (_76 = e === null || e === void 0 ? void 0 : e.response) === null || _76 === void 0 ? void 0 : _76.data;
                 const base = (respData === null || respData === void 0 ? void 0 : respData.base_resp) || {};
                 const provider_code = base === null || base === void 0 ? void 0 : base.status_code;
                 const provider_message = (base === null || base === void 0 ? void 0 : base.status_msg) || (respData === null || respData === void 0 ? void 0 : respData.message) || (e === null || e === void 0 ? void 0 : e.message);
@@ -4967,9 +5013,9 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
                 console.error("Luma create generation error:", {
                     error: serializeError(e),
                     payload: lumaPayload,
-                    serverResponse: (_86 = e === null || e === void 0 ? void 0 : e.response) === null || _86 === void 0 ? void 0 : _86.data,
+                    serverResponse: (_77 = e === null || e === void 0 ? void 0 : e.response) === null || _77 === void 0 ? void 0 : _77.data,
                 });
-                const respData = (_87 = e === null || e === void 0 ? void 0 : e.response) === null || _87 === void 0 ? void 0 : _87.data;
+                const respData = (_78 = e === null || e === void 0 ? void 0 : e.response) === null || _78 === void 0 ? void 0 : _78.data;
                 // Prefer detail/message/error from server response for user-facing error
                 const userMessage = (respData === null || respData === void 0 ? void 0 : respData.detail) ||
                     (respData === null || respData === void 0 ? void 0 : respData.message) ||
@@ -4995,7 +5041,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
             });
             return;
         }
-        const generationId = ((_88 = createGenRes.data) === null || _88 === void 0 ? void 0 : _88.id) || ((_90 = (_89 = createGenRes.data) === null || _89 === void 0 ? void 0 : _89.data) === null || _90 === void 0 ? void 0 : _90.id);
+        const generationId = ((_79 = createGenRes.data) === null || _79 === void 0 ? void 0 : _79.id) || ((_81 = (_80 = createGenRes.data) === null || _80 === void 0 ? void 0 : _80.data) === null || _81 === void 0 ? void 0 : _81.id);
         if (!generationId) {
             res.status(500).json({
                 success: false,
@@ -5040,33 +5086,33 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
             }
             // Try to read state/status and the video URL in a robust way
             state =
-                ((_91 = pollRes.data) === null || _91 === void 0 ? void 0 : _91.state) ||
-                    ((_92 = pollRes.data) === null || _92 === void 0 ? void 0 : _92.status) ||
-                    ((_94 = (_93 = pollRes.data) === null || _93 === void 0 ? void 0 : _93.data) === null || _94 === void 0 ? void 0 : _94.state) ||
+                ((_82 = pollRes.data) === null || _82 === void 0 ? void 0 : _82.state) ||
+                    ((_83 = pollRes.data) === null || _83 === void 0 ? void 0 : _83.status) ||
+                    ((_85 = (_84 = pollRes.data) === null || _84 === void 0 ? void 0 : _84.data) === null || _85 === void 0 ? void 0 : _85.state) ||
                     "";
             if (state === "completed") {
                 videoUrl =
-                    ((_96 = (_95 = pollRes.data) === null || _95 === void 0 ? void 0 : _95.assets) === null || _96 === void 0 ? void 0 : _96.video) ||
-                        ((_97 = pollRes.data) === null || _97 === void 0 ? void 0 : _97.video) ||
-                        ((_99 = (_98 = pollRes.data) === null || _98 === void 0 ? void 0 : _98.data) === null || _99 === void 0 ? void 0 : _99.video_url) ||
-                        ((_103 = (_102 = (_101 = (_100 = pollRes.data) === null || _100 === void 0 ? void 0 : _100.assets) === null || _101 === void 0 ? void 0 : _101.mp4) === null || _102 === void 0 ? void 0 : _102[0]) === null || _103 === void 0 ? void 0 : _103.url) ||
+                    ((_87 = (_86 = pollRes.data) === null || _86 === void 0 ? void 0 : _86.assets) === null || _87 === void 0 ? void 0 : _87.video) ||
+                        ((_88 = pollRes.data) === null || _88 === void 0 ? void 0 : _88.video) ||
+                        ((_90 = (_89 = pollRes.data) === null || _89 === void 0 ? void 0 : _89.data) === null || _90 === void 0 ? void 0 : _90.video_url) ||
+                        ((_94 = (_93 = (_92 = (_91 = pollRes.data) === null || _91 === void 0 ? void 0 : _91.assets) === null || _92 === void 0 ? void 0 : _92.mp4) === null || _93 === void 0 ? void 0 : _93[0]) === null || _94 === void 0 ? void 0 : _94.url) ||
                         null;
                 console.log("Luma poll response:", pollRes.data);
                 break;
             }
             if (state === "failed") {
                 console.error("Luma generation failed:", pollRes.data);
-                const provider_message = ((_104 = pollRes.data) === null || _104 === void 0 ? void 0 : _104.failure_reason) ||
-                    ((_105 = pollRes.data) === null || _105 === void 0 ? void 0 : _105.error) ||
-                    ((_106 = pollRes.data) === null || _106 === void 0 ? void 0 : _106.message) ||
-                    ((_107 = pollRes.data) === null || _107 === void 0 ? void 0 : _107.state);
+                const provider_message = ((_95 = pollRes.data) === null || _95 === void 0 ? void 0 : _95.failure_reason) ||
+                    ((_96 = pollRes.data) === null || _96 === void 0 ? void 0 : _96.error) ||
+                    ((_97 = pollRes.data) === null || _97 === void 0 ? void 0 : _97.message) ||
+                    ((_98 = pollRes.data) === null || _98 === void 0 ? void 0 : _98.state);
                 res.status(500).json({
                     success: false,
                     error: provider_message
                         ? `Luma generation failed: ${provider_message}`
                         : "Luma generation failed",
                     provider: "Luma",
-                    provider_status: (_108 = pollRes.data) === null || _108 === void 0 ? void 0 : _108.state,
+                    provider_status: (_99 = pollRes.data) === null || _99 === void 0 ? void 0 : _99.state,
                     provider_message,
                     details: safeJson(pollRes.data),
                 });
@@ -5094,7 +5140,7 @@ router.post("/:feature", upload.single("audio_file"), (req, res, next) => __awai
         }
         catch (err) {
             const e = err;
-            console.error("Error downloading Luma video:", ((_109 = e === null || e === void 0 ? void 0 : e.response) === null || _109 === void 0 ? void 0 : _109.data) || e);
+            console.error("Error downloading Luma video:", ((_100 = e === null || e === void 0 ? void 0 : e.response) === null || _100 === void 0 ? void 0 : _100.data) || e);
             res.status(500).json({
                 success: false,
                 error: "Failed to download Luma video",

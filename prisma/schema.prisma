@@ -131,7 +131,7 @@ model Features {
   id        Int      @id @default(autoincrement())
   endpoint  String   @unique
   prompt    String
-  model     String?
+  model     String?  @default("pixverse-v5-image-to-video")
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

@@ -1,6 +1,7 @@
 import { Router, Request, Response, NextFunction } from "express";
 import multer from "multer";
 import prisma from "../lib/prisma";
+import { requireApiKey } from "../middleware/apiKey";
 // Cloudinary removed – migrating to S3 private bucket storage
 import { Readable } from "stream";
 import {
@@ -97,6 +98,47 @@ function extractRunwareError(raw: any) {
     };
   } catch {
     return undefined;
+  }
+}
+
+// Extract Eachlabs/Pixverse error message from axios error response
+// Handles nested JSON in details field like: 'API request failed with status 422: {"message":"Fix these fields..."}'
+function extractEachlabsErrorMessage(err: any): string {
+  try {
+    const responseData = err?.response?.data;
+    if (!responseData) {
+      return err?.message || "Unknown error";
+    }
+
+    // Try to extract from details field which may contain embedded JSON
+    const details = responseData.details;
+    if (typeof details === "string") {
+      // Try to parse embedded JSON from the details string
+      const jsonMatch = details.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        try {
+          const parsed = JSON.parse(jsonMatch[0]);
+          // Return the most user-friendly message
+          if (parsed.message) return parsed.message;
+          if (parsed.detail) return parsed.detail;
+          if (parsed.title) return parsed.title;
+        } catch {
+          // If JSON parsing fails, return the raw details
+          return details;
+        }
+      }
+      return details;
+    }
+
+    // Fallback to other common error fields
+    return (
+      responseData.message ||
+      responseData.error ||
+      err?.message ||
+      "Unknown error"
+    );
+  } catch {
+    return err?.message || "Unknown error";
   }
 }
 
@@ -276,6 +318,7 @@ const upload = multer({ storage: multer.memoryStorage() });
 // Generate video from feature endpoint
 router.post(
   "/:feature",
+  requireApiKey,
   upload.single("audio_file"),
   async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
@@ -284,15 +327,6 @@ router.post(
       const videoType: "video" | "cartoon" =
         req.query.type === "cartoon" ? "cartoon" : "video";
 
-      const userModel =
-        typeof req.body.model === "string" ? req.body.model.trim() : "";
-      if (!userModel) {
-        res.status(400).json({
-          success: false,
-          error: "Model is required",
-        });
-        return;
-      }
       const promptOverride = req.body.prompt;
       const imageUrl = req.body.imageUrl || req.body.image_url;
 
@@ -304,7 +338,35 @@ router.post(
         return;
       }
 
-      // Step 1: Prepare image for provider (S3 private bucket migration)
+      // Step 1: Get the feature from DB (for prompt and model fallback)
+      // Check both Features and Cartoon_Characters tables based on videoType
+      let featureObj: any = null;
+      if (videoType === "cartoon") {
+        featureObj = await prisma.cartoon_Characters.findUnique({
+          where: { endpoint: feature },
+        });
+      } else {
+        featureObj = await prisma.features.findUnique({
+          where: { endpoint: feature },
+        });
+      }
+
+      // Determine the model: use request body if provided, otherwise fall back to DB
+      const userModelFromRequest =
+        typeof req.body.model === "string" ? req.body.model.trim() : "";
+      const modelFromDb = featureObj?.model || "";
+      const userModel = userModelFromRequest || modelFromDb;
+
+      if (!userModel) {
+        res.status(400).json({
+          success: false,
+          error:
+            "Model is required (either in request body or configured in the feature)",
+        });
+        return;
+      }
+
+      // Step 2: Prepare image for provider (S3 private bucket migration)
       const { providerUrl: imageCloudUrl } = await prepareImageForProvider(
         imageUrl,
         feature
@@ -323,18 +385,7 @@ router.post(
         }
       }
 
-      // Step 2: Get the prompt for the selected feature (allow client override)
-      // Check both Features and Cartoon_Characters tables based on videoType
-      let featureObj: any = null;
-      if (videoType === "cartoon") {
-        featureObj = await prisma.cartoon_Characters.findUnique({
-          where: { endpoint: feature },
-        });
-      } else {
-        featureObj = await prisma.features.findUnique({
-          where: { endpoint: feature },
-        });
-      }
+      // Step 3: Determine the prompt (allow client override, else use DB)
       const prompt =
         typeof promptOverride === "string" && promptOverride.trim().length > 0
           ? promptOverride
@@ -342,7 +393,7 @@ router.post(
           ? featureObj.prompt
           : "";
 
-      // Step 3: Provider branching (Pixverse transition, then MiniMax, else Luma)
+      // Step 4: Provider branching (Pixverse transition, then MiniMax, else Luma)
       const rawModel = userModel;
       const isPixverseTransition = /pixverse-v4-transition/i.test(rawModel);
       // Support v4, v4.5 and v5 image to video variants
@@ -3979,16 +4030,11 @@ router.post(
             payload: createPayload,
             serverResponse: pixErr?.response?.data,
           });
-          const e = err as any;
-          let provider_message =
-            e?.response?.data?.message ||
-            e?.response?.data?.error ||
-            e?.message ||
-            "Unknown error";
+          const provider_message = extractEachlabsErrorMessage(err);
           res.status(502).json({
             success: false,
             error: provider_message,
-            details: serializeError(e),
+            details: serializeError(err),
           });
           return;
         }
@@ -4251,9 +4297,10 @@ router.post(
             payload: createPayload,
             serverResponse: viduQ1Err?.response?.data,
           });
+          const provider_message = extractEachlabsErrorMessage(err);
           res.status(502).json({
             success: false,
-            error: "Failed to create Vidu Q1 prediction",
+            error: `Vidu Q1 creation failed: ${provider_message}`,
             details: serializeError(err),
           });
           return;
@@ -4448,9 +4495,10 @@ router.post(
             payload: createPayload,
             serverResponse: vidu15Err?.response?.data,
           });
+          const provider_message = extractEachlabsErrorMessage(err);
           res.status(502).json({
             success: false,
-            error: vidu15Err?.response?.data.details,
+            error: `Vidu 1.5 creation failed: ${provider_message}`,
             details: serializeError(err),
           });
           return;
@@ -4647,9 +4695,10 @@ router.post(
             payload: createPayload,
             serverResponse: viduQ1I2VErr?.response?.data,
           });
+          const provider_message = extractEachlabsErrorMessage(err);
           res.status(502).json({
             success: false,
-            error: "Failed to create Vidu Q1 I2V prediction",
+            error: `Vidu Q1 I2V creation failed: ${provider_message}`,
             details: serializeError(err),
           });
           return;
@@ -4844,9 +4893,10 @@ router.post(
             payload: createPayload,
             serverResponse: vidu20Err?.response?.data,
           });
+          const provider_message = extractEachlabsErrorMessage(err);
           res.status(502).json({
             success: false,
-            error: "Failed to create Vidu 2.0 prediction",
+            error: `Vidu 2.0 creation failed: ${provider_message}`,
             details: serializeError(err),
           });
           return;
@@ -5047,9 +5097,10 @@ router.post(
             payload: createPayload,
             serverResponse: veo2Err?.response?.data,
           });
+          const provider_message = extractEachlabsErrorMessage(err);
           res.status(502).json({
             success: false,
-            error: "Failed to create Veo 2 Image to Video prediction",
+            error: `Veo 2 I2V creation failed: ${provider_message}`,
             details: serializeError(err),
           });
           return;
@@ -5248,9 +5299,10 @@ router.post(
             payload: createPayload,
             serverResponse: veo3Err?.response?.data,
           });
+          const provider_message = extractEachlabsErrorMessage(err);
           res.status(502).json({
             success: false,
-            error: "Failed to create Veo 3 Image to Video prediction",
+            error: `Veo 3 I2V creation failed: ${provider_message}`,
             details: serializeError(err),
           });
           return;
@@ -5520,11 +5572,7 @@ router.post(
           }
         } catch (e: any) {
           console.error("[Bytedance] Creation error:", serializeError(e));
-          const provider_message =
-            e?.response?.data?.message ||
-            e?.response?.data?.error ||
-            e?.message ||
-            "Unknown error";
+          const provider_message = extractEachlabsErrorMessage(e);
           res.status(502).json({
             success: false,
             error: `Bytedance creation failed: ${provider_message}`,

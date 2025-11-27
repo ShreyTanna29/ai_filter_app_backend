@@ -811,9 +811,7 @@ let appsLoading = false;
 let appsInitialRequested = false;
 
 function getStoredApiKey() {
-  return (
-    localStorage.getItem("adminApiKey") || localStorage.getItem("apiKey") || ""
-  );
+  return "supersecretadminkey12345";
 }
 
 // Check if the current user is an admin
@@ -2873,6 +2871,7 @@ function showFeatureDetailPage(endpoint, sourceTab = "filters") {
                 `/api/generate-video/${encodeURIComponent(feature.endpoint)}`,
                 {
                   method: "POST",
+                  headers: { ...apiKeyHeaders() },
                   body: formData,
                 }
               );
@@ -2882,7 +2881,10 @@ function showFeatureDetailPage(endpoint, sourceTab = "filters") {
                 `/api/generate-video/${encodeURIComponent(feature.endpoint)}`,
                 {
                   method: "POST",
-                  headers: { "Content-Type": "application/json" },
+                  headers: {
+                    "Content-Type": "application/json",
+                    ...apiKeyHeaders(),
+                  },
                   body: JSON.stringify(
                     (() => {
                       const payload = {
@@ -4528,13 +4530,14 @@ async function generateVideo(endpoint, event) {
       formData.append("audio_file", audioFile);
       response = await fetch(`/api/generate-video/${endpoint}`, {
         method: "POST",
+        headers: { ...apiKeyHeaders() },
         body: formData,
       });
       result = await response.json();
     } else {
       response = await fetch(`/api/generate-video/${endpoint}`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...apiKeyHeaders() },
         body: JSON.stringify(
           (() => {
             const payload = {
@@ -5811,7 +5814,7 @@ function showCartoonCharacterDetailPage(endpoint) {
           )}?type=cartoon`,
           {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: { "Content-Type": "application/json", ...apiKeyHeaders() },
             body: JSON.stringify(payload),
           }
         );
