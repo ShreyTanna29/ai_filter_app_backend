@@ -1,5 +1,7 @@
 const IDEOGRAM_MODEL_ID = "ideogram:4@1";
 const IDEOGRAM_REMIX_MODEL_ID = "ideogram:4@2";
+const IDEOGRAM_EDIT_MODEL_ID = "ideogram:4@3";
+const IDEOGRAM_REFRAME_MODEL_ID = "ideogram:4@4";
 const IDEOGRAM_BASE_DIMENSIONS = [
   { width: 1536, height: 512 },
   { width: 1536, height: 576 },
@@ -106,6 +108,146 @@ const IDEOGRAM_REMIX_BASE_DIMENSIONS = [
   { width: 512, height: 1536 },
 ];
 
+// Ideogram 3.0 Edit (Inpainting) supported dimensions
+const IDEOGRAM_EDIT_BASE_DIMENSIONS = [
+  { width: 1536, height: 512 },
+  { width: 1536, height: 576 },
+  { width: 1472, height: 576 },
+  { width: 1408, height: 576 },
+  { width: 1536, height: 640 },
+  { width: 1472, height: 640 },
+  { width: 1408, height: 640 },
+  { width: 1344, height: 640 },
+  { width: 1472, height: 704 },
+  { width: 1408, height: 704 },
+  { width: 1344, height: 704 },
+  { width: 1280, height: 704 },
+  { width: 1312, height: 736 },
+  { width: 1344, height: 768 },
+  { width: 1216, height: 704 },
+  { width: 1280, height: 768 },
+  { width: 1152, height: 704 },
+  { width: 1280, height: 800 },
+  { width: 1216, height: 768 },
+  { width: 1248, height: 832 },
+  { width: 1216, height: 832 },
+  { width: 1088, height: 768 },
+  { width: 1152, height: 832 },
+  { width: 1152, height: 864 },
+  { width: 1088, height: 832 },
+  { width: 1152, height: 896 },
+  { width: 1120, height: 896 },
+  { width: 1024, height: 832 },
+  { width: 1088, height: 896 },
+  { width: 960, height: 832 },
+  { width: 1024, height: 896 },
+  { width: 1088, height: 960 },
+  { width: 960, height: 896 },
+  { width: 1024, height: 960 },
+  { width: 1024, height: 1024 },
+  { width: 960, height: 1024 },
+  { width: 896, height: 960 },
+  { width: 960, height: 1088 },
+  { width: 896, height: 1024 },
+  { width: 832, height: 960 },
+  { width: 896, height: 1088 },
+  { width: 832, height: 1088 },
+  { width: 864, height: 1152 },
+  { width: 832, height: 1152 },
+  { width: 768, height: 1088 },
+  { width: 832, height: 1216 },
+  { width: 832, height: 1248 },
+  { width: 768, height: 1216 },
+  { width: 800, height: 1280 },
+  { width: 704, height: 1152 },
+  { width: 768, height: 1280 },
+  { width: 704, height: 1216 },
+  { width: 768, height: 1344 },
+  { width: 736, height: 1312 },
+  { width: 704, height: 1280 },
+  { width: 704, height: 1344 },
+  { width: 704, height: 1408 },
+  { width: 704, height: 1472 },
+  { width: 640, height: 1344 },
+  { width: 640, height: 1408 },
+  { width: 640, height: 1472 },
+  { width: 640, height: 1536 },
+  { width: 576, height: 1408 },
+  { width: 576, height: 1472 },
+  { width: 576, height: 1536 },
+  { width: 512, height: 1536 },
+];
+
+// Ideogram 3.0 Reframe (Outpainting) supported dimensions
+const IDEOGRAM_REFRAME_BASE_DIMENSIONS = [
+  { width: 1536, height: 512 },
+  { width: 1536, height: 576 },
+  { width: 1472, height: 576 },
+  { width: 1408, height: 576 },
+  { width: 1536, height: 640 },
+  { width: 1472, height: 640 },
+  { width: 1408, height: 640 },
+  { width: 1344, height: 640 },
+  { width: 1472, height: 704 },
+  { width: 1408, height: 704 },
+  { width: 1344, height: 704 },
+  { width: 1280, height: 704 },
+  { width: 1312, height: 736 },
+  { width: 1344, height: 768 },
+  { width: 1216, height: 704 },
+  { width: 1280, height: 768 },
+  { width: 1152, height: 704 },
+  { width: 1280, height: 800 },
+  { width: 1216, height: 768 },
+  { width: 1248, height: 832 },
+  { width: 1216, height: 832 },
+  { width: 1088, height: 768 },
+  { width: 1152, height: 832 },
+  { width: 1152, height: 864 },
+  { width: 1088, height: 832 },
+  { width: 1152, height: 896 },
+  { width: 1120, height: 896 },
+  { width: 1024, height: 832 },
+  { width: 1088, height: 896 },
+  { width: 960, height: 832 },
+  { width: 1024, height: 896 },
+  { width: 1088, height: 960 },
+  { width: 960, height: 896 },
+  { width: 1024, height: 960 },
+  { width: 1024, height: 1024 },
+  { width: 960, height: 1024 },
+  { width: 896, height: 960 },
+  { width: 960, height: 1088 },
+  { width: 896, height: 1024 },
+  { width: 832, height: 960 },
+  { width: 896, height: 1088 },
+  { width: 832, height: 1088 },
+  { width: 864, height: 1152 },
+  { width: 832, height: 1152 },
+  { width: 768, height: 1088 },
+  { width: 832, height: 1216 },
+  { width: 832, height: 1248 },
+  { width: 768, height: 1216 },
+  { width: 800, height: 1280 },
+  { width: 704, height: 1152 },
+  { width: 768, height: 1280 },
+  { width: 704, height: 1216 },
+  { width: 768, height: 1344 },
+  { width: 736, height: 1312 },
+  { width: 704, height: 1280 },
+  { width: 704, height: 1344 },
+  { width: 704, height: 1408 },
+  { width: 704, height: 1472 },
+  { width: 640, height: 1344 },
+  { width: 640, height: 1408 },
+  { width: 640, height: 1472 },
+  { width: 640, height: 1536 },
+  { width: 576, height: 1408 },
+  { width: 576, height: 1472 },
+  { width: 576, height: 1536 },
+  { width: 512, height: 1536 },
+];
+
 function buildIdeogramDimensionOptions(list) {
   const seen = new Set();
   const values = [];
@@ -132,6 +274,12 @@ const IDEOGRAM_DIMENSION_OPTIONS = buildIdeogramDimensionOptions(
 const IDEOGRAM_REMIX_DIMENSION_OPTIONS = buildIdeogramDimensionOptions(
   IDEOGRAM_REMIX_BASE_DIMENSIONS
 );
+const IDEOGRAM_EDIT_DIMENSION_OPTIONS = buildIdeogramDimensionOptions(
+  IDEOGRAM_EDIT_BASE_DIMENSIONS
+);
+const IDEOGRAM_REFRAME_DIMENSION_OPTIONS = buildIdeogramDimensionOptions(
+  IDEOGRAM_REFRAME_BASE_DIMENSIONS
+);
 
 function pickIdeogramDefault(options) {
   return (
@@ -146,17 +294,31 @@ const IDEOGRAM_DEFAULT_DIMENSION = pickIdeogramDefault(
 const IDEOGRAM_REMIX_DEFAULT_DIMENSION = pickIdeogramDefault(
   IDEOGRAM_REMIX_DIMENSION_OPTIONS
 );
+const IDEOGRAM_EDIT_DEFAULT_DIMENSION = pickIdeogramDefault(
+  IDEOGRAM_EDIT_DIMENSION_OPTIONS
+);
+const IDEOGRAM_REFRAME_DEFAULT_DIMENSION = pickIdeogramDefault(
+  IDEOGRAM_REFRAME_DIMENSION_OPTIONS
+);
 
 function getIdeogramDimensionOptions(modelId) {
-  return modelId === IDEOGRAM_REMIX_MODEL_ID
-    ? IDEOGRAM_REMIX_DIMENSION_OPTIONS
-    : IDEOGRAM_DIMENSION_OPTIONS;
+  if (modelId === IDEOGRAM_REMIX_MODEL_ID)
+    return IDEOGRAM_REMIX_DIMENSION_OPTIONS;
+  if (modelId === IDEOGRAM_EDIT_MODEL_ID)
+    return IDEOGRAM_EDIT_DIMENSION_OPTIONS;
+  if (modelId === IDEOGRAM_REFRAME_MODEL_ID)
+    return IDEOGRAM_REFRAME_DIMENSION_OPTIONS;
+  return IDEOGRAM_DIMENSION_OPTIONS;
 }
 
 function getIdeogramDefaultDimension(modelId) {
-  return modelId === IDEOGRAM_REMIX_MODEL_ID
-    ? IDEOGRAM_REMIX_DEFAULT_DIMENSION
-    : IDEOGRAM_DEFAULT_DIMENSION;
+  if (modelId === IDEOGRAM_REMIX_MODEL_ID)
+    return IDEOGRAM_REMIX_DEFAULT_DIMENSION;
+  if (modelId === IDEOGRAM_EDIT_MODEL_ID)
+    return IDEOGRAM_EDIT_DEFAULT_DIMENSION;
+  if (modelId === IDEOGRAM_REFRAME_MODEL_ID)
+    return IDEOGRAM_REFRAME_DEFAULT_DIMENSION;
+  return IDEOGRAM_DEFAULT_DIMENSION;
 }
 
 function initializeIdeogramDropdown(modelId = IDEOGRAM_MODEL_ID) {
@@ -198,14 +360,87 @@ const PHOTO_MODEL_OPTIONS = [
   { value: "bfl:2@1", label: "FLUX.1 Schnell" },
   { value: "bfl:1@8", label: "FLUX.1 Dev" },
   { value: "bfl:1@4", label: "FLUX.1 Pro" },
+  { value: "runware:400@1", label: "FLUX.2 [dev] (Runware)" },
+  { value: "runware:97@3", label: "HiDream Fast (Runware)" },
+  { value: "runware:97@2", label: "HiDream Dev (Runware)" },
+  { value: "runware:97@1", label: "HiDream Full (Runware)" },
+  { value: "runware:108@1", label: "Qwen Image (Runware)" },
+  {
+    value: "runware:108@22",
+    label: "Qwen Image Edit Plus (Runware, image editing)",
+    requiresReferences: true,
+  },
   { value: "bytedance:5@0", label: "Seeddream 4.0 (Runware)" },
+  {
+    value: "google:2@1",
+    label: "Imagen 4.0 Preview (Runware)",
+    textOnly: true,
+  },
+  {
+    value: "google:2@2",
+    label: "Imagen 4.0 Ultra (Runware)",
+    textOnly: true,
+  },
+  {
+    value: "google:2@3",
+    label: "Imagen 4.0 Fast (Runware)",
+    textOnly: true,
+  },
+  {
+    value: "google:4@1",
+    label: "Nano Banana / Gemini Flash Image 2.5 (Runware)",
+    textOnly: true,
+  },
+  {
+    value: "google:4@2",
+    label: "Nano Banana 2 Pro / Gemini 3 Pro Image (Runware)",
+    textOnly: true,
+  },
+  {
+    value: "openai:1@1",
+    label: "GPT Image 1 (Runware)",
+    textOnly: true,
+  },
   { value: IDEOGRAM_MODEL_ID, label: "Ideogram 3.0 (Runware)", textOnly: true },
   {
     value: IDEOGRAM_REMIX_MODEL_ID,
     label: "Ideogram 3.0 Remix (Runware, needs reference)",
     textOnly: true,
   },
+  {
+    value: IDEOGRAM_EDIT_MODEL_ID,
+    label: "Ideogram 3.0 Edit (Runware, inpainting)",
+    textOnly: true,
+    requiresSeedImage: true,
+    requiresMaskImage: true,
+  },
+  {
+    value: IDEOGRAM_REFRAME_MODEL_ID,
+    label: "Ideogram 3.0 Reframe (Runware, outpainting)",
+    textOnly: true,
+    requiresSeedImage: true,
+  },
   { value: "sourceful:1@1", label: "Riverflow 1.1 (Runware)" },
+  {
+    value: "sourceful:1@0",
+    label: "Riverflow 1.1 Mini (Runware, image editing)",
+    requiresReferences: true,
+  },
+  {
+    value: "sourceful:1@2",
+    label: "Riverflow 1.1 Pro (Runware, pro image editing)",
+    requiresReferences: true,
+  },
+  {
+    value: "bytedance:4@1",
+    label: "SeedEdit 3.0 (Runware, image editing)",
+    requiresReferences: true,
+  },
+  {
+    value: "hunyuan:1@1",
+    label: "Hunyuan Image V3 (EachLabs)",
+    textOnly: true,
+  },
 ];
 const PHOTO_MODEL_META = new Map(
   PHOTO_MODEL_OPTIONS.map((opt) => [opt.value, opt])
