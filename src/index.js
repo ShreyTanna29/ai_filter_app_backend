@@ -23,6 +23,7 @@ const runware_1 = __importDefault(require("./routes/runware"));
 const simple_auth_1 = __importDefault(require("./routes/simple-auth"));
 const categories_1 = __importDefault(require("./routes/categories"));
 const apps_1 = __importDefault(require("./routes/apps"));
+const workflows_1 = __importDefault(require("./routes/workflows"));
 const multer_1 = __importDefault(require("multer"));
 const s3_1 = require("./lib/s3");
 const signedUrl_1 = require("./middleware/signedUrl");
@@ -670,6 +671,7 @@ app.use("/api", runware_1.default);
 app.use("/api/auth", simple_auth_1.default);
 app.use("/api/categories", categories_1.default);
 app.use("/api/apps", apps_1.default);
+app.use("/api", workflows_1.default);
 // S3-based image upload replacing legacy Cloudinary upload.
 // Supports multipart file under field 'file' OR JSON body with { image_url }.
 const upload = (0, multer_1.default)({

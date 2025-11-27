@@ -269,7 +269,7 @@ function ensureImageDimensionsForProvider(sourceUrl, feature, width, height) {
 const upload = (0, multer_1.default)({ storage: multer_1.default.memoryStorage() });
 // Generate video from feature endpoint
 router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _0, _1, _2, _3, _4, _5, _6, _7, _8, _9, _10, _11, _12, _13, _14, _15, _16, _17, _18, _19, _20, _21, _22, _23, _24, _25, _26, _27, _28, _29, _30, _31, _32, _33, _34, _35, _36, _37, _38, _39, _40, _41, _42, _43, _44, _45, _46, _47, _48, _49, _50, _51, _52, _53, _54, _55, _56, _57, _58, _59, _60, _61, _62, _63, _64, _65, _66, _67, _68, _69, _70, _71, _72, _73, _74, _75, _76, _77, _78, _79, _80, _81, _82, _83, _84, _85, _86, _87, _88, _89, _90, _91, _92, _93, _94, _95, _96, _97, _98, _99, _100;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _0, _1, _2, _3, _4, _5, _6, _7, _8, _9, _10, _11, _12, _13, _14, _15, _16, _17, _18, _19, _20, _21, _22, _23, _24, _25, _26, _27, _28, _29, _30, _31, _32, _33, _34, _35, _36, _37, _38, _39, _40, _41, _42, _43, _44, _45, _46, _47, _48, _49, _50, _51, _52, _53, _54, _55, _56, _57, _58, _59, _60, _61, _62, _63, _64, _65, _66, _67, _68, _69, _70, _71, _72, _73, _74, _75, _76, _77, _78, _79, _80, _81, _82, _83, _84, _85, _86, _87, _88, _89, _90, _91, _92, _93, _94, _95, _96, _97, _98, _99, _100, _101, _102, _103, _104, _105, _106, _107, _108, _109, _110, _111, _112;
     try {
         const { feature } = req.params;
         // Check if this is a cartoon character video generation
@@ -295,6 +295,37 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
             featureObj = yield prisma_1.default.features.findUnique({
                 where: { endpoint: feature },
             });
+        }
+        // Check if app has permission to use this feature endpoint
+        const apiKeyOwner = req.apiKeyOwner;
+        if ((apiKeyOwner === null || apiKeyOwner === void 0 ? void 0 : apiKeyOwner.type) === "app" && apiKeyOwner.app) {
+            const appId = apiKeyOwner.app.id;
+            let hasPermission = false;
+            if (videoType === "cartoon") {
+                // Check if the cartoon character is allowed for this app
+                if (featureObj) {
+                    const allowed = yield prisma_1.default.appCartoonCharacter.findFirst({
+                        where: { appId, cartoonCharacterId: featureObj.id },
+                    });
+                    hasPermission = !!allowed;
+                }
+            }
+            else {
+                // Check if the feature is allowed for this app
+                if (featureObj) {
+                    const allowed = yield prisma_1.default.appFeature.findFirst({
+                        where: { appId, featureId: featureObj.id },
+                    });
+                    hasPermission = !!allowed;
+                }
+            }
+            if (!hasPermission) {
+                res.status(403).json({
+                    success: false,
+                    error: `This app does not have permission to use the "${feature}" ${videoType === "cartoon" ? "cartoon character" : "feature"}`,
+                });
+                return;
+            }
         }
         // Determine the model: use request body if provided, otherwise fall back to DB
         const userModelFromRequest = typeof req.body.model === "string" ? req.body.model.trim() : "";
@@ -346,6 +377,8 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
         const isRunwareSora2Pro = /sora[\s-]*2.*pro|openai:3@2/i.test(rawModel);
         const isRunwareHailuo23Fast = /hailuo[\s-]*2\.?3.*fast|minimax:4@2/i.test(rawModel);
         const isRunwareHailuo23 = /hailuo[\s-]*2\.?3(?!.*fast)|minimax:4@1/i.test(rawModel);
+        const isRunwareControlNetXL = /controlnet[\s-]*xl[\s-]*video|civitai:136070@267493/i.test(rawModel);
+        const isRunwareClaymotionF1 = /claymotion[\s-]*f1|civitai:855822@957548/i.test(rawModel);
         const isLumaModel = /(^|\s)(ray|luma)(?=\b)/i.test(rawModel) ||
             /dream\s*machine/i.test(rawModel) ||
             /ray[\s-]*1\.6/i.test(rawModel) ||
@@ -1984,7 +2017,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                                 try {
                                     parsedBody = JSON.parse(body);
                                 }
-                                catch (_101) {
+                                catch (_113) {
                                     parsedBody = undefined;
                                 }
                             }
@@ -3045,6 +3078,432 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                 return;
             }
         }
+        // Runware ControlNet XL Video (Image-to-Video)
+        if (isRunwareControlNetXL) {
+            try {
+                console.log("[ControlNet XL Video] Start generation", {
+                    feature,
+                    rawModel,
+                    imageCloudUrlInitial: imageCloudUrl === null || imageCloudUrl === void 0 ? void 0 : imageCloudUrl.slice(0, 120),
+                });
+                const runwareHeaders = {
+                    Authorization: `Bearer ${process.env.RUNWARE_API_KEY || process.env.RUNWARE_KEY}`,
+                    "Content-Type": "application/json",
+                };
+                // 1) Upload first frame image to get imageUUID
+                const uploadPayload = [
+                    {
+                        taskType: "imageUpload",
+                        taskUUID: (0, crypto_1.randomUUID)(),
+                        image: imageCloudUrl,
+                    },
+                ];
+                let firstUUID;
+                try {
+                    const up = yield axios_1.default.post("https://api.runware.ai/v1", uploadPayload, { headers: runwareHeaders, timeout: 180000 });
+                    const d = up.data;
+                    const obj = Array.isArray(d === null || d === void 0 ? void 0 : d.data) ? d.data[0] : d === null || d === void 0 ? void 0 : d.data;
+                    firstUUID = (obj === null || obj === void 0 ? void 0 : obj.imageUUID) || (obj === null || obj === void 0 ? void 0 : obj.imageUuid);
+                    console.log("[ControlNet XL Video] imageUpload success", {
+                        firstUUID,
+                    });
+                }
+                catch (e) {
+                    console.error("Runware ControlNet XL Video imageUpload failed:", ((_47 = e === null || e === void 0 ? void 0 : e.response) === null || _47 === void 0 ? void 0 : _47.data) || (e === null || e === void 0 ? void 0 : e.message) || e);
+                    respondRunwareError(res, 400, "Failed to upload image to Runware (ControlNet XL Video)", ((_48 = e === null || e === void 0 ? void 0 : e.response) === null || _48 === void 0 ? void 0 : _48.data) || e);
+                    return;
+                }
+                if (!firstUUID) {
+                    res.status(400).json({
+                        success: false,
+                        error: "Runware imageUpload did not return imageUUID",
+                    });
+                    return;
+                }
+                // 2) Create videoInference task for ControlNet XL Video
+                const taskUUIDCreated = (0, crypto_1.randomUUID)();
+                const task = {
+                    taskType: "videoInference",
+                    taskUUID: taskUUIDCreated,
+                    model: "civitai:136070@267493",
+                    positivePrompt: prompt || "",
+                    width: 512,
+                    height: 512,
+                    duration: 4,
+                    deliveryMethod: "async",
+                    frameImages: [{ inputImage: firstUUID, frame: "first" }],
+                };
+                console.log("[ControlNet XL Video] Created task", {
+                    taskUUID: taskUUIDCreated,
+                    width: 512,
+                    height: 512,
+                    duration: 4,
+                });
+                const createResp = yield axios_1.default.post("https://api.runware.ai/v1", [task], { headers: runwareHeaders, timeout: 180000 });
+                const createData = createResp.data;
+                const ackItem = Array.isArray(createData === null || createData === void 0 ? void 0 : createData.data)
+                    ? createData.data.find((d) => (d === null || d === void 0 ? void 0 : d.taskType) === "videoInference") || createData.data[0]
+                    : createData === null || createData === void 0 ? void 0 : createData.data;
+                let videoUrl = (ackItem === null || ackItem === void 0 ? void 0 : ackItem.videoURL) ||
+                    (ackItem === null || ackItem === void 0 ? void 0 : ackItem.url) ||
+                    (ackItem === null || ackItem === void 0 ? void 0 : ackItem.video) ||
+                    (Array.isArray(ackItem === null || ackItem === void 0 ? void 0 : ackItem.videos) ? ackItem.videos[0] : null);
+                let pollTaskUUID = (ackItem === null || ackItem === void 0 ? void 0 : ackItem.taskUUID) || taskUUIDCreated;
+                console.log("[ControlNet XL Video] Ack response", {
+                    ackTaskUUID: ackItem === null || ackItem === void 0 ? void 0 : ackItem.taskUUID,
+                    createdTaskUUID: taskUUIDCreated,
+                    chosenPollTaskUUID: pollTaskUUID,
+                    immediateVideo: !!videoUrl,
+                    status: (ackItem === null || ackItem === void 0 ? void 0 : ackItem.status) || (ackItem === null || ackItem === void 0 ? void 0 : ackItem.taskStatus),
+                });
+                // 3) Poll if no immediate URL
+                if (!videoUrl && pollTaskUUID) {
+                    const maxAttempts = 100; // ~5 min
+                    const delay = (ms) => new Promise((r) => setTimeout(r, ms));
+                    let consecutive400 = 0;
+                    let switchedToCreated = false;
+                    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+                        yield delay(3000);
+                        const pollPayload = [
+                            { taskType: "getResponse", taskUUID: pollTaskUUID },
+                        ];
+                        console.log("[ControlNet XL Video] Poll attempt", {
+                            attempt,
+                            pollPayload: pollPayload[0],
+                        });
+                        try {
+                            const poll = yield axios_1.default.post("https://api.runware.ai/v1", pollPayload, { headers: runwareHeaders, timeout: 60000 });
+                            const pd = poll.data;
+                            const item = Array.isArray(pd === null || pd === void 0 ? void 0 : pd.data)
+                                ? pd.data.find((d) => (d === null || d === void 0 ? void 0 : d.taskUUID) === pollTaskUUID || (d === null || d === void 0 ? void 0 : d.videoURL)) || pd.data[0]
+                                : pd === null || pd === void 0 ? void 0 : pd.data;
+                            const status = (item === null || item === void 0 ? void 0 : item.status) || (item === null || item === void 0 ? void 0 : item.taskStatus);
+                            if (status)
+                                console.log("[ControlNet XL Video] Poll status", {
+                                    attempt,
+                                    status,
+                                });
+                            if (status === "success" || (item === null || item === void 0 ? void 0 : item.videoURL) || (item === null || item === void 0 ? void 0 : item.url)) {
+                                videoUrl =
+                                    (item === null || item === void 0 ? void 0 : item.videoURL) ||
+                                        (item === null || item === void 0 ? void 0 : item.url) ||
+                                        (item === null || item === void 0 ? void 0 : item.video) ||
+                                        (Array.isArray(item === null || item === void 0 ? void 0 : item.videos) ? item.videos[0] : null);
+                                if (videoUrl)
+                                    break;
+                            }
+                            if (status === "error" || status === "failed") {
+                                respondRunwareError(res, 502, "Runware ControlNet XL Video generation failed during polling", pd);
+                                return;
+                            }
+                            consecutive400 = 0; // reset on successful poll
+                        }
+                        catch (e) {
+                            const statusCode = (_49 = e === null || e === void 0 ? void 0 : e.response) === null || _49 === void 0 ? void 0 : _49.status;
+                            const body = (_50 = e === null || e === void 0 ? void 0 : e.response) === null || _50 === void 0 ? void 0 : _50.data;
+                            console.log("[ControlNet XL Video] Poll error", {
+                                attempt,
+                                statusCode,
+                                body: typeof body === "object"
+                                    ? JSON.stringify(body).slice(0, 500)
+                                    : body,
+                            });
+                            if (statusCode === 400) {
+                                consecutive400++;
+                                // If repeated 400 and ack UUID differs, try switching to created taskUUID once
+                                if (!switchedToCreated &&
+                                    pollTaskUUID !== taskUUIDCreated &&
+                                    consecutive400 >= 2) {
+                                    console.log("[ControlNet XL Video] Switching to created taskUUID due to repeated 400", { from: pollTaskUUID, to: taskUUIDCreated });
+                                    pollTaskUUID = taskUUIDCreated;
+                                    switchedToCreated = true;
+                                    consecutive400 = 0;
+                                }
+                                if (consecutive400 >= 5) {
+                                    respondRunwareError(res, 502, "Runware ControlNet XL Video polling returned repeated 400 errors", body || ((_51 = e === null || e === void 0 ? void 0 : e.response) === null || _51 === void 0 ? void 0 : _51.data) || e);
+                                    return;
+                                }
+                            }
+                            continue;
+                        }
+                    }
+                }
+                if (!videoUrl) {
+                    console.log("[ControlNet XL Video] Timeout - no video URL returned after polling");
+                    respondRunwareError(res, 502, "Runware ControlNet XL Video did not return a video URL (timeout or missing)", createData);
+                    return;
+                }
+                // 4) Download and upload to S3
+                let rwStream;
+                try {
+                    rwStream = yield axios_1.default.get(videoUrl, {
+                        responseType: "stream",
+                        timeout: 600000,
+                    });
+                    console.log("[ControlNet XL Video] Download started");
+                }
+                catch (e) {
+                    console.log("[ControlNet XL Video] Download error", {
+                        error: serializeError(e),
+                    });
+                    res.status(500).json({
+                        success: false,
+                        error: "Failed to download ControlNet XL Video",
+                        details: serializeError(e),
+                    });
+                    return;
+                }
+                let uploaded;
+                try {
+                    uploaded = yield uploadGeneratedVideo(feature, "controlnet-xl-video", rwStream.data, videoType);
+                    console.log("[ControlNet XL Video] S3 upload success", {
+                        key: uploaded.key,
+                    });
+                }
+                catch (e) {
+                    console.log("[ControlNet XL Video] S3 upload error", {
+                        error: serializeError(e),
+                    });
+                    res.status(500).json({
+                        success: false,
+                        error: "Failed to upload ControlNet XL Video to S3",
+                        details: serializeError(e),
+                    });
+                    return;
+                }
+                res.status(200).json({
+                    success: true,
+                    video: {
+                        url: uploaded.signedUrl,
+                        signedUrl: uploaded.signedUrl,
+                        key: uploaded.key,
+                    },
+                    s3Key: uploaded.key,
+                });
+                return;
+            }
+            catch (err) {
+                console.error("Runware ControlNet XL Video error:", ((_52 = err === null || err === void 0 ? void 0 : err.response) === null || _52 === void 0 ? void 0 : _52.data) || err);
+                res.status(500).json({
+                    success: false,
+                    error: "ControlNet XL Video generation failed",
+                    details: serializeError(err),
+                });
+                return;
+            }
+        }
+        // Runware Claymotion F1 (Image-to-Video)
+        if (isRunwareClaymotionF1) {
+            try {
+                console.log("[Claymotion F1] Start generation", {
+                    feature,
+                    rawModel,
+                    imageCloudUrlInitial: imageCloudUrl === null || imageCloudUrl === void 0 ? void 0 : imageCloudUrl.slice(0, 120),
+                });
+                const runwareHeaders = {
+                    Authorization: `Bearer ${process.env.RUNWARE_API_KEY || process.env.RUNWARE_KEY}`,
+                    "Content-Type": "application/json",
+                };
+                // 1) Upload first frame image to get imageUUID
+                const uploadPayload = [
+                    {
+                        taskType: "imageUpload",
+                        taskUUID: (0, crypto_1.randomUUID)(),
+                        image: imageCloudUrl,
+                    },
+                ];
+                let firstUUID;
+                try {
+                    const up = yield axios_1.default.post("https://api.runware.ai/v1", uploadPayload, { headers: runwareHeaders, timeout: 180000 });
+                    const d = up.data;
+                    const obj = Array.isArray(d === null || d === void 0 ? void 0 : d.data) ? d.data[0] : d === null || d === void 0 ? void 0 : d.data;
+                    firstUUID = (obj === null || obj === void 0 ? void 0 : obj.imageUUID) || (obj === null || obj === void 0 ? void 0 : obj.imageUuid);
+                    console.log("[Claymotion F1] imageUpload success", { firstUUID });
+                }
+                catch (e) {
+                    console.error("Runware Claymotion F1 imageUpload failed:", ((_53 = e === null || e === void 0 ? void 0 : e.response) === null || _53 === void 0 ? void 0 : _53.data) || (e === null || e === void 0 ? void 0 : e.message) || e);
+                    respondRunwareError(res, 400, "Failed to upload image to Runware (Claymotion F1)", ((_54 = e === null || e === void 0 ? void 0 : e.response) === null || _54 === void 0 ? void 0 : _54.data) || e);
+                    return;
+                }
+                if (!firstUUID) {
+                    res.status(400).json({
+                        success: false,
+                        error: "Runware imageUpload did not return imageUUID",
+                    });
+                    return;
+                }
+                // 2) Create videoInference task for Claymotion F1
+                const taskUUIDCreated = (0, crypto_1.randomUUID)();
+                const task = {
+                    taskType: "videoInference",
+                    taskUUID: taskUUIDCreated,
+                    model: "civitai:855822@957548",
+                    positivePrompt: prompt || "",
+                    width: 512,
+                    height: 512,
+                    duration: 4,
+                    deliveryMethod: "async",
+                    frameImages: [{ inputImage: firstUUID, frame: "first" }],
+                };
+                console.log("[Claymotion F1] Created task", {
+                    taskUUID: taskUUIDCreated,
+                    width: 512,
+                    height: 512,
+                    duration: 4,
+                });
+                const createResp = yield axios_1.default.post("https://api.runware.ai/v1", [task], { headers: runwareHeaders, timeout: 180000 });
+                const createData = createResp.data;
+                const ackItem = Array.isArray(createData === null || createData === void 0 ? void 0 : createData.data)
+                    ? createData.data.find((d) => (d === null || d === void 0 ? void 0 : d.taskType) === "videoInference") || createData.data[0]
+                    : createData === null || createData === void 0 ? void 0 : createData.data;
+                let videoUrl = (ackItem === null || ackItem === void 0 ? void 0 : ackItem.videoURL) ||
+                    (ackItem === null || ackItem === void 0 ? void 0 : ackItem.url) ||
+                    (ackItem === null || ackItem === void 0 ? void 0 : ackItem.video) ||
+                    (Array.isArray(ackItem === null || ackItem === void 0 ? void 0 : ackItem.videos) ? ackItem.videos[0] : null);
+                let pollTaskUUID = (ackItem === null || ackItem === void 0 ? void 0 : ackItem.taskUUID) || taskUUIDCreated;
+                console.log("[Claymotion F1] Ack response", {
+                    ackTaskUUID: ackItem === null || ackItem === void 0 ? void 0 : ackItem.taskUUID,
+                    createdTaskUUID: taskUUIDCreated,
+                    chosenPollTaskUUID: pollTaskUUID,
+                    immediateVideo: !!videoUrl,
+                    status: (ackItem === null || ackItem === void 0 ? void 0 : ackItem.status) || (ackItem === null || ackItem === void 0 ? void 0 : ackItem.taskStatus),
+                });
+                // 3) Poll if no immediate URL
+                if (!videoUrl && pollTaskUUID) {
+                    const maxAttempts = 100; // ~5 min
+                    const delay = (ms) => new Promise((r) => setTimeout(r, ms));
+                    let consecutive400 = 0;
+                    let switchedToCreated = false;
+                    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+                        yield delay(3000);
+                        const pollPayload = [
+                            { taskType: "getResponse", taskUUID: pollTaskUUID },
+                        ];
+                        console.log("[Claymotion F1] Poll attempt", {
+                            attempt,
+                            pollPayload: pollPayload[0],
+                        });
+                        try {
+                            const poll = yield axios_1.default.post("https://api.runware.ai/v1", pollPayload, { headers: runwareHeaders, timeout: 60000 });
+                            const pd = poll.data;
+                            const item = Array.isArray(pd === null || pd === void 0 ? void 0 : pd.data)
+                                ? pd.data.find((d) => (d === null || d === void 0 ? void 0 : d.taskUUID) === pollTaskUUID || (d === null || d === void 0 ? void 0 : d.videoURL)) || pd.data[0]
+                                : pd === null || pd === void 0 ? void 0 : pd.data;
+                            const status = (item === null || item === void 0 ? void 0 : item.status) || (item === null || item === void 0 ? void 0 : item.taskStatus);
+                            if (status)
+                                console.log("[Claymotion F1] Poll status", {
+                                    attempt,
+                                    status,
+                                });
+                            if (status === "success" || (item === null || item === void 0 ? void 0 : item.videoURL) || (item === null || item === void 0 ? void 0 : item.url)) {
+                                videoUrl =
+                                    (item === null || item === void 0 ? void 0 : item.videoURL) ||
+                                        (item === null || item === void 0 ? void 0 : item.url) ||
+                                        (item === null || item === void 0 ? void 0 : item.video) ||
+                                        (Array.isArray(item === null || item === void 0 ? void 0 : item.videos) ? item.videos[0] : null);
+                                if (videoUrl)
+                                    break;
+                            }
+                            if (status === "error" || status === "failed") {
+                                respondRunwareError(res, 502, "Runware Claymotion F1 generation failed during polling", pd);
+                                return;
+                            }
+                            consecutive400 = 0; // reset on successful poll
+                        }
+                        catch (e) {
+                            const statusCode = (_55 = e === null || e === void 0 ? void 0 : e.response) === null || _55 === void 0 ? void 0 : _55.status;
+                            const body = (_56 = e === null || e === void 0 ? void 0 : e.response) === null || _56 === void 0 ? void 0 : _56.data;
+                            console.log("[Claymotion F1] Poll error", {
+                                attempt,
+                                statusCode,
+                                body: typeof body === "object"
+                                    ? JSON.stringify(body).slice(0, 500)
+                                    : body,
+                            });
+                            if (statusCode === 400) {
+                                consecutive400++;
+                                // If repeated 400 and ack UUID differs, try switching to created taskUUID once
+                                if (!switchedToCreated &&
+                                    pollTaskUUID !== taskUUIDCreated &&
+                                    consecutive400 >= 2) {
+                                    console.log("[Claymotion F1] Switching to created taskUUID due to repeated 400", { from: pollTaskUUID, to: taskUUIDCreated });
+                                    pollTaskUUID = taskUUIDCreated;
+                                    switchedToCreated = true;
+                                    consecutive400 = 0;
+                                }
+                                if (consecutive400 >= 5) {
+                                    respondRunwareError(res, 502, "Runware Claymotion F1 polling returned repeated 400 errors", body || ((_57 = e === null || e === void 0 ? void 0 : e.response) === null || _57 === void 0 ? void 0 : _57.data) || e);
+                                    return;
+                                }
+                            }
+                            continue;
+                        }
+                    }
+                }
+                if (!videoUrl) {
+                    console.log("[Claymotion F1] Timeout - no video URL returned after polling");
+                    respondRunwareError(res, 502, "Runware Claymotion F1 did not return a video URL (timeout or missing)", createData);
+                    return;
+                }
+                // 4) Download and upload to S3
+                let rwStream;
+                try {
+                    rwStream = yield axios_1.default.get(videoUrl, {
+                        responseType: "stream",
+                        timeout: 600000,
+                    });
+                    console.log("[Claymotion F1] Download started");
+                }
+                catch (e) {
+                    console.log("[Claymotion F1] Download error", {
+                        error: serializeError(e),
+                    });
+                    res.status(500).json({
+                        success: false,
+                        error: "Failed to download Claymotion F1 video",
+                        details: serializeError(e),
+                    });
+                    return;
+                }
+                let uploaded;
+                try {
+                    uploaded = yield uploadGeneratedVideo(feature, "claymotion-f1", rwStream.data, videoType);
+                    console.log("[Claymotion F1] S3 upload success", {
+                        key: uploaded.key,
+                    });
+                }
+                catch (e) {
+                    console.log("[Claymotion F1] S3 upload error", {
+                        error: serializeError(e),
+                    });
+                    res.status(500).json({
+                        success: false,
+                        error: "Failed to upload Claymotion F1 video to S3",
+                        details: serializeError(e),
+                    });
+                    return;
+                }
+                res.status(200).json({
+                    success: true,
+                    video: {
+                        url: uploaded.signedUrl,
+                        signedUrl: uploaded.signedUrl,
+                        key: uploaded.key,
+                    },
+                    s3Key: uploaded.key,
+                });
+                return;
+            }
+            catch (err) {
+                console.error("Runware Claymotion F1 error:", ((_58 = err === null || err === void 0 ? void 0 : err.response) === null || _58 === void 0 ? void 0 : _58.data) || err);
+                res.status(500).json({
+                    success: false,
+                    error: "Claymotion F1 generation failed",
+                    details: serializeError(err),
+                });
+                return;
+            }
+        }
         if (isPixverseTransition || isPixverseImage2Video) {
             // Ensure 512x512 for Pixverse-compatible inputs for ANY host (S3/Cloudinary/etc)
             const force512 = (url) => {
@@ -3190,7 +3649,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                 console.error("Pixverse create error (single attempt):", {
                     error: pixErr,
                     payload: createPayload,
-                    serverResponse: (_47 = pixErr === null || pixErr === void 0 ? void 0 : pixErr.response) === null || _47 === void 0 ? void 0 : _47.data,
+                    serverResponse: (_59 = pixErr === null || pixErr === void 0 ? void 0 : pixErr.response) === null || _59 === void 0 ? void 0 : _59.data,
                 });
                 const provider_message = extractEachlabsErrorMessage(err);
                 res.status(502).json({
@@ -3222,7 +3681,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                             pixVideoUrl =
                                 out.video_url ||
                                     out.video ||
-                                    (Array.isArray(out) ? ((_48 = out[0]) === null || _48 === void 0 ? void 0 : _48.video_url) || out[0] : null) ||
+                                    (Array.isArray(out) ? ((_60 = out[0]) === null || _60 === void 0 ? void 0 : _60.video_url) || out[0] : null) ||
                                     result.video_url ||
                                     result.video ||
                                     out.url ||
@@ -3431,7 +3890,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                 console.error("Vidu Q1 create error:", {
                     error: viduQ1Err,
                     payload: createPayload,
-                    serverResponse: (_49 = viduQ1Err === null || viduQ1Err === void 0 ? void 0 : viduQ1Err.response) === null || _49 === void 0 ? void 0 : _49.data,
+                    serverResponse: (_61 = viduQ1Err === null || viduQ1Err === void 0 ? void 0 : viduQ1Err.response) === null || _61 === void 0 ? void 0 : _61.data,
                 });
                 const provider_message = extractEachlabsErrorMessage(err);
                 res.status(502).json({
@@ -3459,7 +3918,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                             viduVideoUrl =
                                 out.video_url ||
                                     out.video ||
-                                    (Array.isArray(out) ? ((_50 = out[0]) === null || _50 === void 0 ? void 0 : _50.video_url) || out[0] : null) ||
+                                    (Array.isArray(out) ? ((_62 = out[0]) === null || _62 === void 0 ? void 0 : _62.video_url) || out[0] : null) ||
                                     result.video_url ||
                                     result.video ||
                                     out.url ||
@@ -3610,7 +4069,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                 console.error("Vidu 1.5 create error:", {
                     error: vidu15Err,
                     payload: createPayload,
-                    serverResponse: (_51 = vidu15Err === null || vidu15Err === void 0 ? void 0 : vidu15Err.response) === null || _51 === void 0 ? void 0 : _51.data,
+                    serverResponse: (_63 = vidu15Err === null || vidu15Err === void 0 ? void 0 : vidu15Err.response) === null || _63 === void 0 ? void 0 : _63.data,
                 });
                 const provider_message = extractEachlabsErrorMessage(err);
                 res.status(502).json({
@@ -3638,7 +4097,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                             viduVideoUrl =
                                 out.video_url ||
                                     out.video ||
-                                    (Array.isArray(out) ? ((_52 = out[0]) === null || _52 === void 0 ? void 0 : _52.video_url) || out[0] : null) ||
+                                    (Array.isArray(out) ? ((_64 = out[0]) === null || _64 === void 0 ? void 0 : _64.video_url) || out[0] : null) ||
                                     result.video_url ||
                                     result.video ||
                                     out.url ||
@@ -3792,7 +4251,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                 console.error("Vidu Q1 I2V create error:", {
                     error: viduQ1I2VErr,
                     payload: createPayload,
-                    serverResponse: (_53 = viduQ1I2VErr === null || viduQ1I2VErr === void 0 ? void 0 : viduQ1I2VErr.response) === null || _53 === void 0 ? void 0 : _53.data,
+                    serverResponse: (_65 = viduQ1I2VErr === null || viduQ1I2VErr === void 0 ? void 0 : viduQ1I2VErr.response) === null || _65 === void 0 ? void 0 : _65.data,
                 });
                 const provider_message = extractEachlabsErrorMessage(err);
                 res.status(502).json({
@@ -3822,7 +4281,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                             viduVideoUrl =
                                 out.video_url ||
                                     out.video ||
-                                    (Array.isArray(out) ? ((_54 = out[0]) === null || _54 === void 0 ? void 0 : _54.video_url) || out[0] : null) ||
+                                    (Array.isArray(out) ? ((_66 = out[0]) === null || _66 === void 0 ? void 0 : _66.video_url) || out[0] : null) ||
                                     out.url ||
                                     result.data.url ||
                                     null;
@@ -3844,7 +4303,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                                 ? `Vidu Q1 I2V prediction failed: ${provider_message}`
                                 : "Vidu Q1 I2V prediction failed",
                             provider: "ViduQ1I2V",
-                            provider_status: (_55 = result.data) === null || _55 === void 0 ? void 0 : _55.status,
+                            provider_status: (_67 = result.data) === null || _67 === void 0 ? void 0 : _67.status,
                             provider_message,
                             details: safeJson(result.data),
                         });
@@ -3974,7 +4433,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                 console.error("Vidu 2.0 create error:", {
                     error: vidu20Err,
                     payload: createPayload,
-                    serverResponse: (_56 = vidu20Err === null || vidu20Err === void 0 ? void 0 : vidu20Err.response) === null || _56 === void 0 ? void 0 : _56.data,
+                    serverResponse: (_68 = vidu20Err === null || vidu20Err === void 0 ? void 0 : vidu20Err.response) === null || _68 === void 0 ? void 0 : _68.data,
                 });
                 const provider_message = extractEachlabsErrorMessage(err);
                 res.status(502).json({
@@ -4006,7 +4465,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                             viduVideoUrl =
                                 out.video_url ||
                                     out.video ||
-                                    (Array.isArray(out) ? ((_57 = out[0]) === null || _57 === void 0 ? void 0 : _57.video_url) || out[0] : null) ||
+                                    (Array.isArray(out) ? ((_69 = out[0]) === null || _69 === void 0 ? void 0 : _69.video_url) || out[0] : null) ||
                                     result.video_url ||
                                     result.video ||
                                     out.url ||
@@ -4161,7 +4620,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                 console.error("Veo 2 Image to Video create error:", {
                     error: veo2Err,
                     payload: createPayload,
-                    serverResponse: (_58 = veo2Err === null || veo2Err === void 0 ? void 0 : veo2Err.response) === null || _58 === void 0 ? void 0 : _58.data,
+                    serverResponse: (_70 = veo2Err === null || veo2Err === void 0 ? void 0 : veo2Err.response) === null || _70 === void 0 ? void 0 : _70.data,
                 });
                 const provider_message = extractEachlabsErrorMessage(err);
                 res.status(502).json({
@@ -4193,7 +4652,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                             veoVideoUrl =
                                 out.video_url ||
                                     out.video ||
-                                    (Array.isArray(out) ? ((_59 = out[0]) === null || _59 === void 0 ? void 0 : _59.video_url) || out[0] : null) ||
+                                    (Array.isArray(out) ? ((_71 = out[0]) === null || _71 === void 0 ? void 0 : _71.video_url) || out[0] : null) ||
                                     result.video_url ||
                                     result.video ||
                                     out.url ||
@@ -4346,7 +4805,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                 console.error("Veo 3 Image to Video create error:", {
                     error: veo3Err,
                     payload: createPayload,
-                    serverResponse: (_60 = veo3Err === null || veo3Err === void 0 ? void 0 : veo3Err.response) === null || _60 === void 0 ? void 0 : _60.data,
+                    serverResponse: (_72 = veo3Err === null || veo3Err === void 0 ? void 0 : veo3Err.response) === null || _72 === void 0 ? void 0 : _72.data,
                 });
                 const provider_message = extractEachlabsErrorMessage(err);
                 res.status(502).json({
@@ -4378,7 +4837,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                             veoVideoUrl =
                                 out.video_url ||
                                     out.video ||
-                                    (Array.isArray(out) ? ((_61 = out[0]) === null || _61 === void 0 ? void 0 : _61.video_url) || out[0] : null) ||
+                                    (Array.isArray(out) ? ((_73 = out[0]) === null || _73 === void 0 ? void 0 : _73.video_url) || out[0] : null) ||
                                     result.video_url ||
                                     result.video ||
                                     out.url ||
@@ -4501,7 +4960,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                     try {
                         audioUrl = yield (0, signedUrl_1.signKey)(audioKey);
                     }
-                    catch (_102) {
+                    catch (_114) {
                         audioUrl = (0, s3_1.publicUrlFor)(audioKey); // fallback (may be private)
                     }
                 }
@@ -4753,7 +5212,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
             }
             catch (e) {
                 // already using e as any here, so no change needed
-                const respData = (_62 = e === null || e === void 0 ? void 0 : e.response) === null || _62 === void 0 ? void 0 : _62.data;
+                const respData = (_74 = e === null || e === void 0 ? void 0 : e.response) === null || _74 === void 0 ? void 0 : _74.data;
                 const base = (respData === null || respData === void 0 ? void 0 : respData.base_resp) || {};
                 const provider_code = base === null || base === void 0 ? void 0 : base.status_code;
                 const provider_message = (base === null || base === void 0 ? void 0 : base.status_msg) || (respData === null || respData === void 0 ? void 0 : respData.message) || (e === null || e === void 0 ? void 0 : e.message);
@@ -4781,26 +5240,26 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                         params: { task_id: taskId },
                         timeout: 20000,
                     });
-                    const status = (_63 = pollResp.data) === null || _63 === void 0 ? void 0 : _63.status;
+                    const status = (_75 = pollResp.data) === null || _75 === void 0 ? void 0 : _75.status;
                     if (status === "Success" || status === "success") {
                         // Assume file_id -> downloadable endpoint
-                        const fileId = (_64 = pollResp.data) === null || _64 === void 0 ? void 0 : _64.file_id;
+                        const fileId = (_76 = pollResp.data) === null || _76 === void 0 ? void 0 : _76.file_id;
                         console.log("MiniMax generation success payload:", safeJson(pollResp.data));
                         mmFileId = fileId || null;
                         // If API already provides a direct downloadable URL use it, else will fetch below
                         mmVideoUrl =
-                            ((_65 = pollResp.data) === null || _65 === void 0 ? void 0 : _65.video_url) || ((_66 = pollResp.data) === null || _66 === void 0 ? void 0 : _66.file_url) || null;
+                            ((_77 = pollResp.data) === null || _77 === void 0 ? void 0 : _77.video_url) || ((_78 = pollResp.data) === null || _78 === void 0 ? void 0 : _78.file_url) || null;
                         break; // exit loop, will handle retrieval next
                     }
                     if (status === "Fail" ||
                         status === "failed" ||
                         status === "error") {
-                        const base = ((_67 = pollResp.data) === null || _67 === void 0 ? void 0 : _67.base_resp) || {};
+                        const base = ((_79 = pollResp.data) === null || _79 === void 0 ? void 0 : _79.base_resp) || {};
                         const provider_code = base === null || base === void 0 ? void 0 : base.status_code;
                         const provider_message = (base === null || base === void 0 ? void 0 : base.status_msg) ||
-                            ((_68 = pollResp.data) === null || _68 === void 0 ? void 0 : _68.status_reason) ||
-                            ((_69 = pollResp.data) === null || _69 === void 0 ? void 0 : _69.message) ||
-                            ((_70 = pollResp.data) === null || _70 === void 0 ? void 0 : _70.status);
+                            ((_80 = pollResp.data) === null || _80 === void 0 ? void 0 : _80.status_reason) ||
+                            ((_81 = pollResp.data) === null || _81 === void 0 ? void 0 : _81.message) ||
+                            ((_82 = pollResp.data) === null || _82 === void 0 ? void 0 : _82.status);
                         res.status(500).json({
                             success: false,
                             error: provider_message
@@ -4809,7 +5268,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                             provider: "MiniMax",
                             provider_code,
                             provider_message,
-                            provider_status: (_71 = pollResp.data) === null || _71 === void 0 ? void 0 : _71.status,
+                            provider_status: (_83 = pollResp.data) === null || _83 === void 0 ? void 0 : _83.status,
                             details: safeJson(pollResp.data),
                         });
                         return;
@@ -4842,8 +5301,8 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                         timeout: 30000,
                     });
                     mmVideoUrl =
-                        ((_73 = (_72 = retrieveResp.data) === null || _72 === void 0 ? void 0 : _72.file) === null || _73 === void 0 ? void 0 : _73.download_url) ||
-                            ((_74 = retrieveResp.data) === null || _74 === void 0 ? void 0 : _74.download_url) ||
+                        ((_85 = (_84 = retrieveResp.data) === null || _84 === void 0 ? void 0 : _84.file) === null || _85 === void 0 ? void 0 : _85.download_url) ||
+                            ((_86 = retrieveResp.data) === null || _86 === void 0 ? void 0 : _86.download_url) ||
                             null;
                     if (!mmVideoUrl) {
                         console.error("MiniMax retrieve missing download_url", safeJson(retrieveResp.data));
@@ -4859,7 +5318,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                 }
                 catch (e) {
                     console.error("MiniMax retrieve error:", serializeError(e));
-                    const respData = (_75 = e === null || e === void 0 ? void 0 : e.response) === null || _75 === void 0 ? void 0 : _75.data;
+                    const respData = (_87 = e === null || e === void 0 ? void 0 : e.response) === null || _87 === void 0 ? void 0 : _87.data;
                     const base = (respData === null || respData === void 0 ? void 0 : respData.base_resp) || {};
                     const provider_code = base === null || base === void 0 ? void 0 : base.status_code;
                     const provider_message = (base === null || base === void 0 ? void 0 : base.status_msg) || (respData === null || respData === void 0 ? void 0 : respData.message) || (e === null || e === void 0 ? void 0 : e.message);
@@ -4894,7 +5353,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                 });
             }
             catch (e) {
-                const respData = (_76 = e === null || e === void 0 ? void 0 : e.response) === null || _76 === void 0 ? void 0 : _76.data;
+                const respData = (_88 = e === null || e === void 0 ? void 0 : e.response) === null || _88 === void 0 ? void 0 : _88.data;
                 const base = (respData === null || respData === void 0 ? void 0 : respData.base_resp) || {};
                 const provider_code = base === null || base === void 0 ? void 0 : base.status_code;
                 const provider_message = (base === null || base === void 0 ? void 0 : base.status_msg) || (respData === null || respData === void 0 ? void 0 : respData.message) || (e === null || e === void 0 ? void 0 : e.message);
@@ -5013,9 +5472,9 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                 console.error("Luma create generation error:", {
                     error: serializeError(e),
                     payload: lumaPayload,
-                    serverResponse: (_77 = e === null || e === void 0 ? void 0 : e.response) === null || _77 === void 0 ? void 0 : _77.data,
+                    serverResponse: (_89 = e === null || e === void 0 ? void 0 : e.response) === null || _89 === void 0 ? void 0 : _89.data,
                 });
-                const respData = (_78 = e === null || e === void 0 ? void 0 : e.response) === null || _78 === void 0 ? void 0 : _78.data;
+                const respData = (_90 = e === null || e === void 0 ? void 0 : e.response) === null || _90 === void 0 ? void 0 : _90.data;
                 // Prefer detail/message/error from server response for user-facing error
                 const userMessage = (respData === null || respData === void 0 ? void 0 : respData.detail) ||
                     (respData === null || respData === void 0 ? void 0 : respData.message) ||
@@ -5041,7 +5500,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
             });
             return;
         }
-        const generationId = ((_79 = createGenRes.data) === null || _79 === void 0 ? void 0 : _79.id) || ((_81 = (_80 = createGenRes.data) === null || _80 === void 0 ? void 0 : _80.data) === null || _81 === void 0 ? void 0 : _81.id);
+        const generationId = ((_91 = createGenRes.data) === null || _91 === void 0 ? void 0 : _91.id) || ((_93 = (_92 = createGenRes.data) === null || _92 === void 0 ? void 0 : _92.data) === null || _93 === void 0 ? void 0 : _93.id);
         if (!generationId) {
             res.status(500).json({
                 success: false,
@@ -5086,33 +5545,33 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
             }
             // Try to read state/status and the video URL in a robust way
             state =
-                ((_82 = pollRes.data) === null || _82 === void 0 ? void 0 : _82.state) ||
-                    ((_83 = pollRes.data) === null || _83 === void 0 ? void 0 : _83.status) ||
-                    ((_85 = (_84 = pollRes.data) === null || _84 === void 0 ? void 0 : _84.data) === null || _85 === void 0 ? void 0 : _85.state) ||
+                ((_94 = pollRes.data) === null || _94 === void 0 ? void 0 : _94.state) ||
+                    ((_95 = pollRes.data) === null || _95 === void 0 ? void 0 : _95.status) ||
+                    ((_97 = (_96 = pollRes.data) === null || _96 === void 0 ? void 0 : _96.data) === null || _97 === void 0 ? void 0 : _97.state) ||
                     "";
             if (state === "completed") {
                 videoUrl =
-                    ((_87 = (_86 = pollRes.data) === null || _86 === void 0 ? void 0 : _86.assets) === null || _87 === void 0 ? void 0 : _87.video) ||
-                        ((_88 = pollRes.data) === null || _88 === void 0 ? void 0 : _88.video) ||
-                        ((_90 = (_89 = pollRes.data) === null || _89 === void 0 ? void 0 : _89.data) === null || _90 === void 0 ? void 0 : _90.video_url) ||
-                        ((_94 = (_93 = (_92 = (_91 = pollRes.data) === null || _91 === void 0 ? void 0 : _91.assets) === null || _92 === void 0 ? void 0 : _92.mp4) === null || _93 === void 0 ? void 0 : _93[0]) === null || _94 === void 0 ? void 0 : _94.url) ||
+                    ((_99 = (_98 = pollRes.data) === null || _98 === void 0 ? void 0 : _98.assets) === null || _99 === void 0 ? void 0 : _99.video) ||
+                        ((_100 = pollRes.data) === null || _100 === void 0 ? void 0 : _100.video) ||
+                        ((_102 = (_101 = pollRes.data) === null || _101 === void 0 ? void 0 : _101.data) === null || _102 === void 0 ? void 0 : _102.video_url) ||
+                        ((_106 = (_105 = (_104 = (_103 = pollRes.data) === null || _103 === void 0 ? void 0 : _103.assets) === null || _104 === void 0 ? void 0 : _104.mp4) === null || _105 === void 0 ? void 0 : _105[0]) === null || _106 === void 0 ? void 0 : _106.url) ||
                         null;
                 console.log("Luma poll response:", pollRes.data);
                 break;
             }
             if (state === "failed") {
                 console.error("Luma generation failed:", pollRes.data);
-                const provider_message = ((_95 = pollRes.data) === null || _95 === void 0 ? void 0 : _95.failure_reason) ||
-                    ((_96 = pollRes.data) === null || _96 === void 0 ? void 0 : _96.error) ||
-                    ((_97 = pollRes.data) === null || _97 === void 0 ? void 0 : _97.message) ||
-                    ((_98 = pollRes.data) === null || _98 === void 0 ? void 0 : _98.state);
+                const provider_message = ((_107 = pollRes.data) === null || _107 === void 0 ? void 0 : _107.failure_reason) ||
+                    ((_108 = pollRes.data) === null || _108 === void 0 ? void 0 : _108.error) ||
+                    ((_109 = pollRes.data) === null || _109 === void 0 ? void 0 : _109.message) ||
+                    ((_110 = pollRes.data) === null || _110 === void 0 ? void 0 : _110.state);
                 res.status(500).json({
                     success: false,
                     error: provider_message
                         ? `Luma generation failed: ${provider_message}`
                         : "Luma generation failed",
                     provider: "Luma",
-                    provider_status: (_99 = pollRes.data) === null || _99 === void 0 ? void 0 : _99.state,
+                    provider_status: (_111 = pollRes.data) === null || _111 === void 0 ? void 0 : _111.state,
                     provider_message,
                     details: safeJson(pollRes.data),
                 });
@@ -5140,7 +5599,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
         }
         catch (err) {
             const e = err;
-            console.error("Error downloading Luma video:", ((_100 = e === null || e === void 0 ? void 0 : e.response) === null || _100 === void 0 ? void 0 : _100.data) || e);
+            console.error("Error downloading Luma video:", ((_112 = e === null || e === void 0 ? void 0 : e.response) === null || _112 === void 0 ? void 0 : _112.data) || e);
             res.status(500).json({
                 success: false,
                 error: "Failed to download Luma video",

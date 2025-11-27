@@ -9,6 +9,7 @@ import runwareRouter from "./routes/runware";
 import simpleAuthRouter from "./routes/simple-auth";
 import categoriesRouter from "./routes/categories";
 import appsRouter from "./routes/apps";
+import workflowsRouter from "./routes/workflows";
 import multer from "multer";
 import { uploadBuffer, makeKey, ensure512SquareImageFromUrl } from "./lib/s3";
 import { signKey, deriveKey } from "./middleware/signedUrl";
@@ -721,6 +722,7 @@ app.use("/api", runwareRouter);
 app.use("/api/auth", simpleAuthRouter);
 app.use("/api/categories", categoriesRouter);
 app.use("/api/apps", appsRouter);
+app.use("/api", workflowsRouter);
 
 // S3-based image upload replacing legacy Cloudinary upload.
 // Supports multipart file under field 'file' OR JSON body with { image_url }.

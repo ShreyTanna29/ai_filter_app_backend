@@ -120,6 +120,19 @@
        .endpoint-autocomplete-dropdown::-webkit-scrollbar-thumb:hover {
          background: #a0aec0;
        }
+
+       /* Line clamp utility for workflow descriptions */
+       .line-clamp-2 {
+         display: -webkit-box;
+         -webkit-line-clamp: 2;
+         -webkit-box-orient: vertical;
+         overflow: hidden;
+       }
+
+       /* Workflow card hover effects */
+       .workflow-category-btn {
+         transition: all 0.2s ease;
+       }
     </style>
   </head>
   <body class="bg-gray-50 min-h-screen">
@@ -175,6 +188,13 @@
                 onclick="switchTab('apps')"
                 class="flex items-center px-3 py-2 rounded-lg text-gray-700 hover:bg-gray-100 w-full text-left"
                 ><i class="fa fa-plug mr-3"></i>Apps</button
+              >
+            </li>
+            <li>
+              <button
+                onclick="switchTab('ai-workflows')"
+                class="flex items-center px-3 py-2 rounded-lg text-gray-700 hover:bg-gray-100 w-full text-left"
+                ><i class="fa fa-wand-magic-sparkles mr-3"></i>AI Workflows</button
               >
             </li>
           </ul>
@@ -506,6 +526,47 @@
             <div id="createAppStatus" class="text-sm mt-2"></div>
           </div>
           <div id="appsList" class="grid grid-cols-1 gap-4"></div>
+        </div>
+
+        <!-- AI Workflows Tab -->
+        <div id="tab-ai-workflows" class="tab-content w-full px-10 py-6 hidden">
+          <div class="flex items-center justify-between mb-4">
+            <h2 class="text-2xl font-bold text-gray-800">AI Workflows</h2>
+            <div class="flex gap-2 items-center">
+              <input
+                id="workflowSearch"
+                type="text"
+                placeholder="Search workflows..."
+                class="border border-gray-300 rounded-lg px-3 py-2 w-64 focus:outline-none focus:ring-2 focus:ring-purple-400"
+              />
+              <button
+                id="refreshWorkflowsBtn"
+                class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 flex items-center"
+                onclick="loadWorkflows()"
+              >
+                <i class="fa fa-refresh mr-2"></i>Refresh
+              </button>
+            </div>
+          </div>
+          <!-- Category filters -->
+          <div id="workflowCategories" class="flex flex-wrap gap-2 mb-6">
+            <button class="workflow-category-btn px-4 py-2 rounded-full bg-purple-600 text-white text-sm font-medium" data-category="all">All</button>
+          </div>
+          <!-- Loading state -->
+          <div id="workflowsLoading" class="hidden flex items-center justify-center py-12">
+            <svg class="animate-spin h-10 w-10 text-purple-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            <span class="ml-3 text-gray-600">Loading workflows...</span>
+          </div>
+          <!-- Error state -->
+          <div id="workflowsError" class="hidden bg-red-50 border border-red-200 rounded-lg p-4 text-red-700"></div>
+          <!-- Workflows grid -->
+          <div
+            id="workflowsGrid"
+            class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6"
+          ></div>
         </div>
 
         <!-- Cartoon Characters Tab -->
@@ -1588,6 +1649,66 @@
             >
               ← Back to Sign In
             </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Workflow Detail Modal -->
+    <div
+      id="workflowDetailModal"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 hidden"
+    >
+      <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-8 relative">
+        <button
+          onclick="closeWorkflowDetailModal()"
+          class="absolute top-4 right-4 text-gray-400 hover:text-gray-700 text-xl"
+        >
+          <i class="fa fa-times"></i>
+        </button>
+        
+        <div id="workflowDetailContent">
+          <!-- Workflow header -->
+          <div class="flex items-start gap-4 mb-6">
+            <img id="workflowDetailThumbnail" src="" alt="" class="w-32 h-32 object-cover rounded-xl shadow-md" />
+            <div class="flex-1">
+              <h2 id="workflowDetailName" class="text-2xl font-bold text-gray-800 mb-2"></h2>
+              <p id="workflowDetailDescription" class="text-gray-600 text-sm"></p>
+              <div id="workflowDetailCategory" class="mt-2">
+                <span class="inline-block px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-xs font-medium"></span>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Workflow inputs form -->
+          <div id="workflowInputsSection" class="mb-6">
+            <h3 class="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
+              <i class="fas fa-sliders-h text-purple-600"></i>
+              Input Parameters
+            </h3>
+            <div id="workflowInputsForm" class="space-y-4"></div>
+          </div>
+          
+          <!-- Trigger button and status -->
+          <div class="flex items-center gap-4">
+            <button
+              id="triggerWorkflowBtn"
+              onclick="triggerCurrentWorkflow()"
+              class="flex-1 py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-xl font-semibold hover:from-purple-700 hover:to-pink-700 transition-all duration-300 hover:shadow-lg flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <i class="fas fa-play"></i>
+              Trigger Workflow
+            </button>
+          </div>
+          <div id="workflowTriggerStatus" class="mt-4 text-sm"></div>
+          
+          <!-- Output section -->
+          <div id="workflowOutputSection" class="mt-6 hidden">
+            <h3 class="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
+              <i class="fas fa-check-circle text-green-600"></i>
+              Output
+            </h3>
+            <div id="workflowOutputContent" class="bg-gray-50 rounded-xl p-4 border border-gray-200"></div>
           </div>
         </div>
       </div>

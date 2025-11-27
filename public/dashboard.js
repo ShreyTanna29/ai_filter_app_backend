@@ -895,6 +895,7 @@ window.switchTab = function (tabName) {
     "tab-templates",
     "tab-cartoon-characters",
     "tab-apps",
+    "tab-ai-workflows",
   ];
   const tabIndex = tabIds.findIndex((id) => id === `tab-${tabName}`);
 
@@ -952,6 +953,16 @@ window.switchTab = function (tabName) {
       appsInitialRequested = true;
     } else {
       renderApps();
+    }
+  } else if (showId === "tab-ai-workflows") {
+    if (
+      typeof window.loadWorkflows === "function" &&
+      (!window.allWorkflows || window.allWorkflows.length === 0)
+    ) {
+      window.loadWorkflows();
+      if (typeof window.initWorkflowSearch === "function") {
+        window.initWorkflowSearch();
+      }
     }
   }
 };
@@ -6592,3 +6603,520 @@ window.close2FASetupModal = close2FASetupModal;
 window.show2FAVerifyModal = show2FAVerifyModal;
 window.verify2FALogin = verify2FALogin;
 window.close2FAVerifyModal = close2FAVerifyModal;
+
+// ============================================================
+// AI WORKFLOWS SECTION
+// ============================================================
+
+let allWorkflows = [];
+let currentWorkflow = null;
+let selectedCategory = "all";
+
+// Load workflows from API
+async function loadWorkflows() {
+  const loadingEl = document.getElementById("workflowsLoading");
+  const errorEl = document.getElementById("workflowsError");
+  const gridEl = document.getElementById("workflowsGrid");
+  const categoriesEl = document.getElementById("workflowCategories");
+
+  if (loadingEl) loadingEl.classList.remove("hidden");
+  if (errorEl) errorEl.classList.add("hidden");
+  if (gridEl) gridEl.innerHTML = "";
+
+  try {
+    const token = localStorage.getItem("token");
+    const res = await fetch("/api/workflows", {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+
+    const data = await res.json();
+
+    if (!res.ok || !data.success) {
+      throw new Error(data.error || "Failed to fetch workflows");
+    }
+
+    allWorkflows = data.workflows || [];
+    window.allWorkflows = allWorkflows; // Update global reference
+
+    // Extract unique categories
+    const categories = new Set();
+    allWorkflows.forEach((wf) => {
+      if (wf.category && wf.category.name) {
+        categories.add(wf.category.name);
+      }
+    });
+
+    // Render category buttons
+    if (categoriesEl) {
+      categoriesEl.innerHTML = `
+        <button class="workflow-category-btn px-4 py-2 rounded-full ${
+          selectedCategory === "all"
+            ? "bg-purple-600 text-white"
+            : "bg-gray-200 text-gray-700"
+        } text-sm font-medium hover:bg-purple-500 hover:text-white transition-colors" data-category="all" onclick="filterWorkflowsByCategory('all')">All (${
+        allWorkflows.length
+      })</button>
+        ${Array.from(categories)
+          .sort()
+          .map((cat) => {
+            const count = allWorkflows.filter(
+              (wf) => wf.category?.name === cat
+            ).length;
+            return `<button class="workflow-category-btn px-4 py-2 rounded-full ${
+              selectedCategory === cat
+                ? "bg-purple-600 text-white"
+                : "bg-gray-200 text-gray-700"
+            } text-sm font-medium hover:bg-purple-500 hover:text-white transition-colors" data-category="${cat}" onclick="filterWorkflowsByCategory('${cat}')">${cat} (${count})</button>`;
+          })
+          .join("")}
+      `;
+    }
+
+    // Render workflows
+    renderWorkflows(allWorkflows);
+  } catch (err) {
+    console.error("Error loading workflows:", err);
+    if (errorEl) {
+      errorEl.textContent = err.message || "Failed to load workflows";
+      errorEl.classList.remove("hidden");
+    }
+  } finally {
+    if (loadingEl) loadingEl.classList.add("hidden");
+  }
+}
+
+// Filter workflows by category
+function filterWorkflowsByCategory(category) {
+  selectedCategory = category;
+
+  // Update button styles
+  document.querySelectorAll(".workflow-category-btn").forEach((btn) => {
+    if (btn.dataset.category === category) {
+      btn.classList.remove("bg-gray-200", "text-gray-700");
+      btn.classList.add("bg-purple-600", "text-white");
+    } else {
+      btn.classList.remove("bg-purple-600", "text-white");
+      btn.classList.add("bg-gray-200", "text-gray-700");
+    }
+  });
+
+  // Filter and render
+  const filtered =
+    category === "all"
+      ? allWorkflows
+      : allWorkflows.filter((wf) => wf.category?.name === category);
+
+  renderWorkflows(filtered);
+}
+
+// Render workflows grid
+function renderWorkflows(workflows) {
+  const gridEl = document.getElementById("workflowsGrid");
+  const searchEl = document.getElementById("workflowSearch");
+  const searchTerm = searchEl?.value?.toLowerCase() || "";
+
+  // Apply search filter
+  const filtered = workflows.filter((wf) => {
+    if (!searchTerm) return true;
+    return (
+      wf.name?.toLowerCase().includes(searchTerm) ||
+      wf.description?.toLowerCase().includes(searchTerm) ||
+      wf.category?.name?.toLowerCase().includes(searchTerm)
+    );
+  });
+
+  if (!gridEl) return;
+
+  if (filtered.length === 0) {
+    gridEl.innerHTML = `
+      <div class="col-span-full text-center py-12 text-gray-500">
+        <i class="fas fa-search text-4xl mb-4"></i>
+        <p>No workflows found</p>
+      </div>
+    `;
+    return;
+  }
+
+  gridEl.innerHTML = filtered
+    .map(
+      (wf) => `
+      <div class="bg-white rounded-xl shadow-md overflow-hidden hover:shadow-lg transition-shadow cursor-pointer group" onclick="openWorkflowDetail('${
+        wf.id
+      }')">
+        <div class="relative">
+          <img 
+            src="${
+              wf.thumbnail ||
+              "https://via.placeholder.com/400x300?text=No+Image"
+            }" 
+            alt="${wf.name}" 
+            class="w-full h-48 object-cover group-hover:scale-105 transition-transform duration-300"
+            onerror="this.src='https://via.placeholder.com/400x300?text=No+Image'"
+          />
+          ${
+            wf.category?.name
+              ? `<span class="absolute top-2 left-2 px-2 py-1 bg-purple-600 text-white text-xs font-medium rounded-full">${wf.category.name}</span>`
+              : ""
+          }
+          ${
+            wf.premium
+              ? `<span class="absolute top-2 right-2 px-2 py-1 bg-yellow-500 text-white text-xs font-medium rounded-full"><i class="fas fa-crown mr-1"></i>Premium</span>`
+              : ""
+          }
+        </div>
+        <div class="p-4">
+          <h3 class="font-semibold text-gray-800 mb-1 truncate">${wf.name}</h3>
+          <p class="text-gray-500 text-sm line-clamp-2">${
+            wf.description || "No description"
+          }</p>
+          <div class="flex items-center justify-between mt-3 text-xs text-gray-400">
+            <span><i class="fas fa-play mr-1"></i>${
+              wf.triggerCount || 0
+            } runs</span>
+            <span><i class="fas fa-fire mr-1"></i>${wf.popularity || 0}</span>
+          </div>
+        </div>
+      </div>
+    `
+    )
+    .join("");
+}
+
+// Open workflow detail modal
+function openWorkflowDetail(workflowId) {
+  const workflow = allWorkflows.find((wf) => wf.id === workflowId);
+  if (!workflow) {
+    console.error("Workflow not found:", workflowId);
+    return;
+  }
+
+  currentWorkflow = workflow;
+
+  const modal = document.getElementById("workflowDetailModal");
+  const thumbnailEl = document.getElementById("workflowDetailThumbnail");
+  const nameEl = document.getElementById("workflowDetailName");
+  const descEl = document.getElementById("workflowDetailDescription");
+  const categoryEl = document.getElementById("workflowDetailCategory");
+  const inputsFormEl = document.getElementById("workflowInputsForm");
+  const outputSection = document.getElementById("workflowOutputSection");
+  const statusEl = document.getElementById("workflowTriggerStatus");
+
+  if (thumbnailEl)
+    thumbnailEl.src =
+      workflow.thumbnail || "https://via.placeholder.com/128?text=No+Image";
+  if (nameEl) nameEl.textContent = workflow.name;
+  if (descEl)
+    descEl.textContent = workflow.description || "No description available";
+  if (categoryEl) {
+    const catSpan = categoryEl.querySelector("span");
+    if (catSpan) {
+      catSpan.textContent = workflow.category?.name || "Uncategorized";
+    }
+  }
+
+  // Render input fields
+  if (inputsFormEl) {
+    const inputs = workflow.inputs || [];
+    if (inputs.length === 0) {
+      inputsFormEl.innerHTML = `<p class="text-gray-500 text-sm">This workflow has no configurable inputs.</p>`;
+    } else {
+      inputsFormEl.innerHTML = inputs
+        .map((input) => {
+          const inputId = `workflow-input-${input.name}`;
+          const inputType = getInputType(input.type);
+          const defaultValue = input.default_value || "";
+
+          if (input.type === "image" || input.type === "file") {
+            return `
+              <div class="space-y-1">
+                <label for="${inputId}" class="block text-sm font-medium text-gray-700">${formatInputName(
+              input.name
+            )}</label>
+                <div class="flex items-center gap-2">
+                  <input type="file" id="${inputId}" name="${
+              input.name
+            }" accept="image/*" class="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-400" />
+                  <span class="text-xs text-gray-400">or paste URL below</span>
+                </div>
+                <input type="text" id="${inputId}-url" name="${
+              input.name
+            }-url" placeholder="Or enter image URL..." class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-400" />
+              </div>
+            `;
+          }
+
+          if (input.type === "boolean") {
+            return `
+              <div class="flex items-center gap-2">
+                <input type="checkbox" id="${inputId}" name="${input.name}" ${
+              defaultValue === "true" ? "checked" : ""
+            } class="h-4 w-4 text-purple-600 focus:ring-purple-500 border-gray-300 rounded" />
+                <label for="${inputId}" class="text-sm font-medium text-gray-700">${formatInputName(
+              input.name
+            )}</label>
+              </div>
+            `;
+          }
+
+          if (
+            input.type === "textarea" ||
+            input.name.toLowerCase().includes("prompt")
+          ) {
+            return `
+              <div class="space-y-1">
+                <label for="${inputId}" class="block text-sm font-medium text-gray-700">${formatInputName(
+              input.name
+            )}</label>
+                <textarea id="${inputId}" name="${
+              input.name
+            }" rows="3" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-400" placeholder="Enter ${formatInputName(
+              input.name
+            ).toLowerCase()}...">${defaultValue}</textarea>
+              </div>
+            `;
+          }
+
+          return `
+            <div class="space-y-1">
+              <label for="${inputId}" class="block text-sm font-medium text-gray-700">${formatInputName(
+            input.name
+          )}</label>
+              <input type="${inputType}" id="${inputId}" name="${
+            input.name
+          }" value="${defaultValue}" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-400" placeholder="Enter ${formatInputName(
+            input.name
+          ).toLowerCase()}..." />
+            </div>
+          `;
+        })
+        .join("");
+    }
+  }
+
+  // Reset output and status
+  if (outputSection) outputSection.classList.add("hidden");
+  if (statusEl) statusEl.innerHTML = "";
+
+  // Show modal
+  if (modal) {
+    modal.classList.remove("hidden");
+    modal.style.display = "flex";
+  }
+}
+
+// Close workflow detail modal
+function closeWorkflowDetailModal() {
+  const modal = document.getElementById("workflowDetailModal");
+  if (modal) {
+    modal.classList.add("hidden");
+    modal.style.display = "none";
+  }
+  currentWorkflow = null;
+}
+
+// Trigger current workflow
+async function triggerCurrentWorkflow() {
+  if (!currentWorkflow) {
+    alert("No workflow selected");
+    return;
+  }
+
+  const triggerBtn = document.getElementById("triggerWorkflowBtn");
+  const statusEl = document.getElementById("workflowTriggerStatus");
+  const outputSection = document.getElementById("workflowOutputSection");
+  const outputContent = document.getElementById("workflowOutputContent");
+
+  // Collect input values
+  const parameters = {};
+  const inputs = currentWorkflow.inputs || [];
+
+  for (const input of inputs) {
+    const inputId = `workflow-input-${input.name}`;
+    const inputEl = document.getElementById(inputId);
+    const urlInputEl = document.getElementById(`${inputId}-url`);
+
+    if (input.type === "image" || input.type === "file") {
+      // Check for file upload first
+      if (inputEl?.files?.length > 0) {
+        // Convert file to base64
+        const file = inputEl.files[0];
+        const base64 = await fileToBase64(file);
+        parameters[input.name] = base64;
+      } else if (urlInputEl?.value) {
+        parameters[input.name] = urlInputEl.value;
+      }
+    } else if (input.type === "boolean") {
+      parameters[input.name] = inputEl?.checked || false;
+    } else {
+      parameters[input.name] = inputEl?.value || "";
+    }
+  }
+
+  // Show loading state
+  if (triggerBtn) {
+    triggerBtn.disabled = true;
+    triggerBtn.innerHTML =
+      '<i class="fas fa-spinner fa-spin mr-2"></i>Running...';
+  }
+  if (statusEl) {
+    statusEl.innerHTML =
+      '<span class="text-purple-600"><i class="fas fa-spinner fa-spin mr-2"></i>Triggering workflow and waiting for result...</span>';
+  }
+  if (outputSection) outputSection.classList.add("hidden");
+
+  try {
+    const token = localStorage.getItem("token");
+    if (!token) {
+      throw new Error("You must be logged in as admin to trigger workflows");
+    }
+
+    const res = await fetch(
+      `/api/workflows/${currentWorkflow.id}/trigger-and-poll`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ parameters }),
+      }
+    );
+
+    const data = await res.json();
+
+    if (!res.ok || !data.success) {
+      throw new Error(data.error || "Failed to trigger workflow");
+    }
+
+    // Show success
+    if (statusEl) {
+      statusEl.innerHTML =
+        '<span class="text-green-600"><i class="fas fa-check-circle mr-2"></i>Workflow completed successfully!</span>';
+    }
+
+    // Display output
+    if (outputSection && outputContent && data.output) {
+      outputSection.classList.remove("hidden");
+      outputContent.innerHTML = renderWorkflowOutput(data.output);
+    }
+  } catch (err) {
+    console.error("Error triggering workflow:", err);
+    if (statusEl) {
+      statusEl.innerHTML = `<span class="text-red-600"><i class="fas fa-exclamation-circle mr-2"></i>${err.message}</span>`;
+    }
+  } finally {
+    if (triggerBtn) {
+      triggerBtn.disabled = false;
+      triggerBtn.innerHTML = '<i class="fas fa-play"></i> Trigger Workflow';
+    }
+  }
+}
+
+// Render workflow output
+function renderWorkflowOutput(output) {
+  if (typeof output === "string") {
+    // Check if it's an image URL
+    if (
+      output.match(/\.(jpg|jpeg|png|gif|webp)$/i) ||
+      output.startsWith("data:image")
+    ) {
+      return `<img src="${output}" alt="Output" class="max-w-full rounded-lg" />`;
+    }
+    // Check if it's a video URL
+    if (output.match(/\.(mp4|webm|mov)$/i)) {
+      return `<video src="${output}" controls class="max-w-full rounded-lg"></video>`;
+    }
+    // Check if it's an audio URL
+    if (output.match(/\.(mp3|wav|ogg)$/i)) {
+      return `<audio src="${output}" controls class="w-full"></audio>`;
+    }
+    return `<p class="text-gray-700 whitespace-pre-wrap">${output}</p>`;
+  }
+
+  if (Array.isArray(output)) {
+    return `<div class="space-y-2">${output
+      .map((item) => renderWorkflowOutput(item))
+      .join("")}</div>`;
+  }
+
+  if (typeof output === "object" && output !== null) {
+    // Check for common output patterns
+    if (output.url || output.image_url || output.imageUrl) {
+      const url = output.url || output.image_url || output.imageUrl;
+      return `<img src="${url}" alt="Output" class="max-w-full rounded-lg" />`;
+    }
+    if (output.video_url || output.videoUrl) {
+      const url = output.video_url || output.videoUrl;
+      return `<video src="${url}" controls class="max-w-full rounded-lg"></video>`;
+    }
+    if (output.audio_url || output.audioUrl) {
+      const url = output.audio_url || output.audioUrl;
+      return `<audio src="${url}" controls class="w-full"></audio>`;
+    }
+    // JSON output
+    return `<pre class="bg-gray-100 p-3 rounded-lg overflow-x-auto text-xs">${JSON.stringify(
+      output,
+      null,
+      2
+    )}</pre>`;
+  }
+
+  return `<p class="text-gray-700">${String(output)}</p>`;
+}
+
+// Helper: Get input type for HTML input element
+function getInputType(type) {
+  switch (type?.toLowerCase()) {
+    case "number":
+    case "integer":
+    case "float":
+      return "number";
+    case "email":
+      return "email";
+    case "url":
+      return "url";
+    default:
+      return "text";
+  }
+}
+
+// Helper: Format input name for display
+function formatInputName(name) {
+  return name
+    .replace(/_/g, " ")
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+// Helper: Convert file to base64
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+// Initialize workflow search
+function initWorkflowSearch() {
+  const searchEl = document.getElementById("workflowSearch");
+  if (searchEl) {
+    searchEl.addEventListener("input", () => {
+      const filtered =
+        selectedCategory === "all"
+          ? allWorkflows
+          : allWorkflows.filter((wf) => wf.category?.name === selectedCategory);
+      renderWorkflows(filtered);
+    });
+  }
+}
+
+// Make workflow functions and variables globally available
+window.loadWorkflows = loadWorkflows;
+window.filterWorkflowsByCategory = filterWorkflowsByCategory;
+window.openWorkflowDetail = openWorkflowDetail;
+window.closeWorkflowDetailModal = closeWorkflowDetailModal;
+window.triggerCurrentWorkflow = triggerCurrentWorkflow;
+window.initWorkflowSearch = initWorkflowSearch;
+window.allWorkflows = allWorkflows;
