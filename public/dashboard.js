@@ -1071,6 +1071,13 @@ function isAdmin() {
 function applyRoleBasedUI() {
   const hideForUser = !isAdmin();
 
+  // Hide Templates and Apps navigation tabs for non-admin users
+  const adminOnlyNavItems = ["nav-templates", "nav-apps"];
+  adminOnlyNavItems.forEach((id) => {
+    const navItem = document.getElementById(id);
+    if (navItem) navItem.style.display = hideForUser ? "none" : "";
+  });
+
   // Hide Add buttons for features, photo filters, templates, cartoon characters
   const addButtons = [
     "addFeatureBtn",
@@ -1126,6 +1133,17 @@ function applyRoleBasedUI() {
   // Hide video generation sections for non-admins (contains upload + generate)
   const videoGenSections = ["featureVideoGenSection", "cartoonVideoGenSection"];
   videoGenSections.forEach((id) => {
+    const section = document.getElementById(id);
+    if (section) section.style.display = hideForUser ? "none" : "";
+  });
+
+  // Hide status filter buttons and status/prompt sections for non-admins
+  const adminOnlySections = [
+    "statusFilterButtons", // Status filter buttons on Filters tab
+    "featureDetailStatusSection", // Status selector in feature detail
+    "featureDetailPromptSection", // Prompt section in feature detail
+  ];
+  adminOnlySections.forEach((id) => {
     const section = document.getElementById(id);
     if (section) section.style.display = hideForUser ? "none" : "";
   });

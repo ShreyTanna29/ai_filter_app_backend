@@ -169,7 +169,7 @@
                 class="flex items-center px-3 py-2 rounded-lg text-gray-700 hover:bg-gray-100 w-full text-left"
               ><i class="fa fa-image mr-3"></i>Photo Filters</button>
             </li>
-            <li>
+            <li id="nav-templates">
               <button
                 onclick="switchTab('templates')"
                 class="flex items-center px-3 py-2 rounded-lg text-gray-700 hover:bg-gray-100 w-full text-left"
@@ -183,7 +183,7 @@
                 ><i class="fa fa-child mr-3"></i>Cartoon Characters</button
               >
             </li>
-            <li>
+            <li id="nav-apps">
               <button
                 onclick="switchTab('apps')"
                 class="flex items-center px-3 py-2 rounded-lg text-gray-700 hover:bg-gray-100 w-full text-left"
@@ -388,28 +388,30 @@
           <div class="flex items-center justify-between mb-4">
             <h2 class="text-2xl font-bold text-gray-800">Features</h2>
             <div class="flex gap-2">
-              <!-- Status Filter Buttons -->
-              <button
-                id="statusFilterCompleted"
-                data-status="completed"
-                class="status-filter-btn px-4 py-2 border-2 border-green-500 text-green-600 rounded-lg hover:bg-green-50 font-medium transition-all"
-              >
-                Completed
-              </button>
-              <button
-                id="statusFilterNotCompleted"
-                data-status="not-completed"
-                class="status-filter-btn px-4 py-2 border-2 border-red-500 text-red-600 rounded-lg hover:bg-red-50 font-medium transition-all"
-              >
-                not completed
-              </button>
-              <button
-                id="statusFilterNeedsMore"
-                data-status="needs-more-videos"
-                class="status-filter-btn px-4 py-2 border-2 border-yellow-500 text-yellow-600 rounded-lg hover:bg-yellow-50 font-medium transition-all"
-              >
-                needs more videos
-              </button>
+              <!-- Status Filter Buttons (admin only) -->
+              <div id="statusFilterButtons" class="flex gap-2">
+                <button
+                  id="statusFilterCompleted"
+                  data-status="completed"
+                  class="status-filter-btn px-4 py-2 border-2 border-green-500 text-green-600 rounded-lg hover:bg-green-50 font-medium transition-all"
+                >
+                  Completed
+                </button>
+                <button
+                  id="statusFilterNotCompleted"
+                  data-status="not-completed"
+                  class="status-filter-btn px-4 py-2 border-2 border-red-500 text-red-600 rounded-lg hover:bg-red-50 font-medium transition-all"
+                >
+                  not completed
+                </button>
+                <button
+                  id="statusFilterNeedsMore"
+                  data-status="needs-more-videos"
+                  class="status-filter-btn px-4 py-2 border-2 border-yellow-500 text-yellow-600 rounded-lg hover:bg-yellow-50 font-medium transition-all"
+                >
+                  needs more videos
+                </button>
+              </div>
               <input
                 id="featureSearch"
                 type="text"
@@ -1055,8 +1057,8 @@
                 &times;
               </button>
             </div>
-            <!-- Status Selector -->
-            <div class="flex items-center gap-2 mb-6">
+            <!-- Status Selector (admin only) -->
+            <div id="featureDetailStatusSection" class="flex items-center gap-2 mb-6">
               <span class="text-gray-600 text-sm font-medium">Status:</span>
               <button
                 id="featureStatusCompleted"
@@ -1354,7 +1356,7 @@
               </div>
               <div id="featureGenStatus" class="text-sm mt-2"></div>
             </div>
-            <div class="mb-6">
+            <div id="featureDetailPromptSection" class="mb-6">
               <div class="font-semibold mb-1 flex items-center">
                 Prompt:
                 <button
