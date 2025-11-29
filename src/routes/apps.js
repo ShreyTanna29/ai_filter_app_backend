@@ -268,4 +268,121 @@ router.delete("/:id", (req, res) => __awaiter(void 0, void 0, void 0, function* 
         res.status(404).json({ success: false, message: "App not found" });
     }
 }));
+// Get app analytics (API call stats)
+router.get("/:id/analytics", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    const idNum = Number(req.params.id);
+    if (Number.isNaN(idNum) || idNum <= 0) {
+        res.status(400).json({ success: false, message: "invalid id" });
+        return;
+    }
+    try {
+        // Check if app exists
+        const app = yield prisma_1.default.app.findUnique({ where: { id: idNum } });
+        if (!app) {
+            res.status(404).json({ success: false, message: "App not found" });
+            return;
+        }
+        // Get total API calls
+        const totalCalls = yield prisma_1.default.appApiLog.count({
+            where: { appId: idNum },
+        });
+        // Get successful and failed calls
+        const [successCalls, errorCalls] = yield Promise.all([
+            prisma_1.default.appApiLog.count({
+                where: { appId: idNum, status: "success" },
+            }),
+            prisma_1.default.appApiLog.count({
+                where: { appId: idNum, status: "error" },
+            }),
+        ]);
+        // Get calls by endpoint (top filters used)
+        const callsByEndpoint = yield prisma_1.default.appApiLog.groupBy({
+            by: ["endpoint"],
+            where: { appId: idNum },
+            _count: { id: true },
+            orderBy: { _count: { id: "desc" } },
+            take: 10,
+        });
+        // Get calls by feature type
+        const callsByFeatureType = yield prisma_1.default.appApiLog.groupBy({
+            by: ["featureType"],
+            where: { appId: idNum },
+            _count: { id: true },
+        });
+        // Get calls by model
+        const callsByModel = yield prisma_1.default.appApiLog.groupBy({
+            by: ["model"],
+            where: { appId: idNum, model: { not: null } },
+            _count: { id: true },
+            orderBy: { _count: { id: "desc" } },
+            take: 10,
+        });
+        // Get recent API calls (last 20)
+        const recentCalls = yield prisma_1.default.appApiLog.findMany({
+            where: { appId: idNum },
+            orderBy: { createdAt: "desc" },
+            take: 20,
+            select: {
+                id: true,
+                endpoint: true,
+                featureType: true,
+                model: true,
+                status: true,
+                errorMessage: true,
+                responseTime: true,
+                createdAt: true,
+            },
+        });
+        // Get calls per day for the last 30 days
+        const thirtyDaysAgo = new Date();
+        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+        const dailyCalls = yield prisma_1.default.$queryRaw `
+        SELECT DATE(\"createdAt\") as date, COUNT(*) as count
+        FROM "AppApiLog"
+        WHERE "appId" = ${idNum} AND "createdAt" >= ${thirtyDaysAgo}
+        GROUP BY DATE("createdAt")
+        ORDER BY date DESC
+      `;
+        // Get average response time
+        const avgResponseTime = yield prisma_1.default.appApiLog.aggregate({
+            where: { appId: idNum, responseTime: { not: null } },
+            _avg: { responseTime: true },
+        });
+        res.json({
+            success: true,
+            analytics: {
+                totalCalls,
+                successCalls,
+                errorCalls,
+                successRate: totalCalls > 0 ? ((successCalls / totalCalls) * 100).toFixed(1) : 0,
+                avgResponseTime: avgResponseTime._avg.responseTime
+                    ? Math.round(avgResponseTime._avg.responseTime)
+                    : null,
+                callsByEndpoint: callsByEndpoint.map((c) => ({
+                    endpoint: c.endpoint,
+                    count: c._count.id,
+                })),
+                callsByFeatureType: callsByFeatureType.map((c) => ({
+                    featureType: c.featureType,
+                    count: c._count.id,
+                })),
+                callsByModel: callsByModel.map((c) => ({
+                    model: c.model,
+                    count: c._count.id,
+                })),
+                dailyCalls: dailyCalls.map((d) => ({
+                    date: d.date,
+                    count: Number(d.count),
+                })),
+                recentCalls,
+            },
+        });
+    }
+    catch (e) {
+        console.error("Error fetching app analytics:", e);
+        res
+            .status(500)
+            .json({ success: false, message: "Failed to get app analytics" });
+    }
+}));
 exports.default = router;

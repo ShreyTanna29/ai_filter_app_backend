@@ -181,6 +181,25 @@ model App {
   allowedPhotos            AppGeneratedPhoto[]
   allowedCartoonCharacters AppCartoonCharacter[]
   allowedCartoonVideos     AppGeneratedCartoonVideo[]
+  apiLogs                  AppApiLog[]
+}
+
+// API call logs for tracking app usage
+model AppApiLog {
+  id           Int      @id @default(autoincrement())
+  app          App      @relation(fields: [appId], references: [id], onDelete: Cascade)
+  appId        Int
+  endpoint     String // The filter/feature endpoint that was called
+  featureType  String // "video", "photo", "cartoon"
+  model        String? // The AI model used
+  status       String // "success", "error"
+  errorMessage String? // Error message if failed
+  responseTime Int? // Response time in milliseconds
+  createdAt    DateTime @default(now())
+
+  @@index([appId])
+  @@index([appId, createdAt])
+  @@index([endpoint])
 }
 
 // Junction table for App <-> Features (video filters)

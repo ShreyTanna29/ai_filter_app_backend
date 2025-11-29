@@ -315,22 +315,65 @@ async function ensureImageDimensionsForProvider(
 // Multer setup for audio upload (memory storage)
 const upload = multer({ storage: multer.memoryStorage() });
 
+// Helper: Log API call for an app
+async function logAppApiCall(
+  appId: number | undefined,
+  endpoint: string,
+  featureType: "video" | "photo" | "cartoon",
+  model: string | undefined,
+  status: "success" | "error",
+  errorMessage?: string,
+  responseTime?: number
+): Promise<void> {
+  if (!appId) return; // Only log for app API calls, not admin
+  try {
+    await prisma.appApiLog.create({
+      data: {
+        appId,
+        endpoint,
+        featureType,
+        model: model || null,
+        status,
+        errorMessage: errorMessage || null,
+        responseTime: responseTime || null,
+      },
+    });
+  } catch (e) {
+    console.warn("[logAppApiCall] Failed to log API call:", e);
+  }
+}
+
 // Generate video from feature endpoint
 router.post(
   "/:feature",
   requireApiKey,
   upload.single("audio_file"),
   async (req: Request, res: Response, next: NextFunction): Promise<void> => {
-    try {
-      const { feature } = req.params;
-      // Check if this is a cartoon character video generation
-      const videoType: "video" | "cartoon" =
-        req.query.type === "cartoon" ? "cartoon" : "video";
+    const startTime = Date.now();
+    const { feature } = req.params;
+    const apiKeyOwner = (req as any).apiKeyOwner;
+    const appId = apiKeyOwner?.type === "app" ? apiKeyOwner.app?.id : undefined;
 
+    // Check if this is a cartoon character video generation
+    const videoType: "video" | "cartoon" =
+      req.query.type === "cartoon" ? "cartoon" : "video";
+
+    let userModel: string | undefined;
+
+    try {
       const promptOverride = req.body.prompt;
       const imageUrl = req.body.imageUrl || req.body.image_url;
 
       if (!imageUrl) {
+        await logAppApiCall(
+          appId,
+          feature,
+          videoType,
+          undefined,
+          "error",
+          "Image URL is required",
+          Date.now() - startTime
+        );
         res.status(400).json({
           success: false,
           error: "Image URL is required",
@@ -352,16 +395,15 @@ router.post(
       }
 
       // Check if app has permission to use this feature endpoint
-      const apiKeyOwner = (req as any).apiKeyOwner;
       if (apiKeyOwner?.type === "app" && apiKeyOwner.app) {
-        const appId = apiKeyOwner.app.id;
+        const permAppId = apiKeyOwner.app.id;
         let hasPermission = false;
 
         if (videoType === "cartoon") {
           // Check if the cartoon character is allowed for this app
           if (featureObj) {
             const allowed = await prisma.appCartoonCharacter.findFirst({
-              where: { appId, cartoonCharacterId: featureObj.id },
+              where: { appId: permAppId, cartoonCharacterId: featureObj.id },
             });
             hasPermission = !!allowed;
           }
@@ -369,18 +411,28 @@ router.post(
           // Check if the feature is allowed for this app
           if (featureObj) {
             const allowed = await prisma.appFeature.findFirst({
-              where: { appId, featureId: featureObj.id },
+              where: { appId: permAppId, featureId: featureObj.id },
             });
             hasPermission = !!allowed;
           }
         }
 
         if (!hasPermission) {
+          const errorMsg = `This app does not have permission to use the "${feature}" ${
+            videoType === "cartoon" ? "cartoon character" : "feature"
+          }`;
+          await logAppApiCall(
+            appId,
+            feature,
+            videoType,
+            undefined,
+            "error",
+            errorMsg,
+            Date.now() - startTime
+          );
           res.status(403).json({
             success: false,
-            error: `This app does not have permission to use the "${feature}" ${
-              videoType === "cartoon" ? "cartoon character" : "feature"
-            }`,
+            error: errorMsg,
           });
           return;
         }
@@ -390,9 +442,18 @@ router.post(
       const userModelFromRequest =
         typeof req.body.model === "string" ? req.body.model.trim() : "";
       const modelFromDb = featureObj?.model || "";
-      const userModel = userModelFromRequest || modelFromDb;
+      userModel = userModelFromRequest || modelFromDb;
 
       if (!userModel) {
+        await logAppApiCall(
+          appId,
+          feature,
+          videoType,
+          undefined,
+          "error",
+          "Model is required",
+          Date.now() - startTime
+        );
         res.status(400).json({
           success: false,
           error:
@@ -6816,6 +6877,15 @@ router.post(
           videoResponse.data as Readable
         );
       } catch (e) {
+        await logAppApiCall(
+          appId,
+          feature,
+          videoType,
+          userModel,
+          "error",
+          "Failed to upload Luma video to S3",
+          Date.now() - startTime
+        );
         res.status(500).json({
           success: false,
           error: "Failed to upload Luma video to S3",
@@ -6824,6 +6894,18 @@ router.post(
         });
         return;
       }
+
+      // Log successful API call
+      await logAppApiCall(
+        appId,
+        feature,
+        videoType,
+        userModel,
+        "success",
+        undefined,
+        Date.now() - startTime
+      );
+
       res.status(200).json({
         success: true,
         video: {
@@ -6838,6 +6920,18 @@ router.post(
       console.error("Error generating video:", serializeError(error));
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error";
+
+      // Log failed API call
+      await logAppApiCall(
+        appId,
+        feature,
+        videoType,
+        userModel,
+        "error",
+        errorMessage,
+        Date.now() - startTime
+      );
+
       res.status(500).json({
         success: false,
         error:

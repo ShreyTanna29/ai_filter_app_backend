@@ -1430,18 +1430,23 @@ async function deleteApp(id, btn) {
 // === App Detail Page Functions ===
 let currentAppDetail = null;
 let appResources = null;
+let appAnalytics = null;
 
 async function showAppDetailPage(appId) {
   showFullscreenLoader();
   try {
-    // Fetch app details and all available resources in parallel
-    const [appRes, resourcesRes] = await Promise.all([
+    // Fetch app details, resources, and analytics in parallel
+    const [appRes, resourcesRes, analyticsRes] = await Promise.all([
       fetch(`/api/apps/${appId}`, { headers: { ...apiKeyHeaders() } }),
       fetch(`/api/apps/resources/all`, { headers: { ...apiKeyHeaders() } }),
+      fetch(`/api/apps/${appId}/analytics`, {
+        headers: { ...apiKeyHeaders() },
+      }),
     ]);
 
     const appData = await appRes.json();
     const resourcesData = await resourcesRes.json();
+    const analyticsData = await analyticsRes.json();
 
     if (!appRes.ok || !appData.success) {
       throw new Error(appData.message || "Failed to load app details");
@@ -1452,6 +1457,7 @@ async function showAppDetailPage(appId) {
 
     currentAppDetail = appData.app;
     appResources = resourcesData;
+    appAnalytics = analyticsData.success ? analyticsData.analytics : null;
 
     renderAppDetailPage();
 
@@ -1522,6 +1528,9 @@ function renderAppDetailPage() {
           <button onclick="revealAppDetailKey()" class="px-3 py-1 bg-gray-200 text-gray-700 rounded text-sm hover:bg-gray-300">Reveal</button>
         </div>
       </div>
+
+      <!-- API Usage Analytics Section -->
+      ${renderAppAnalyticsSection()}
 
       <!-- Permissions Section -->
       <div class="mb-6">
@@ -1691,6 +1700,234 @@ function renderAppDetailPage() {
         btn.style.display = "none";
       });
   }
+}
+
+// Render the analytics section for app detail page
+function renderAppAnalyticsSection() {
+  if (!appAnalytics) {
+    return `
+      <div class="mb-8 p-4 bg-gray-50 rounded-lg border">
+        <h3 class="text-xl font-semibold text-gray-800 mb-4"><i class="fa fa-chart-bar mr-2 text-blue-500"></i>API Usage Analytics</h3>
+        <p class="text-gray-500 text-sm">No API usage data available yet. Analytics will appear here once API calls are made.</p>
+      </div>
+    `;
+  }
+
+  const {
+    totalCalls,
+    successCalls,
+    errorCalls,
+    successRate,
+    avgResponseTime,
+    callsByEndpoint,
+    callsByFeatureType,
+    callsByModel,
+    dailyCalls,
+    recentCalls,
+  } = appAnalytics;
+
+  // Format response time
+  const formatTime = (ms) => {
+    if (ms === null || ms === undefined) return "N/A";
+    if (ms < 1000) return `${Math.round(ms)}ms`;
+    return `${(ms / 1000).toFixed(2)}s`;
+  };
+
+  // Build top filters list
+  const topFiltersHtml =
+    (callsByEndpoint || [])
+      .slice(0, 5)
+      .map(
+        (item) => `
+    <div class="flex justify-between items-center py-1 border-b border-gray-100 last:border-0">
+      <span class="text-sm text-gray-700 truncate flex-1" title="${item.endpoint}">${item.endpoint}</span>
+      <span class="text-sm font-semibold text-blue-600 ml-2">${item.count}</span>
+    </div>
+  `
+      )
+      .join("") || '<p class="text-gray-400 text-sm">No filter usage yet</p>';
+
+  // Build feature type breakdown
+  const featureTypeHtml =
+    (callsByFeatureType || [])
+      .map((item) => {
+        const icon =
+          item.featureType === "video"
+            ? "fa-film text-purple-500"
+            : item.featureType === "photo"
+            ? "fa-image text-green-500"
+            : item.featureType === "cartoon"
+            ? "fa-paint-brush text-orange-500"
+            : "fa-question text-gray-400";
+        return `
+      <div class="flex items-center gap-2 px-3 py-2 bg-gray-50 rounded">
+        <i class="fa ${icon}"></i>
+        <span class="text-sm text-gray-700 capitalize">${
+          item.featureType || "Unknown"
+        }</span>
+        <span class="text-sm font-semibold text-blue-600 ml-auto">${
+          item.count
+        }</span>
+      </div>
+    `;
+      })
+      .join("") || '<p class="text-gray-400 text-sm">No data</p>';
+
+  // Build top models list
+  const topModelsHtml =
+    (callsByModel || [])
+      .slice(0, 5)
+      .map(
+        (item) => `
+    <div class="flex justify-between items-center py-1 border-b border-gray-100 last:border-0">
+      <span class="text-sm text-gray-700 truncate flex-1" title="${
+        item.model
+      }">${item.model || "N/A"}</span>
+      <span class="text-sm font-semibold text-blue-600 ml-2">${
+        item.count
+      }</span>
+    </div>
+  `
+      )
+      .join("") || '<p class="text-gray-400 text-sm">No model usage data</p>';
+
+  // Build recent calls table
+  const recentCallsHtml =
+    (recentCalls || [])
+      .slice(0, 10)
+      .map((call) => {
+        const statusColor =
+          call.status === "success" ? "text-green-600" : "text-red-600";
+        const statusIcon =
+          call.status === "success" ? "fa-check-circle" : "fa-times-circle";
+        const timeAgo = getTimeAgo(new Date(call.createdAt));
+        return `
+      <tr class="border-b border-gray-100 hover:bg-gray-50">
+        <td class="py-2 px-2 text-sm">
+          <i class="fa ${statusIcon} ${statusColor} mr-1"></i>
+          <span class="${statusColor} capitalize">${call.status}</span>
+        </td>
+        <td class="py-2 px-2 text-sm text-gray-700 truncate max-w-[150px]" title="${
+          call.endpoint
+        }">${call.endpoint || "N/A"}</td>
+        <td class="py-2 px-2 text-sm text-gray-500">${
+          call.featureType || "N/A"
+        }</td>
+        <td class="py-2 px-2 text-sm text-gray-500 truncate max-w-[100px]" title="${
+          call.model
+        }">${call.model || "N/A"}</td>
+        <td class="py-2 px-2 text-sm text-gray-500">${formatTime(
+          call.responseTime
+        )}</td>
+        <td class="py-2 px-2 text-sm text-gray-400">${timeAgo}</td>
+        <td class="py-2 px-2 text-sm text-red-500 truncate max-w-[150px]" title="${
+          call.errorMessage || ""
+        }">${call.errorMessage || "-"}</td>
+      </tr>
+    `;
+      })
+      .join("") ||
+    '<tr><td colspan="7" class="py-4 text-center text-gray-400">No recent API calls</td></tr>';
+
+  return `
+    <div class="mb-8 p-4 bg-gray-50 rounded-lg border">
+      <h3 class="text-xl font-semibold text-gray-800 mb-4"><i class="fa fa-chart-bar mr-2 text-blue-500"></i>API Usage Analytics</h3>
+      
+      <!-- Summary Stats -->
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+        <div class="bg-white p-4 rounded-lg border text-center">
+          <div class="text-3xl font-bold text-blue-600">${totalCalls || 0}</div>
+          <div class="text-sm text-gray-500">Total Calls</div>
+        </div>
+        <div class="bg-white p-4 rounded-lg border text-center">
+          <div class="text-3xl font-bold text-green-600">${
+            successCalls || 0
+          }</div>
+          <div class="text-sm text-gray-500">Successful</div>
+        </div>
+        <div class="bg-white p-4 rounded-lg border text-center">
+          <div class="text-3xl font-bold text-red-600">${errorCalls || 0}</div>
+          <div class="text-sm text-gray-500">Errors</div>
+        </div>
+        <div class="bg-white p-4 rounded-lg border text-center">
+          <div class="text-3xl font-bold text-purple-600">${
+            successRate || 0
+          }%</div>
+          <div class="text-sm text-gray-500">Success Rate</div>
+        </div>
+      </div>
+
+      <!-- Avg Response Time -->
+      <div class="mb-6 bg-white p-3 rounded-lg border inline-block">
+        <span class="text-gray-600"><i class="fa fa-clock mr-2"></i>Avg Response Time:</span>
+        <span class="font-semibold text-blue-600 ml-2">${formatTime(
+          avgResponseTime
+        )}</span>
+      </div>
+
+      <!-- Feature Type & Top Filters/Models -->
+      <div class="grid md:grid-cols-3 gap-4 mb-6">
+        <!-- Feature Type Breakdown -->
+        <div class="bg-white p-4 rounded-lg border">
+          <h4 class="font-semibold text-gray-700 mb-3"><i class="fa fa-layer-group mr-2 text-indigo-500"></i>By Type</h4>
+          <div class="flex flex-col gap-2">
+            ${featureTypeHtml}
+          </div>
+        </div>
+
+        <!-- Top Filters -->
+        <div class="bg-white p-4 rounded-lg border">
+          <h4 class="font-semibold text-gray-700 mb-3"><i class="fa fa-filter mr-2 text-blue-500"></i>Top Filters</h4>
+          ${topFiltersHtml}
+        </div>
+
+        <!-- Top Models -->
+        <div class="bg-white p-4 rounded-lg border">
+          <h4 class="font-semibold text-gray-700 mb-3"><i class="fa fa-robot mr-2 text-green-500"></i>Top Models</h4>
+          ${topModelsHtml}
+        </div>
+      </div>
+
+      <!-- Recent API Calls Table -->
+      <div class="bg-white rounded-lg border overflow-hidden">
+        <h4 class="font-semibold text-gray-700 p-4 border-b"><i class="fa fa-history mr-2 text-gray-500"></i>Recent API Calls</h4>
+        <div class="overflow-x-auto max-h-64 overflow-y-auto">
+          <table class="w-full text-left">
+            <thead class="bg-gray-50 sticky top-0">
+              <tr>
+                <th class="py-2 px-2 text-xs font-semibold text-gray-500 uppercase">Status</th>
+                <th class="py-2 px-2 text-xs font-semibold text-gray-500 uppercase">Filter</th>
+                <th class="py-2 px-2 text-xs font-semibold text-gray-500 uppercase">Type</th>
+                <th class="py-2 px-2 text-xs font-semibold text-gray-500 uppercase">Model</th>
+                <th class="py-2 px-2 text-xs font-semibold text-gray-500 uppercase">Time</th>
+                <th class="py-2 px-2 text-xs font-semibold text-gray-500 uppercase">When</th>
+                <th class="py-2 px-2 text-xs font-semibold text-gray-500 uppercase">Error</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${recentCallsHtml}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+// Helper function to format time ago
+function getTimeAgo(date) {
+  const now = new Date();
+  const diffMs = now - date;
+  const diffSecs = Math.floor(diffMs / 1000);
+  const diffMins = Math.floor(diffSecs / 60);
+  const diffHours = Math.floor(diffMins / 60);
+  const diffDays = Math.floor(diffHours / 24);
+
+  if (diffSecs < 60) return "Just now";
+  if (diffMins < 60) return `${diffMins}m ago`;
+  if (diffHours < 24) return `${diffHours}h ago`;
+  if (diffDays < 7) return `${diffDays}d ago`;
+  return date.toLocaleDateString();
 }
 
 function closeAppDetailPage() {
