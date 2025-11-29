@@ -388,6 +388,28 @@
           <div class="flex items-center justify-between mb-4">
             <h2 class="text-2xl font-bold text-gray-800">Features</h2>
             <div class="flex gap-2">
+              <!-- Status Filter Buttons -->
+              <button
+                id="statusFilterCompleted"
+                data-status="completed"
+                class="status-filter-btn px-4 py-2 border-2 border-green-500 text-green-600 rounded-lg hover:bg-green-50 font-medium transition-all"
+              >
+                Completed
+              </button>
+              <button
+                id="statusFilterNotCompleted"
+                data-status="not-completed"
+                class="status-filter-btn px-4 py-2 border-2 border-red-500 text-red-600 rounded-lg hover:bg-red-50 font-medium transition-all"
+              >
+                not completed
+              </button>
+              <button
+                id="statusFilterNeedsMore"
+                data-status="needs-more-videos"
+                class="status-filter-btn px-4 py-2 border-2 border-yellow-500 text-yellow-600 rounded-lg hover:bg-yellow-50 font-medium transition-all"
+              >
+                needs more videos
+              </button>
               <input
                 id="featureSearch"
                 type="text"
@@ -1010,7 +1032,7 @@
           class="hidden w-full h-full px-10 py-8 bg-gray-50 overflow-auto"
         >
           <div class=" max-w-3xl mx-auto bg-white rounded-xl shadow p-8">
-            <div class="flex justify-between items-center mb-6">
+            <div class="flex justify-between items-center mb-4">
               <div class="flex items-center gap-2">
                 <h2
                   id="featureDetailTitle"
@@ -1031,6 +1053,34 @@
                 class="text-gray-400 hover:text-gray-700 text-2xl"
               >
                 &times;
+              </button>
+            </div>
+            <!-- Status Selector -->
+            <div class="flex items-center gap-2 mb-6">
+              <span class="text-gray-600 text-sm font-medium">Status:</span>
+              <button
+                id="featureStatusCompleted"
+                data-status="completed"
+                class="feature-status-btn px-3 py-1 text-sm border-2 border-green-500 text-green-600 rounded-lg hover:bg-green-50 font-medium transition-all"
+                onclick="updateFeatureStatus('completed')"
+              >
+                <i class="fas fa-check mr-1"></i>Completed
+              </button>
+              <button
+                id="featureStatusNotCompleted"
+                data-status="not-completed"
+                class="feature-status-btn px-3 py-1 text-sm border-2 border-red-500 text-red-600 rounded-lg hover:bg-red-50 font-medium transition-all"
+                onclick="updateFeatureStatus('not-completed')"
+              >
+                <i class="fas fa-times mr-1"></i>Not Completed
+              </button>
+              <button
+                id="featureStatusNeedsMore"
+                data-status="needs-more-videos"
+                class="feature-status-btn px-3 py-1 text-sm border-2 border-yellow-500 text-yellow-600 rounded-lg hover:bg-yellow-50 font-medium transition-all"
+                onclick="updateFeatureStatus('needs-more-videos')"
+              >
+                <i class="fas fa-video mr-1"></i>Needs More Videos
               </button>
             </div>
             <video

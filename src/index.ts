@@ -26,10 +26,18 @@ app.use(express.json({ limit: "10mb" }));
 app.use(express.static("public")); // Serve static files from public directory
 
 // Feature management routes
-// Get all features without pagination
+// Get all features without pagination (with optional status filter)
 app.get("/api/features/all", async (req, res) => {
   try {
+    const { status } = req.query;
+
+    const whereClause =
+      status && typeof status === "string" && status !== "all"
+        ? { status }
+        : {};
+
     const list = await prisma.features.findMany({
+      where: whereClause,
       orderBy: { createdAt: "asc" },
     });
 
@@ -86,6 +94,45 @@ app.get("/api/features", async (req, res) => {
     });
   } catch (error) {
     console.error(error);
+    res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  }
+});
+
+// Update a feature's status
+app.patch("/api/features/:endpoint/status", async (req, res): Promise<any> => {
+  const { endpoint } = req.params;
+  const { status } = req.body;
+
+  const validStatuses = ["completed", "not-completed", "needs-more-videos"];
+  if (!status || !validStatuses.includes(status)) {
+    return res.status(400).json({
+      success: false,
+      message: `Status must be one of: ${validStatuses.join(", ")}`,
+    });
+  }
+
+  try {
+    const feature = await prisma.features.update({
+      where: { endpoint },
+      data: { status },
+    });
+
+    res.json({
+      success: true,
+      message: "Feature status updated successfully",
+      feature,
+    });
+  } catch (error: any) {
+    console.error(error);
+    if (error.code === "P2025") {
+      return res.status(404).json({
+        success: false,
+        message: "Feature not found",
+      });
+    }
     res.status(500).json({
       success: false,
       message: "Internal server error",

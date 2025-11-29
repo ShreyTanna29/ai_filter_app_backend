@@ -263,35 +263,36 @@ router.delete("/videos/:id", async (req: Request, res: Response) => {
   }
 });
 
-// Use GeneratedVideo instead of FeatureGraphic: return latest video per endpoint (now S3 URLs)
+// Return latest S3 video per endpoint (only S3 URLs, not old Cloudinary ones)
 router.get("/feature-graphic", async (req: Request, res: Response) => {
   try {
+    // Only get videos with S3 URLs (contains amazonaws.com or s3.)
     const latestVideos = await prisma.generatedVideo.findMany({
-      // 1. Get only one row for each unique 'feature'
+      where: {
+        OR: [
+          { url: { contains: "amazonaws.com" } },
+          { url: { contains: "s3." } },
+        ],
+      },
+      // Get only one row for each unique 'feature'
       distinct: ["feature"],
-
-      // 2. Define the order to pick the "first" one
-      orderBy: [
-        { feature: "asc" }, // Order by the distinct column first
-        { createdAt: "desc" }, // Then, order by date to get the newest
-      ],
-
-      // 3. Only select the fields you actually need
+      // Order by date descending to get the newest first, then by feature
+      orderBy: [{ createdAt: "desc" }, { feature: "asc" }],
       select: {
         feature: true,
         url: true,
       },
     });
 
-    // The database has already done all the work!
+    // Sign S3 URLs for access
     const result = await Promise.all(
       latestVideos.map(async (v) => {
         let signed = v.url;
         try {
-          if (v.url && /amazonaws\.com\//.test(v.url)) {
-            signed = await signKey(deriveKey(v.url));
-          }
-        } catch {}
+          signed = await signKey(deriveKey(v.url));
+        } catch (e) {
+          console.warn("[feature-graphic] Failed to sign URL:", v.url, e);
+        }
         return { endpoint: v.feature, graphicUrl: signed };
       })
     );

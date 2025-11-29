@@ -1038,6 +1038,7 @@ async function initializeDashboard() {
 let features = [];
 let featuresLoading = false;
 let featuresInitialRequested = false;
+let currentStatusFilter = null; // null means show all, or "completed", "not-completed", "needs-more-videos"
 // Photo Filters data store (from Photo_Features model)
 let photoFeatures = [];
 let photoFeaturesLoading = false;
@@ -1947,8 +1948,16 @@ async function loadAllFeatures() {
       params.set("q", searchEl.value.trim());
     }
 
-    // Fetch all features without pagination
-    const response = await fetch(`/api/features/all`);
+    // Add status filter if set
+    if (currentStatusFilter) {
+      params.set("status", currentStatusFilter);
+    }
+
+    // Fetch all features without pagination (with optional status filter)
+    const url = currentStatusFilter
+      ? `/api/features/all?status=${encodeURIComponent(currentStatusFilter)}`
+      : `/api/features/all`;
+    const response = await fetch(url);
 
     const data = await response.json();
     if (!response.ok) throw new Error(data.message || "Failed");
@@ -2201,6 +2210,143 @@ if (featureSearchInput) {
   });
 }
 
+// Status filter button handling
+function initializeStatusFilters() {
+  const filterButtons = document.querySelectorAll(".status-filter-btn");
+  filterButtons.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const status = btn.getAttribute("data-status");
+
+      // Toggle: if already active, clear filter (show all)
+      if (currentStatusFilter === status) {
+        currentStatusFilter = null;
+        btn.classList.remove(
+          "bg-green-500",
+          "bg-red-500",
+          "bg-yellow-500",
+          "text-white"
+        );
+        // Reset all buttons to outline style
+        filterButtons.forEach((b) => {
+          b.classList.remove(
+            "bg-green-500",
+            "bg-red-500",
+            "bg-yellow-500",
+            "text-white"
+          );
+        });
+      } else {
+        currentStatusFilter = status;
+        // Reset all buttons first
+        filterButtons.forEach((b) => {
+          b.classList.remove(
+            "bg-green-500",
+            "bg-red-500",
+            "bg-yellow-500",
+            "text-white"
+          );
+        });
+        // Highlight the active button
+        if (status === "completed") {
+          btn.classList.add("bg-green-500", "text-white");
+        } else if (status === "not-completed") {
+          btn.classList.add("bg-red-500", "text-white");
+        } else if (status === "needs-more-videos") {
+          btn.classList.add("bg-yellow-500", "text-white");
+        }
+      }
+
+      // Reload features with new filter
+      loadAllFeatures();
+    });
+  });
+}
+
+// Initialize status filters when DOM is ready
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", initializeStatusFilters);
+} else {
+  initializeStatusFilters();
+}
+
+// Update feature status buttons in detail page to reflect current status
+function updateFeatureStatusButtons(currentStatus) {
+  const buttons = document.querySelectorAll(".feature-status-btn");
+  buttons.forEach((btn) => {
+    const status = btn.getAttribute("data-status");
+    // Remove all active styles first
+    btn.classList.remove(
+      "bg-green-500",
+      "bg-red-500",
+      "bg-yellow-500",
+      "text-white"
+    );
+
+    // Add active style if this is the current status
+    if (status === currentStatus) {
+      if (status === "completed") {
+        btn.classList.add("bg-green-500", "text-white");
+      } else if (status === "not-completed") {
+        btn.classList.add("bg-red-500", "text-white");
+      } else if (status === "needs-more-videos") {
+        btn.classList.add("bg-yellow-500", "text-white");
+      }
+    }
+  });
+}
+
+// Update feature status via API
+async function updateFeatureStatus(newStatus) {
+  const endpoint = window.currentFeatureEndpoint;
+  if (!endpoint) {
+    console.error("No feature endpoint set");
+    return;
+  }
+
+  try {
+    const response = await fetch(
+      `/api/features/${encodeURIComponent(endpoint)}/status`,
+      {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ status: newStatus }),
+      }
+    );
+
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.message || "Failed to update status");
+    }
+
+    // Update UI
+    updateFeatureStatusButtons(newStatus);
+
+    // Update the feature in the local array
+    const featureIndex = features.findIndex((f) => f.endpoint === endpoint);
+    if (featureIndex !== -1) {
+      features[featureIndex].status = newStatus;
+    }
+
+    // Also check photo features
+    const photoFeatureIndex = photoFeatures.findIndex(
+      (f) => f.endpoint === endpoint
+    );
+    if (photoFeatureIndex !== -1) {
+      photoFeatures[photoFeatureIndex].status = newStatus;
+    }
+
+    console.log(`Feature ${endpoint} status updated to ${newStatus}`);
+  } catch (error) {
+    console.error("Error updating feature status:", error);
+    alert("Failed to update status: " + error.message);
+  }
+}
+
+// Make updateFeatureStatus available globally for onclick handlers
+window.updateFeatureStatus = updateFeatureStatus;
+
 // Photo Filters search handling
 const photoFeatureSearchInput = document.getElementById("photoFeatureSearch");
 if (photoFeatureSearchInput) {
@@ -2311,6 +2457,13 @@ function showFeatureDetailPage(endpoint, sourceTab = "filters") {
     console.log("Prompt element:", promptEl);
     if (titleEl) titleEl.textContent = feature.endpoint;
     if (promptEl) promptEl.textContent = feature.prompt || "";
+
+    // Update status buttons to reflect current status
+    updateFeatureStatusButtons(feature.status || "not-completed");
+
+    // Store current feature endpoint for status updates
+    window.currentFeatureEndpoint = feature.endpoint;
+
     const featureVideoEl = document.getElementById("featureDetailVideo");
     const featurePhotoEl = document.getElementById("featureDetailPhoto");
 

@@ -250,32 +250,35 @@ router.delete("/videos/:id", (req, res) => __awaiter(void 0, void 0, void 0, fun
         res.status(500).json({ error: "Failed to delete video" });
     }
 }));
-// Use GeneratedVideo instead of FeatureGraphic: return latest video per endpoint (now S3 URLs)
+// Return latest S3 video per endpoint (only S3 URLs, not old Cloudinary ones)
 router.get("/feature-graphic", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
+        // Only get videos with S3 URLs (contains amazonaws.com or s3.)
         const latestVideos = yield prisma_1.default.generatedVideo.findMany({
-            // 1. Get only one row for each unique 'feature'
+            where: {
+                OR: [
+                    { url: { contains: "amazonaws.com" } },
+                    { url: { contains: "s3." } },
+                ],
+            },
+            // Get only one row for each unique 'feature'
             distinct: ["feature"],
-            // 2. Define the order to pick the "first" one
-            orderBy: [
-                { feature: "asc" }, // Order by the distinct column first
-                { createdAt: "desc" }, // Then, order by date to get the newest
-            ],
-            // 3. Only select the fields you actually need
+            // Order by date descending to get the newest first, then by feature
+            orderBy: [{ createdAt: "desc" }, { feature: "asc" }],
             select: {
                 feature: true,
                 url: true,
             },
         });
-        // The database has already done all the work!
+        // Sign S3 URLs for access
         const result = yield Promise.all(latestVideos.map((v) => __awaiter(void 0, void 0, void 0, function* () {
             let signed = v.url;
             try {
-                if (v.url && /amazonaws\.com\//.test(v.url)) {
-                    signed = yield (0, signedUrl_1.signKey)((0, signedUrl_1.deriveKey)(v.url));
-                }
+                signed = yield (0, signedUrl_1.signKey)((0, signedUrl_1.deriveKey)(v.url));
             }
-            catch (_a) { }
+            catch (e) {
+                console.warn("[feature-graphic] Failed to sign URL:", v.url, e);
+            }
             return { endpoint: v.feature, graphicUrl: signed };
         })));
         res.json(result);
