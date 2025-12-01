@@ -21,6 +21,8 @@ exports.resizeTo512 = resizeTo512;
 exports.makeKey = makeKey;
 exports.ensure512SquareImageFromUrl = ensure512SquareImageFromUrl;
 exports.ensureImageSizeFromUrl = ensureImageSizeFromUrl;
+exports.getLatestVideosFromS3 = getLatestVideosFromS3;
+exports.getVideosForFeatureFromS3 = getVideosForFeatureFromS3;
 const client_s3_1 = require("@aws-sdk/client-s3");
 const lib_storage_1 = require("@aws-sdk/lib-storage");
 const sharp_1 = __importDefault(require("sharp"));
@@ -120,5 +122,81 @@ function ensureImageSizeFromUrl(url, width, height) {
             .toFormat("png")
             .toBuffer();
         return { buffer: resized, contentType: "image/png" };
+    });
+}
+// Get the latest video for each feature directly from S3
+function getLatestVideosFromS3() {
+    return __awaiter(this, void 0, void 0, function* () {
+        const videosByFeature = new Map();
+        let continuationToken;
+        do {
+            const command = new client_s3_1.ListObjectsV2Command({
+                Bucket: BUCKET,
+                Prefix: "videos/",
+                ContinuationToken: continuationToken,
+            });
+            const response = yield exports.s3.send(command);
+            if (response.Contents) {
+                for (const obj of response.Contents) {
+                    if (obj.Key && obj.Key.endsWith(".mp4") && obj.LastModified) {
+                        // Extract feature from key: "videos/{feature}/{feature}-{timestamp}-{random}.mp4"
+                        const parts = obj.Key.split("/");
+                        if (parts.length >= 2) {
+                            const feature = parts[1]; // The folder name is the feature/endpoint
+                            const existing = videosByFeature.get(feature);
+                            if (!existing || obj.LastModified > existing.lastModified) {
+                                videosByFeature.set(feature, {
+                                    key: obj.Key,
+                                    lastModified: obj.LastModified,
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+            continuationToken = response.NextContinuationToken;
+        } while (continuationToken);
+        // Convert map to array of results
+        const results = [];
+        for (const [endpoint, data] of videosByFeature) {
+            results.push({
+                endpoint,
+                key: data.key,
+                url: publicUrlFor(data.key),
+                lastModified: data.lastModified,
+            });
+        }
+        return results;
+    });
+}
+// Get all videos for a specific feature from S3
+function getVideosForFeatureFromS3(feature) {
+    return __awaiter(this, void 0, void 0, function* () {
+        const videos = [];
+        const featurePrefix = `videos/${feature.replace(/[^a-zA-Z0-9_-]/g, "-")}/`;
+        let continuationToken;
+        do {
+            const command = new client_s3_1.ListObjectsV2Command({
+                Bucket: BUCKET,
+                Prefix: featurePrefix,
+                ContinuationToken: continuationToken,
+            });
+            const response = yield exports.s3.send(command);
+            if (response.Contents) {
+                for (const obj of response.Contents) {
+                    if (obj.Key && obj.Key.endsWith(".mp4") && obj.LastModified) {
+                        videos.push({
+                            key: obj.Key,
+                            url: publicUrlFor(obj.Key),
+                            lastModified: obj.LastModified,
+                        });
+                    }
+                }
+            }
+            continuationToken = response.NextContinuationToken;
+        } while (continuationToken);
+        // Sort by lastModified descending (newest first)
+        videos.sort((a, b) => b.lastModified.getTime() - a.lastModified.getTime());
+        return videos;
     });
 }

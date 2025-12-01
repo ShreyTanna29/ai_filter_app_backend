@@ -2,7 +2,11 @@ import { Router, Request, Response } from "express";
 import axios from "axios";
 import type { RequestHandler } from "express";
 // S3 migration: replace Cloudinary deletion with S3 object removal
-import { deleteObject } from "../lib/s3";
+import {
+  deleteObject,
+  getLatestVideosFromS3,
+  getVideosForFeatureFromS3,
+} from "../lib/s3";
 import { signKey, deriveKey } from "../middleware/signedUrl";
 import prisma from "../lib/prisma";
 
@@ -200,26 +204,29 @@ router.post("/:endpoint", async (req: Request, res: Response, next) => {
   }
 });
 
-// Endpoint to get all generated videos for a feature
+// Endpoint to get all generated videos for a feature directly from S3
 router.get("/videos/:endpoint", async (req: Request, res: Response) => {
   try {
-    const videos: any[] = await prisma.generatedVideo.findMany({
-      where: { feature: req.params.endpoint },
-      orderBy: { createdAt: "desc" },
-    });
-    // Map stored URL (which may be raw S3 path or legacy Cloudinary) to signed URL if S3
+    // Get videos directly from S3 bucket for this feature
+    const videos = await getVideosForFeatureFromS3(req.params.endpoint);
+
+    // Sign S3 URLs for access
     const out = await Promise.all(
-      videos.map(async (v) => {
+      videos.map(async (v, index) => {
         let signed = v.url;
         try {
-          if (v.url && /amazonaws\.com\//.test(v.url)) {
-            const key = deriveKey(v.url);
-            signed = await signKey(key);
-          }
+          signed = await signKey(v.key);
         } catch (e) {
           // keep original URL if signing fails
         }
-        return { ...v, signedUrl: signed };
+        return {
+          id: index + 1, // Generate a pseudo-id based on index
+          feature: req.params.endpoint,
+          url: v.url,
+          key: v.key, // Include S3 key for deletion/selection operations
+          createdAt: v.lastModified,
+          signedUrl: signed,
+        };
       })
     );
     res.json(out);
@@ -229,33 +236,29 @@ router.get("/videos/:endpoint", async (req: Request, res: Response) => {
   }
 });
 
-// Delete a generated video (S3 + DB)
-router.delete("/videos/:id", async (req: Request, res: Response) => {
+// Delete a generated video from S3 by key (passed as base64-encoded query param or in body)
+router.delete("/videos/:endpoint", async (req: Request, res: Response) => {
   try {
-    const id = parseInt(req.params.id, 10);
-    if (isNaN(id)) {
-      res.status(400).json({ error: "Invalid id" });
+    const { key } = req.body as { key?: string };
+    if (!key) {
+      res.status(400).json({ error: "Missing S3 key in request body" });
       return;
     }
-    const video = await prisma.generatedVideo.findUnique({ where: { id } });
-    if (!video) {
-      res.status(404).json({ error: "Video not found" });
+
+    // Validate that the key belongs to the specified endpoint
+    const endpoint = req.params.endpoint;
+    const expectedPrefix = `videos/${endpoint.replace(
+      /[^a-zA-Z0-9_-]/g,
+      "-"
+    )}/`;
+    if (!key.startsWith(expectedPrefix)) {
+      res
+        .status(400)
+        .json({ error: "Key does not match the specified endpoint" });
       return;
     }
-    // Derive S3 key from stored URL: assume pattern https://<bucket or cdn>/<key>
-    try {
-      if (video.url) {
-        const u = new URL(video.url);
-        // Remove leading slash
-        const key = u.pathname.startsWith("/")
-          ? u.pathname.slice(1)
-          : u.pathname;
-        await deleteObject(key);
-      }
-    } catch (e) {
-      console.warn("S3 delete failed (non-fatal):", e);
-    }
-    await prisma.generatedVideo.delete({ where: { id } });
+
+    await deleteObject(key);
     res.json({ success: true });
   } catch (error) {
     console.error("Error deleting generated video:", error);
@@ -263,37 +266,22 @@ router.delete("/videos/:id", async (req: Request, res: Response) => {
   }
 });
 
-// Return latest S3 video per endpoint (only S3 URLs, not old Cloudinary ones)
+// Return latest S3 video per endpoint directly from S3 bucket
 router.get("/feature-graphic", async (req: Request, res: Response) => {
   try {
-    // Only get videos with S3 URLs (contains amazonaws.com or s3.)
-    const latestVideos = await prisma.generatedVideo.findMany({
-      where: {
-        OR: [
-          { url: { contains: "amazonaws.com" } },
-          { url: { contains: "s3." } },
-        ],
-      },
-      // Get only one row for each unique 'feature'
-      distinct: ["feature"],
-      // Order by date descending to get the newest first, then by feature
-      orderBy: [{ createdAt: "desc" }, { feature: "asc" }],
-      select: {
-        feature: true,
-        url: true,
-      },
-    });
+    // Get latest videos directly from S3 bucket
+    const latestVideos = await getLatestVideosFromS3();
 
     // Sign S3 URLs for access
     const result = await Promise.all(
       latestVideos.map(async (v) => {
         let signed = v.url;
         try {
-          signed = await signKey(deriveKey(v.url));
+          signed = await signKey(v.key);
         } catch (e) {
           console.warn("[feature-graphic] Failed to sign URL:", v.url, e);
         }
-        return { endpoint: v.feature, graphicUrl: signed };
+        return { endpoint: v.endpoint, graphicUrl: signed };
       })
     );
 
@@ -308,24 +296,35 @@ router.post(
   "/feature-graphic/:endpoint",
   async (req: Request, res: Response) => {
     try {
-      const { url } = req.body as { url?: string };
+      const { url, key } = req.body as { url?: string; key?: string };
       const endpoint = req.params.endpoint;
-      if (!url) {
-        res.status(400).json({ error: "Missing video url" });
+      if (!url && !key) {
+        res.status(400).json({ error: "Missing video url or key" });
         return;
       }
-      const exists = await prisma.generatedVideo.findFirst({
-        where: { feature: endpoint, url },
-      });
-      if (!exists) {
-        res.status(404).json({ error: "Video url not found for endpoint" });
-        return;
+
+      // Validate that the key belongs to the specified endpoint (if key is provided)
+      if (key) {
+        const expectedPrefix = `videos/${endpoint.replace(
+          /[^a-zA-Z0-9_-]/g,
+          "-"
+        )}/`;
+        if (!key.startsWith(expectedPrefix)) {
+          res
+            .status(400)
+            .json({ error: "Key does not match the specified endpoint" });
+          return;
+        }
       }
+
+      // Store either the S3 key or URL in the FeatureGraphic table
+      const graphicUrl = key || url!;
+
       // Upsert the FeatureGraphic record for this endpoint
       await prisma.featureGraphic.upsert({
         where: { endpoint },
-        update: { graphicUrl: url },
-        create: { endpoint, graphicUrl: url },
+        update: { graphicUrl },
+        create: { endpoint, graphicUrl },
       });
       res.json({ success: true });
     } catch (error) {

@@ -2,6 +2,7 @@ import {
   S3Client,
   PutObjectCommand,
   DeleteObjectCommand,
+  ListObjectsV2Command,
   ObjectCannedACL,
 } from "@aws-sdk/client-s3";
 import { Upload } from "@aws-sdk/lib-storage";
@@ -128,4 +129,103 @@ export async function ensureImageSizeFromUrl(
     .toFormat("png")
     .toBuffer();
   return { buffer: resized, contentType: "image/png" };
+}
+
+export interface LatestVideoResult {
+  endpoint: string;
+  key: string;
+  url: string;
+  lastModified: Date;
+}
+
+// Get the latest video for each feature directly from S3
+export async function getLatestVideosFromS3(): Promise<LatestVideoResult[]> {
+  const videosByFeature: Map<string, { key: string; lastModified: Date }> =
+    new Map();
+
+  let continuationToken: string | undefined;
+
+  do {
+    const command = new ListObjectsV2Command({
+      Bucket: BUCKET,
+      Prefix: "videos/",
+      ContinuationToken: continuationToken,
+    });
+
+    const response = await s3.send(command);
+
+    if (response.Contents) {
+      for (const obj of response.Contents) {
+        if (obj.Key && obj.Key.endsWith(".mp4") && obj.LastModified) {
+          // Extract feature from key: "videos/{feature}/{feature}-{timestamp}-{random}.mp4"
+          const parts = obj.Key.split("/");
+          if (parts.length >= 2) {
+            const feature = parts[1]; // The folder name is the feature/endpoint
+
+            const existing = videosByFeature.get(feature);
+            if (!existing || obj.LastModified > existing.lastModified) {
+              videosByFeature.set(feature, {
+                key: obj.Key,
+                lastModified: obj.LastModified,
+              });
+            }
+          }
+        }
+      }
+    }
+
+    continuationToken = response.NextContinuationToken;
+  } while (continuationToken);
+
+  // Convert map to array of results
+  const results: LatestVideoResult[] = [];
+  for (const [endpoint, data] of videosByFeature) {
+    results.push({
+      endpoint,
+      key: data.key,
+      url: publicUrlFor(data.key),
+      lastModified: data.lastModified,
+    });
+  }
+
+  return results;
+}
+
+// Get all videos for a specific feature from S3
+export async function getVideosForFeatureFromS3(
+  feature: string
+): Promise<{ key: string; url: string; lastModified: Date }[]> {
+  const videos: { key: string; url: string; lastModified: Date }[] = [];
+  const featurePrefix = `videos/${feature.replace(/[^a-zA-Z0-9_-]/g, "-")}/`;
+
+  let continuationToken: string | undefined;
+
+  do {
+    const command = new ListObjectsV2Command({
+      Bucket: BUCKET,
+      Prefix: featurePrefix,
+      ContinuationToken: continuationToken,
+    });
+
+    const response = await s3.send(command);
+
+    if (response.Contents) {
+      for (const obj of response.Contents) {
+        if (obj.Key && obj.Key.endsWith(".mp4") && obj.LastModified) {
+          videos.push({
+            key: obj.Key,
+            url: publicUrlFor(obj.Key),
+            lastModified: obj.LastModified,
+          });
+        }
+      }
+    }
+
+    continuationToken = response.NextContinuationToken;
+  } while (continuationToken);
+
+  // Sort by lastModified descending (newest first)
+  videos.sort((a, b) => b.lastModified.getTime() - a.lastModified.getTime());
+
+  return videos;
 }

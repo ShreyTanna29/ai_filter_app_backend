@@ -187,26 +187,28 @@ router.post("/:endpoint", (req, res, next) => __awaiter(void 0, void 0, void 0, 
         return next(e);
     }
 }));
-// Endpoint to get all generated videos for a feature
+// Endpoint to get all generated videos for a feature directly from S3
 router.get("/videos/:endpoint", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
-        const videos = yield prisma_1.default.generatedVideo.findMany({
-            where: { feature: req.params.endpoint },
-            orderBy: { createdAt: "desc" },
-        });
-        // Map stored URL (which may be raw S3 path or legacy Cloudinary) to signed URL if S3
-        const out = yield Promise.all(videos.map((v) => __awaiter(void 0, void 0, void 0, function* () {
+        // Get videos directly from S3 bucket for this feature
+        const videos = yield (0, s3_1.getVideosForFeatureFromS3)(req.params.endpoint);
+        // Sign S3 URLs for access
+        const out = yield Promise.all(videos.map((v, index) => __awaiter(void 0, void 0, void 0, function* () {
             let signed = v.url;
             try {
-                if (v.url && /amazonaws\.com\//.test(v.url)) {
-                    const key = (0, signedUrl_1.deriveKey)(v.url);
-                    signed = yield (0, signedUrl_1.signKey)(key);
-                }
+                signed = yield (0, signedUrl_1.signKey)(v.key);
             }
             catch (e) {
                 // keep original URL if signing fails
             }
-            return Object.assign(Object.assign({}, v), { signedUrl: signed });
+            return {
+                id: index + 1, // Generate a pseudo-id based on index
+                feature: req.params.endpoint,
+                url: v.url,
+                key: v.key, // Include S3 key for deletion/selection operations
+                createdAt: v.lastModified,
+                signedUrl: signed,
+            };
         })));
         res.json(out);
     }
@@ -215,34 +217,24 @@ router.get("/videos/:endpoint", (req, res) => __awaiter(void 0, void 0, void 0, 
         res.status(500).json({ error: "Failed to fetch videos" });
     }
 }));
-// Delete a generated video (S3 + DB)
-router.delete("/videos/:id", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+// Delete a generated video from S3 by key (passed as base64-encoded query param or in body)
+router.delete("/videos/:endpoint", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
-        const id = parseInt(req.params.id, 10);
-        if (isNaN(id)) {
-            res.status(400).json({ error: "Invalid id" });
+        const { key } = req.body;
+        if (!key) {
+            res.status(400).json({ error: "Missing S3 key in request body" });
             return;
         }
-        const video = yield prisma_1.default.generatedVideo.findUnique({ where: { id } });
-        if (!video) {
-            res.status(404).json({ error: "Video not found" });
+        // Validate that the key belongs to the specified endpoint
+        const endpoint = req.params.endpoint;
+        const expectedPrefix = `videos/${endpoint.replace(/[^a-zA-Z0-9_-]/g, "-")}/`;
+        if (!key.startsWith(expectedPrefix)) {
+            res
+                .status(400)
+                .json({ error: "Key does not match the specified endpoint" });
             return;
         }
-        // Derive S3 key from stored URL: assume pattern https://<bucket or cdn>/<key>
-        try {
-            if (video.url) {
-                const u = new URL(video.url);
-                // Remove leading slash
-                const key = u.pathname.startsWith("/")
-                    ? u.pathname.slice(1)
-                    : u.pathname;
-                yield (0, s3_1.deleteObject)(key);
-            }
-        }
-        catch (e) {
-            console.warn("S3 delete failed (non-fatal):", e);
-        }
-        yield prisma_1.default.generatedVideo.delete({ where: { id } });
+        yield (0, s3_1.deleteObject)(key);
         res.json({ success: true });
     }
     catch (error) {
@@ -250,36 +242,21 @@ router.delete("/videos/:id", (req, res) => __awaiter(void 0, void 0, void 0, fun
         res.status(500).json({ error: "Failed to delete video" });
     }
 }));
-// Return latest S3 video per endpoint (only S3 URLs, not old Cloudinary ones)
+// Return latest S3 video per endpoint directly from S3 bucket
 router.get("/feature-graphic", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
-        // Only get videos with S3 URLs (contains amazonaws.com or s3.)
-        const latestVideos = yield prisma_1.default.generatedVideo.findMany({
-            where: {
-                OR: [
-                    { url: { contains: "amazonaws.com" } },
-                    { url: { contains: "s3." } },
-                ],
-            },
-            // Get only one row for each unique 'feature'
-            distinct: ["feature"],
-            // Order by date descending to get the newest first, then by feature
-            orderBy: [{ createdAt: "desc" }, { feature: "asc" }],
-            select: {
-                feature: true,
-                url: true,
-            },
-        });
+        // Get latest videos directly from S3 bucket
+        const latestVideos = yield (0, s3_1.getLatestVideosFromS3)();
         // Sign S3 URLs for access
         const result = yield Promise.all(latestVideos.map((v) => __awaiter(void 0, void 0, void 0, function* () {
             let signed = v.url;
             try {
-                signed = yield (0, signedUrl_1.signKey)((0, signedUrl_1.deriveKey)(v.url));
+                signed = yield (0, signedUrl_1.signKey)(v.key);
             }
             catch (e) {
                 console.warn("[feature-graphic] Failed to sign URL:", v.url, e);
             }
-            return { endpoint: v.feature, graphicUrl: signed };
+            return { endpoint: v.endpoint, graphicUrl: signed };
         })));
         res.json(result);
     }
@@ -291,24 +268,29 @@ router.get("/feature-graphic", (req, res) => __awaiter(void 0, void 0, void 0, f
 // Set the selected video as the feature's graphic (persist in FeatureGraphic table)
 router.post("/feature-graphic/:endpoint", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
-        const { url } = req.body;
+        const { url, key } = req.body;
         const endpoint = req.params.endpoint;
-        if (!url) {
-            res.status(400).json({ error: "Missing video url" });
+        if (!url && !key) {
+            res.status(400).json({ error: "Missing video url or key" });
             return;
         }
-        const exists = yield prisma_1.default.generatedVideo.findFirst({
-            where: { feature: endpoint, url },
-        });
-        if (!exists) {
-            res.status(404).json({ error: "Video url not found for endpoint" });
-            return;
+        // Validate that the key belongs to the specified endpoint (if key is provided)
+        if (key) {
+            const expectedPrefix = `videos/${endpoint.replace(/[^a-zA-Z0-9_-]/g, "-")}/`;
+            if (!key.startsWith(expectedPrefix)) {
+                res
+                    .status(400)
+                    .json({ error: "Key does not match the specified endpoint" });
+                return;
+            }
         }
+        // Store either the S3 key or URL in the FeatureGraphic table
+        const graphicUrl = key || url;
         // Upsert the FeatureGraphic record for this endpoint
         yield prisma_1.default.featureGraphic.upsert({
             where: { endpoint },
-            update: { graphicUrl: url },
-            create: { endpoint, graphicUrl: url },
+            update: { graphicUrl },
+            create: { endpoint, graphicUrl },
         });
         res.json({ success: true });
     }

@@ -2728,13 +2728,14 @@ function showFeatureDetailPage(endpoint, sourceTab = "filters") {
       if (!videoUrl) {
         try {
           const res = await fetch(
-            `/api/generate-video/videos/${feature.endpoint}`
+            `/api/videos/${encodeURIComponent(feature.endpoint)}`
           );
           const videos = await res.json();
           if (Array.isArray(videos) && videos.length > 0) {
             videoUrl =
-              videos[0].cloudinaryUrl ||
+              videos[0].signedUrl ||
               videos[0].url ||
+              videos[0].cloudinaryUrl ||
               videos[0].videoUrl ||
               videos[0].video_url ||
               "";
@@ -4119,7 +4120,11 @@ function showStepDetailPage(templateId, stepIndex, subcatIndex) {
             const deleteBtn = isAdmin()
               ? `<button class="absolute top-1 right-1 bg-red-600/80 text-white text-[10px] px-1.5 py-0.5 rounded opacity-0 group-hover:opacity-100 transition delete-step-video-btn" title="Delete video"><svg xmlns='http://www.w3.org/2000/svg' width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' class='pointer-events-none'><path d='M3 6h18'/><path d='M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2'/><path d='M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6'/><path d='M10 11v6'/><path d='M14 11v6'/></svg></button>`
               : "";
-            return `<div class="relative rounded-lg overflow-hidden border border-gray-200 hover:border-blue-400 hover:shadow group step-detail-thumb" data-url="${vidUrl}" data-id="${v.id}" style="width:120px;height:213px;display:inline-block;vertical-align:top;background:#000;cursor:pointer;">
+            return `<div class="relative rounded-lg overflow-hidden border border-gray-200 hover:border-blue-400 hover:shadow group step-detail-thumb" data-url="${vidUrl}" data-key="${
+              v.key || ""
+            }" data-endpoint="${
+              v.feature || ""
+            }" style="width:120px;height:213px;display:inline-block;vertical-align:top;background:#000;cursor:pointer;">
        <video src="${vidUrl}" class="w-full h-full object-cover" preload="metadata" muted playsinline style="width:100%;height:100%;object-fit:cover;pointer-events:none;"></video>
        ${deleteBtn}
      </div>`;
@@ -4172,20 +4177,26 @@ function showStepDetailPage(templateId, stepIndex, subcatIndex) {
           .forEach((btn) => {
             btn.addEventListener("click", async (e) => {
               e.stopPropagation();
-              const wrapper = btn.closest("div[data-id]");
+              const wrapper = btn.closest("div[data-key]");
               if (!wrapper) return;
-              const id = wrapper.getAttribute("data-id");
-              if (!id) return;
+              const key = wrapper.getAttribute("data-key");
+              const endpoint = wrapper.getAttribute("data-endpoint");
+              if (!key || !endpoint) return;
               if (!confirm("Delete this video?")) return;
               btn.disabled = true;
               btn.textContent = "...";
               try {
-                const resp = await fetch(`/api/videos/${id}`, {
-                  method: "DELETE",
-                });
+                const resp = await fetch(
+                  `/api/videos/${encodeURIComponent(endpoint)}`,
+                  {
+                    method: "DELETE",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ key }),
+                  }
+                );
                 if (!resp.ok) throw new Error("Failed");
                 wrapper.remove();
-                if (!generatedListEl.querySelector("div[data-id]")) {
+                if (!generatedListEl.querySelector("div[data-key]")) {
                   generatedListEl.innerHTML =
                     '<div class="col-span-full text-xs text-gray-500">No videos yet for this endpoint.</div>';
                 }
@@ -5332,14 +5343,14 @@ function openFeatureModal(endpoint) {
               (v) => `
                 <div style="margin-bottom:10px">
                   <video src="${
-                    v.url
+                    v.signedUrl || v.url
                   }" controls style="width:100%;max-width:400px;"></video>
                   <div style="font-size:12px;color:#888">${new Date(
                     v.createdAt
                   ).toLocaleString()}</div>
                   <button class="btn btn-secondary set-graphic-btn" data-video-url="${
-                    v.url
-                  }" style="margin-top:5px;">
+                    v.signedUrl || v.url
+                  }" data-video-key="${v.key || ""}" style="margin-top:5px;">
                     <i class="fas fa-image"></i> Set as Graphic
                   </button>
                 </div>
@@ -5349,7 +5360,11 @@ function openFeatureModal(endpoint) {
         // Add event listeners for set as graphic buttons
         videoList.querySelectorAll(".set-graphic-btn").forEach((btn) => {
           btn.onclick = function () {
-            setFeatureCardGraphic(endpoint, btn.getAttribute("data-video-url"));
+            setFeatureCardGraphic(
+              endpoint,
+              btn.getAttribute("data-video-url"),
+              btn.getAttribute("data-video-key")
+            );
           };
         });
       } else {
@@ -5359,7 +5374,7 @@ function openFeatureModal(endpoint) {
     });
 }
 // Set the selected video as the graphic for the feature card
-async function setFeatureCardGraphic(endpoint, videoUrl) {
+async function setFeatureCardGraphic(endpoint, videoUrl, videoKey) {
   // Update UI immediately
   const card = document.querySelector(`.feature-card[onclick*="${endpoint}"]`);
   if (card) {
@@ -5371,12 +5386,12 @@ async function setFeatureCardGraphic(endpoint, videoUrl) {
       videoPreview.load();
     }
   }
-  // Persist to backend
+  // Persist to backend - send both key and url for flexibility
   try {
     await fetch(`/api/feature-graphic/${endpoint}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ url: videoUrl }),
+      body: JSON.stringify({ url: videoUrl, key: videoKey || undefined }),
     });
     featureGraphics[endpoint] = videoUrl;
   } catch (e) {
