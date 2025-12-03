@@ -146,6 +146,7 @@ model Photo_Features {
   id        Int      @id @default(autoincrement())
   endpoint  String   @unique
   prompt    String
+  model     String?  @default("flux-schnell")
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -156,12 +157,11 @@ model Photo_Features {
 }
 
 model Generated_Photo {
-  id        Int      @id @default(autoincrement())
+  id        Int                 @id @default(autoincrement())
   feature   String
   url       String // Cloudinary URL
-  createdAt DateTime @default(now())
-
-  apps AppGeneratedPhoto[]
+  createdAt DateTime            @default(now())
+  apps      AppGeneratedPhoto[]
 
   @@index([feature, createdAt])
 }

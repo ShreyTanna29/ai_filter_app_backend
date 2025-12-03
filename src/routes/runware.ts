@@ -2,6 +2,7 @@ import { Router, Request, Response } from "express";
 import multer from "multer";
 import axios from "axios";
 import https from "https";
+import { requireApiKey } from "../middleware/apiKey";
 // Optional but highly recommended: compress large seed images before upload
 // This reduces payload size and avoids gateway timeouts.
 let sharp: any = null; // use 'any' to avoid type resolution when package isn't installed
@@ -791,6 +792,7 @@ function getRunwareHeaders() {
 // Accepts multipart/form-data (field: image) OR JSON body { imageUrl }
 router.post(
   "/runware/upload-image",
+  requireApiKey,
   upload.single("image"),
   async (req: Request, res: Response): Promise<void> => {
     try {
@@ -887,6 +889,7 @@ router.post(
 // JSON body: { feature?: string, prompt: string, model?: string, width?: number, height?: number, seedImage?: string }
 router.post(
   "/runware/generate-photo",
+  requireApiKey,
   async (req: Request, res: Response): Promise<void> => {
     try {
       const {
@@ -914,8 +917,27 @@ router.post(
         return;
       }
 
+      // If model is not provided but feature is, fetch model from Photo_Features table
+      let resolvedModel = model;
+      if (!resolvedModel && feature && typeof feature === "string") {
+        try {
+          const photoFeature = await prisma.photo_Features.findUnique({
+            where: { endpoint: feature.trim() },
+            select: { model: true },
+          });
+          if (photoFeature?.model) {
+            resolvedModel = photoFeature.model;
+          }
+        } catch (dbErr) {
+          console.warn(
+            "Failed to fetch model from Photo_Features:",
+            (dbErr as any)?.message || dbErr
+          );
+        }
+      }
+
       // Model normalization: map friendly aliases to known model IDs when possible
-      const clientModel = (model && String(model)) || "";
+      const clientModel = (resolvedModel && String(resolvedModel)) || "";
       const normalizedModel = clientModel.trim().toLowerCase();
       let chosenModel = clientModel || "bfl:2@1"; // default to a stable FLUX variant
       if (/^flux[-_\s]*schnell$/i.test(clientModel)) {
@@ -1477,6 +1499,7 @@ router.post(
 // JSON body: { prompt: string, references: string[], width?: number, height?: number, negativePrompt?: string, numberResults?: number, feature?: string }
 router.post(
   "/runware/riverflow/edit",
+  requireApiKey,
   async (req: Request, res: Response): Promise<void> => {
     try {
       const {
@@ -1582,6 +1605,7 @@ router.post(
 // JSON body: { prompt: string, references: string[], width?: number, height?: number, negativePrompt?: string, numberResults?: number, feature?: string }
 router.post(
   "/runware/riverflow-mini/edit",
+  requireApiKey,
   async (req: Request, res: Response): Promise<void> => {
     try {
       const {
@@ -1679,6 +1703,7 @@ router.post(
 // JSON body: { prompt: string, references: string[], width?: number, height?: number, negativePrompt?: string, numberResults?: number, feature?: string }
 router.post(
   "/runware/riverflow-pro/edit",
+  requireApiKey,
   async (req: Request, res: Response): Promise<void> => {
     try {
       const {
@@ -1776,6 +1801,7 @@ router.post(
 // JSON body: { prompt: string, referenceImage: string, cfgScale?: number, feature?: string }
 router.post(
   "/runware/seededit/edit",
+  requireApiKey,
   async (req: Request, res: Response): Promise<void> => {
     try {
       const { prompt, referenceImage, referenceImages, cfgScale, feature } =
@@ -1880,6 +1906,7 @@ router.post(
 // JSON body: { prompt: string, seedImage: string, maskImage: string, width?: number, height?: number, ideogramSettings?: object, feature?: string }
 router.post(
   "/runware/ideogram/edit",
+  requireApiKey,
   async (req: Request, res: Response): Promise<void> => {
     try {
       const {
@@ -2061,6 +2088,7 @@ router.post(
 // JSON body: { prompt: string, seedImage: string, width?: number, height?: number, ideogramSettings?: object, feature?: string }
 router.post(
   "/runware/ideogram/reframe",
+  requireApiKey,
   async (req: Request, res: Response): Promise<void> => {
     try {
       const { prompt, seedImage, width, height, ideogramSettings, feature } =
@@ -2278,6 +2306,7 @@ async function pollEachLabsPrediction(
 // JSON body: { prompt: string, negativePrompt?: string, imageSize?: string, numImages?: number, numInferenceSteps?: number, guidanceScale?: number, enableSafetyChecker?: boolean, outputFormat?: string, feature?: string }
 router.post(
   "/runware/hunyuan/generate",
+  requireApiKey,
   async (req: Request, res: Response): Promise<void> => {
     try {
       const {
