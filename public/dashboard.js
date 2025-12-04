@@ -3641,8 +3641,11 @@ function showFeatureDetailPage(endpoint, sourceTab = "filters") {
             cancelBtn.onclick();
             return;
           }
+          const apiPath = isPhotoFeature
+            ? "/api/photo-features"
+            : "/api/features";
           const res = await fetch(
-            `/api/features/${encodeURIComponent(feature.endpoint)}/rename`,
+            `${apiPath}/${encodeURIComponent(feature.endpoint)}/rename`,
             {
               method: "PUT",
               headers: { "Content-Type": "application/json" },
@@ -3703,8 +3706,11 @@ function showFeatureDetailPage(endpoint, sourceTab = "filters") {
             cancelBtn.onclick();
             return;
           }
+          const promptApiPath = isPhotoFeature
+            ? "/api/photo-features"
+            : "/api/features";
           const res = await fetch(
-            `/api/features/${encodeURIComponent(feature.endpoint)}`,
+            `${promptApiPath}/${encodeURIComponent(feature.endpoint)}`,
             {
               method: "PUT",
               headers: { "Content-Type": "application/json" },
@@ -3738,9 +3744,15 @@ function showFeatureDetailPage(endpoint, sourceTab = "filters") {
     if (deleteBtn && page) {
       deleteBtn.onclick = async function () {
         if (confirm("Delete this feature?")) {
-          await fetch(`/api/features/${encodeURIComponent(feature.endpoint)}`, {
-            method: "DELETE",
-          });
+          const deleteApiPath = isPhotoFeature
+            ? "/api/photo-features"
+            : "/api/features";
+          await fetch(
+            `${deleteApiPath}/${encodeURIComponent(feature.endpoint)}`,
+            {
+              method: "DELETE",
+            }
+          );
           page.classList.add("hidden");
           loadFeatures();
           const filtersTab = document.getElementById("tab-filters");
