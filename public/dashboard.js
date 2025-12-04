@@ -934,10 +934,12 @@ window.switchTab = function (tabName) {
     featuresInitialRequested = true;
   } else if (showId === "tab-photo-filters") {
     if (!photoFeaturesInitialRequested) {
-      loadAllPhotoFeatures().then(() => displayPhotoFeatures());
+      Promise.all([loadAllPhotoFeatures(), loadPhotoGraphics()]).then(() =>
+        displayPhotoFeatures()
+      );
       photoFeaturesInitialRequested = true;
     } else {
-      displayPhotoFeatures();
+      loadPhotoGraphics().then(() => displayPhotoFeatures());
     }
   } else if (showId === "tab-cartoon-characters") {
     if (!cartoonCharactersInitialRequested) {
@@ -2292,6 +2294,7 @@ let templates = [];
 let availableEndpoints = [];
 let featureGraphics = {};
 let latestVideos = {};
+let photoGraphics = {};
 
 // Display features
 function displayFeatures() {
@@ -2377,10 +2380,9 @@ function displayPhotoFeatures() {
   const grid = document.getElementById("photoFeaturesGrid");
   if (!grid) return;
 
-  const graphicsCount = Object.keys(featureGraphics).length;
-  const videosCount = Object.keys(latestVideos).length;
+  const graphicsCount = Object.keys(photoGraphics).length;
   console.log(
-    `displayPhotoFeatures: ${graphicsCount} graphics, ${videosCount} videos available`
+    `displayPhotoFeatures: ${graphicsCount} photo graphics available`
   );
 
   const searchInput = document.getElementById("photoFeatureSearch");
@@ -2389,36 +2391,34 @@ function displayPhotoFeatures() {
   function renderFeatureCards(featureArr) {
     const cardsHtml = featureArr
       .map((feature) => {
-        const videoUrl =
-          featureGraphics[feature.endpoint] || latestVideos[feature.endpoint];
+        const photoUrl = photoGraphics[feature.endpoint];
         const playable =
-          videoUrl && typeof videoUrl === "object"
-            ? videoUrl.signedUrl || videoUrl.url
-            : videoUrl;
-        const videoHtml = playable
-          ? `<div class="video-preview lazy-video" data-src="${playable}">
-                         <div class="video-skeleton" style="width:100%;height:180px;background:#111;display:flex;align-items:center;justify-content:center;color:#999;font-size:12px;border-radius:4px;">Loading preview...</div>
+          photoUrl && typeof photoUrl === "object"
+            ? photoUrl.signedUrl || photoUrl.url
+            : photoUrl;
+        const photoHtml = playable
+          ? `<div class="photo-preview" style="width:100%;min-height:120px;max-height:300px;border-radius:4px;overflow:hidden;display:flex;align-items:center;justify-content:center;background:#f9fafb;">
+                         <img src="${playable}" alt="${feature.endpoint}" style="max-width:100%;max-height:300px;height:auto;width:auto;object-fit:contain;" onerror="this.parentElement.innerHTML='<div style=\\'width:100%;height:180px;background:#f3f4f6;display:flex;align-items:center;justify-content:center;color:#9ca3af;font-size:12px;\\'>Image failed to load</div>'" />
                        </div>`
-          : `<div class=\"video-preview\"> 
-               <div class=\"bg-gray-100 rounded-lg p-8 text-center text-gray-500\">
-                 <i class=\"fas fa-video text-3xl mb-2\"></i>
-                 <div>No video generated yet</div>
+          : `<div class="photo-preview"> 
+               <div class="bg-gray-100 rounded-lg p-8 text-center text-gray-500" style="height:180px;display:flex;flex-direction:column;align-items:center;justify-content:center;">
+                 <i class="fas fa-image text-3xl mb-2"></i>
+                 <div>No photo generated yet</div>
                </div>
              </div>`;
         return `
-          <div class=\"feature-card bg-white rounded-lg shadow p-4 flex flex-col gap-2 cursor-pointer\" data-endpoint=\"${feature.endpoint}\"> 
-            <div class=\"feature-name font-semibold text-lg mb-2\">${feature.endpoint}</div>
-            ${videoHtml}
-            <div class=\"text-gray-600 text-sm mt-1\"></div>
-            <div class=\"mt-2\">
-              <button class=\"view-feature-details px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700\">View details</button>
+          <div class="feature-card bg-white rounded-lg shadow p-4 flex flex-col gap-2 cursor-pointer" data-endpoint="${feature.endpoint}"> 
+            <div class="feature-name font-semibold text-lg mb-2">${feature.endpoint}</div>
+            ${photoHtml}
+            <div class="text-gray-600 text-sm mt-1"></div>
+            <div class="mt-2">
+              <button class="view-feature-details px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700">View details</button>
             </div>
           </div>
         `;
       })
       .join("");
     grid.innerHTML = cardsHtml;
-    if (window.initializeLazyVideos) window.initializeLazyVideos();
     grid.addEventListener("click", (e) => {
       const btn = e.target.closest(".view-feature-details");
       if (btn) {
@@ -3475,7 +3475,7 @@ function showFeatureDetailPage(endpoint, sourceTab = "filters") {
               featurePhotoEl.src = imageUrl;
               featurePhotoEl.style.display = "block";
             }
-            featureGraphics[feature.endpoint] = imageUrl;
+            photoGraphics[feature.endpoint] = imageUrl;
             displayPhotoFeatures();
             if (genStatus) {
               genStatus.textContent = "Photo generated!";
@@ -3807,6 +3807,32 @@ async function loadFeatureGraphics() {
     // Non-fatal: just proceed without persisted graphics
     featureGraphics = {};
     latestVideos = {};
+  }
+}
+
+// Load photo graphics from backend (latest generated photo per photo feature)
+async function loadPhotoGraphics() {
+  try {
+    console.log("Loading photo graphics...");
+    const res = await fetch("/api/photo-graphic");
+    const data = await res.json();
+    console.log("Photo graphics data received:", data.length, "items");
+
+    photoGraphics = {};
+    if (Array.isArray(data)) {
+      data.forEach((g) => {
+        photoGraphics[g.endpoint] = g.graphicUrl;
+      });
+    }
+    console.log(
+      "Photo graphics loaded:",
+      Object.keys(photoGraphics).length,
+      "items"
+    );
+  } catch (e) {
+    console.error("Error loading photo graphics:", e);
+    // Non-fatal: just proceed without persisted graphics
+    photoGraphics = {};
   }
 }
 
