@@ -370,6 +370,7 @@ const PHOTO_MODEL_OPTIONS = [
     label: "Qwen Image Edit Plus (Runware, image editing)",
     requiresReferences: true,
   },
+  { value: "midjourney:3@1", label: "Midjourney V7 (Runware)" },
   { value: "bytedance:5@0", label: "Seeddream 4.0 (Runware)" },
   {
     value: "google:2@1",
@@ -929,6 +930,7 @@ window.switchTab = function (tabName) {
   if (showEl) showEl.classList.remove("hidden");
 
   // Only load features on tab switch if not already loaded
+  // Skip re-rendering if we're returning from detail page (scroll restoration handles this)
   if (showId === "tab-filters" && !featuresInitialRequested) {
     loadAllFeatures();
     featuresInitialRequested = true;
@@ -938,9 +940,12 @@ window.switchTab = function (tabName) {
         displayPhotoFeatures()
       );
       photoFeaturesInitialRequested = true;
-    } else {
+    } else if (!isReturningFromDetailPage) {
+      // Only reload graphics if not returning from detail page
       loadPhotoGraphics().then(() => displayPhotoFeatures());
     }
+    // Reset the flag after handling
+    isReturningFromDetailPage = false;
   } else if (showId === "tab-cartoon-characters") {
     if (!cartoonCharactersInitialRequested) {
       loadAllCartoonCharacters().then(() => displayCartoonCharacters());
@@ -1046,6 +1051,7 @@ let photoFeatures = [];
 let photoFeaturesLoading = false;
 let photoFeaturesInitialRequested = false;
 let savedScrollPosition = 0;
+let isReturningFromDetailPage = false;
 
 // === Cartoon Characters tab state ===
 let cartoonCharacters = [];
@@ -3916,6 +3922,9 @@ function closeFeatureDetailPage() {
   // Use the normal tab switching functionality to show the originating tab
   const targetTab =
     featureDetailOriginTab === "photo-filters" ? "photo-filters" : "filters";
+
+  // Set flag to prevent re-rendering which would interfere with scroll restoration
+  isReturningFromDetailPage = true;
   switchTab(targetTab);
 
   // Restore the saved scroll position with multiple attempts to handle DOM updates
@@ -4139,33 +4148,75 @@ function showStepDetailPage(templateId, stepIndex, subcatIndex) {
   stepDetailPage.classList.remove("hidden");
   stepDetailPage.style.display = ""; // Reset any inline display style
 
-  // Load existing generated videos for this step's endpoint
+  // Load existing generated videos for this step's endpoint and apps
   const generatedListEl = document.getElementById("stepGeneratedList");
   if (generatedListEl && step.endpoint) {
     generatedListEl.innerHTML =
       '<div class="col-span-full text-xs text-gray-500 flex items-center gap-1"><svg class="animate-spin h-3 w-3 text-gray-400" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"></circle><path d="M4 12a8 8 0 018-8" stroke="currentColor" stroke-width="4" fill="none"></path></svg> Loading...</div>';
-    fetch(`/api/videos/${encodeURIComponent(step.endpoint)}`)
-      .then((r) => r.json())
-      .then((videos) => {
+
+    // Load both videos and apps in parallel
+    Promise.all([
+      fetch(`/api/videos/${encodeURIComponent(step.endpoint)}`).then((r) =>
+        r.json()
+      ),
+      fetch("/api/apps", { headers: apiKeyHeaders() }).then((r) => r.json()),
+    ])
+      .then(([videos, appsData]) => {
+        const allApps = appsData.success ? appsData.apps : [];
         if (!Array.isArray(videos) || videos.length === 0) {
           generatedListEl.innerHTML =
             '<div class="col-span-full text-xs text-gray-500">No videos yet for this endpoint.</div>';
           return;
         }
+
         const html = videos
           .map((v) => {
             const vidUrl = v.signedUrl || v.url;
             const deleteBtn = isAdmin()
               ? `<button class="absolute top-1 right-1 bg-red-600/80 text-white text-[10px] px-1.5 py-0.5 rounded opacity-0 group-hover:opacity-100 transition delete-step-video-btn" title="Delete video"><svg xmlns='http://www.w3.org/2000/svg' width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' class='pointer-events-none'><path d='M3 6h18'/><path d='M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2'/><path d='M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6'/><path d='M10 11v6'/><path d='M14 11v6'/></svg></button>`
               : "";
-            return `<div class="relative rounded-lg overflow-hidden border border-gray-200 hover:border-blue-400 hover:shadow group step-detail-thumb" data-url="${vidUrl}" data-key="${
+
+            // Create app checkboxes for this video (admin only)
+            let appCheckboxesHtml = "";
+            if (isAdmin() && allApps.length > 0) {
+              const allowedAppIds = new Set((v.apps || []).map((a) => a.appId));
+              appCheckboxesHtml = `
+                <div class="mt-2 p-2 bg-gray-50 rounded border border-gray-200">
+                  <div class="text-[10px] font-semibold text-gray-600 mb-1">Allowed Apps:</div>
+                  <div class="flex flex-col gap-1 max-h-24 overflow-y-auto">
+                    ${allApps
+                      .map(
+                        (app) => `
+                      <label class="flex items-center gap-1 text-[10px] cursor-pointer hover:bg-white px-1 py-0.5 rounded">
+                        <input type="checkbox" 
+                          class="video-app-checkbox" 
+                          data-video-id="${v.id}" 
+                          data-app-id="${app.id}" 
+                          ${allowedAppIds.has(app.id) ? "checked" : ""} 
+                          style="width: 12px; height: 12px;">
+                        <span class="truncate" title="${app.name}">${
+                          app.name
+                        }</span>
+                      </label>
+                    `
+                      )
+                      .join("")}
+                  </div>
+                </div>
+              `;
+            }
+
+            return `<div class="step-video-card" style="display: flex; flex-direction: column;">
+              <div class="relative rounded-lg overflow-hidden border border-gray-200 hover:border-blue-400 hover:shadow group step-detail-thumb" data-url="${vidUrl}" data-key="${
               v.key || ""
-            }" data-endpoint="${
-              v.feature || ""
-            }" style="width:120px;height:213px;display:inline-block;vertical-align:top;background:#000;cursor:pointer;">
-       <video src="${vidUrl}" class="w-full h-full object-cover" preload="metadata" muted playsinline style="width:100%;height:100%;object-fit:cover;pointer-events:none;"></video>
-       ${deleteBtn}
-     </div>`;
+            }" data-endpoint="${v.feature || ""}" data-video-id="${
+              v.id
+            }" style="width:120px;height:213px;background:#000;cursor:pointer;">
+                <video src="${vidUrl}" class="w-full h-full object-cover" preload="metadata" muted playsinline style="width:100%;height:100%;object-fit:cover;pointer-events:none;"></video>
+                ${deleteBtn}
+              </div>
+              ${appCheckboxesHtml}
+            </div>`;
           })
           .join("");
         generatedListEl.innerHTML = html;
@@ -4205,10 +4256,53 @@ function showStepDetailPage(templateId, stepIndex, subcatIndex) {
         generatedListEl.querySelectorAll(".step-detail-thumb").forEach((el) => {
           el.addEventListener("click", (e) => {
             if (e.target.classList.contains("delete-step-video-btn")) return;
+            if (e.target.classList.contains("video-app-checkbox")) return;
             const url = el.getAttribute("data-url");
             if (url) showStepVideoModal(url);
           });
         });
+
+        // Handle app checkbox changes
+        generatedListEl
+          .querySelectorAll(".video-app-checkbox")
+          .forEach((checkbox) => {
+            checkbox.addEventListener("change", async (e) => {
+              const videoId = parseInt(checkbox.dataset.videoId);
+              const appId = parseInt(checkbox.dataset.appId);
+              const isChecked = checkbox.checked;
+
+              try {
+                const response = await fetch("/api/videos/app-permission", {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                    ...apiKeyHeaders(),
+                  },
+                  body: JSON.stringify({
+                    videoId,
+                    appId,
+                    allowed: isChecked,
+                  }),
+                });
+
+                if (!response.ok) {
+                  throw new Error("Failed to update permission");
+                }
+
+                // Show brief success feedback
+                const card = checkbox.closest(".step-video-card");
+                const originalBg = card.style.backgroundColor;
+                card.style.backgroundColor = "#d1fae5";
+                setTimeout(() => {
+                  card.style.backgroundColor = originalBg;
+                }, 300);
+              } catch (error) {
+                console.error("Error updating app permission:", error);
+                checkbox.checked = !isChecked; // Revert on error
+                alert("Failed to update app permission");
+              }
+            });
+          });
         // Deletion
         generatedListEl
           .querySelectorAll(".delete-step-video-btn")

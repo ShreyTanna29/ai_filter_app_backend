@@ -16,6 +16,7 @@ const express_1 = require("express");
 const multer_1 = __importDefault(require("multer"));
 const axios_1 = __importDefault(require("axios"));
 const https_1 = __importDefault(require("https"));
+const apiKey_1 = require("../middleware/apiKey");
 // Optional but highly recommended: compress large seed images before upload
 // This reduces payload size and avoids gateway timeouts.
 let sharp = null; // use 'any' to avoid type resolution when package isn't installed
@@ -198,6 +199,12 @@ const GPT_IMAGE_1_DIMENSIONS = [
     { width: 1024, height: 1536 }, // 2:3 portrait
 ];
 const GPT_IMAGE_1_DEFAULT_DIMENSION = GPT_IMAGE_1_DIMENSIONS[0]; // 1024x1024
+// FLUX.1 Schnell - Black Forest Labs' fastest model
+const FLUX1_SCHNELL_MODEL_ID = "bfl:2@1";
+// FLUX.1 Dev - Black Forest Labs' development model
+const FLUX1_DEV_MODEL_ID = "bfl:1@8";
+// FLUX.1 Pro - Black Forest Labs' professional model
+const FLUX1_PRO_MODEL_ID = "bfl:1@4";
 // FLUX.2 [dev] - Black Forest Labs' open weights model with full architectural control
 // Dimensions: 512-2048 pixels (multiples of 16), up to 4 reference images
 // CFG Scale: 1-20 (default 4), Steps: 1-50, Acceleration: none/low/medium/high
@@ -212,6 +219,21 @@ const HIDREAM_FULL_MODEL_ID = "runware:97@1";
 const QWEN_IMAGE_MODEL_ID = "runware:108@1";
 // Qwen Image Edit Plus - Alibaba's image editing model via Runware
 const QWEN_IMAGE_EDIT_PLUS_MODEL_ID = "runware:108@22";
+// Midjourney V7 - Next-generation Midjourney with enhanced realism and control
+// Supports: text-to-image, image-to-image, 1 reference image via inputs.referenceImages
+// Number of results: Must be multiple of 4 (4, 8, 12, 16, 20, Default: 4)
+const MIDJOURNEY_V7_MODEL_ID = "midjourney:3@1";
+const MIDJOURNEY_V7_DIMENSIONS = [
+    { width: 1456, height: 816 }, // 16:9
+    { width: 816, height: 1456 }, // 9:16
+    { width: 1024, height: 1024 }, // 1:1
+    { width: 1232, height: 928 }, // 4:3
+    { width: 928, height: 1232 }, // 3:4
+    { width: 1344, height: 896 }, // 3:2
+    { width: 896, height: 1344 }, // 2:3
+    { width: 1680, height: 720 }, // 21:9
+];
+const MIDJOURNEY_V7_DEFAULT_DIMENSION = MIDJOURNEY_V7_DIMENSIONS[0]; // 1456x816 (16:9)
 const IDEOGRAM_MODEL_ID = "ideogram:4@1";
 const IDEOGRAM_REMIX_MODEL_ID = "ideogram:4@2";
 const IDEOGRAM_EDIT_MODEL_ID = "ideogram:4@3";
@@ -679,7 +701,7 @@ function getRunwareHeaders() {
 }
 // POST /api/runware/upload-image
 // Accepts multipart/form-data (field: image) OR JSON body { imageUrl }
-router.post("/runware/upload-image", upload.single("image"), (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+router.post("/runware/upload-image", apiKey_1.requireApiKey, upload.single("image"), (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     var _a, _b, _c, _d, _e;
     try {
         let imageParam;
@@ -766,7 +788,7 @@ router.post("/runware/upload-image", upload.single("image"), (req, res) => __awa
 }));
 // POST /api/runware/generate-photo
 // JSON body: { feature?: string, prompt: string, model?: string, width?: number, height?: number, seedImage?: string }
-router.post("/runware/generate-photo", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+router.post("/runware/generate-photo", apiKey_1.requireApiKey, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     var _a, _b, _c, _d, _e, _f;
     try {
         const { feature, prompt, model, width, height, seedImage, negativePrompt, steps, cfgScale, numberResults, ideogramSettings, referenceImages, referenceImage, referenceImageUUID, } = req.body || {};
@@ -777,12 +799,42 @@ router.post("/runware/generate-photo", (req, res) => __awaiter(void 0, void 0, v
             res.status(400).json({ success: false, error: "'prompt' is required" });
             return;
         }
+        // If model is not provided but feature is, fetch model from Photo_Features table
+        let resolvedModel = model;
+        if (!resolvedModel && feature && typeof feature === "string") {
+            try {
+                const photoFeature = yield prisma_1.default.photo_Features.findUnique({
+                    where: { endpoint: feature.trim() },
+                    select: { model: true },
+                });
+                if (photoFeature === null || photoFeature === void 0 ? void 0 : photoFeature.model) {
+                    resolvedModel = photoFeature.model;
+                }
+            }
+            catch (dbErr) {
+                console.warn("Failed to fetch model from Photo_Features:", (dbErr === null || dbErr === void 0 ? void 0 : dbErr.message) || dbErr);
+            }
+        }
         // Model normalization: map friendly aliases to known model IDs when possible
-        const clientModel = (model && String(model)) || "";
+        const clientModel = (resolvedModel && String(resolvedModel)) || "";
         const normalizedModel = clientModel.trim().toLowerCase();
         let chosenModel = clientModel || "bfl:2@1"; // default to a stable FLUX variant
         if (/^flux[-_\s]*schnell$/i.test(clientModel)) {
             chosenModel = "bfl:2@1";
+        }
+        else if (/^flux[-_\s]*1[-_\s]*dev$/i.test(clientModel) ||
+            /^flux\.?1[-_\s]*dev$/i.test(clientModel) ||
+            normalizedModel === "flux 1 dev" ||
+            normalizedModel === "flux.1 dev" ||
+            normalizedModel === "flux1dev") {
+            chosenModel = FLUX1_DEV_MODEL_ID;
+        }
+        else if (/^flux[-_\s]*1[-_\s]*pro$/i.test(clientModel) ||
+            /^flux\.?1[-_\s]*pro$/i.test(clientModel) ||
+            normalizedModel === "flux 1 pro" ||
+            normalizedModel === "flux.1 pro" ||
+            normalizedModel === "flux1pro") {
+            chosenModel = FLUX1_PRO_MODEL_ID;
         }
         else if (normalizedModel === "seeddream" ||
             normalizedModel === "seeddream4" ||
@@ -936,6 +988,16 @@ router.post("/runware/generate-photo", (req, res) => __awaiter(void 0, void 0, v
         }
         if (clientModel === HUNYUAN_IMAGE_V3_MODEL_ID) {
             chosenModel = HUNYUAN_IMAGE_V3_MODEL_ID;
+        }
+        // FLUX.1 models - pass through as-is if they match the AIR format
+        if (clientModel === FLUX1_SCHNELL_MODEL_ID) {
+            chosenModel = FLUX1_SCHNELL_MODEL_ID;
+        }
+        if (clientModel === FLUX1_DEV_MODEL_ID) {
+            chosenModel = FLUX1_DEV_MODEL_ID;
+        }
+        if (clientModel === FLUX1_PRO_MODEL_ID) {
+            chosenModel = FLUX1_PRO_MODEL_ID;
         }
         // Hunyuan Image V3 uses EachLabs API - redirect to dedicated endpoint
         const isHunyuanImageV3 = chosenModel === HUNYUAN_IMAGE_V3_MODEL_ID;
@@ -1290,7 +1352,7 @@ router.post("/runware/generate-photo", (req, res) => __awaiter(void 0, void 0, v
 }));
 // POST /api/runware/riverflow/edit
 // JSON body: { prompt: string, references: string[], width?: number, height?: number, negativePrompt?: string, numberResults?: number, feature?: string }
-router.post("/runware/riverflow/edit", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+router.post("/runware/riverflow/edit", apiKey_1.requireApiKey, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     var _a, _b, _c, _d;
     try {
         const { prompt, references, width, height, negativePrompt, numberResults, feature, } = req.body || {};
@@ -1372,7 +1434,7 @@ router.post("/runware/riverflow/edit", (req, res) => __awaiter(void 0, void 0, v
 // POST /api/runware/riverflow-mini/edit
 // Riverflow 1.1 Mini - fast and cost-efficient image-to-image editing
 // JSON body: { prompt: string, references: string[], width?: number, height?: number, negativePrompt?: string, numberResults?: number, feature?: string }
-router.post("/runware/riverflow-mini/edit", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+router.post("/runware/riverflow-mini/edit", apiKey_1.requireApiKey, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     var _a, _b, _c, _d, _e;
     try {
         const { prompt, references, width, height, negativePrompt, numberResults, feature, } = req.body || {};
@@ -1447,7 +1509,7 @@ router.post("/runware/riverflow-mini/edit", (req, res) => __awaiter(void 0, void
 // POST /api/runware/riverflow-pro/edit
 // Riverflow 1.1 Pro - advanced image-to-image editing with superior quality and precision
 // JSON body: { prompt: string, references: string[], width?: number, height?: number, negativePrompt?: string, numberResults?: number, feature?: string }
-router.post("/runware/riverflow-pro/edit", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+router.post("/runware/riverflow-pro/edit", apiKey_1.requireApiKey, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     var _a, _b, _c, _d, _e;
     try {
         const { prompt, references, width, height, negativePrompt, numberResults, feature, } = req.body || {};
@@ -1522,7 +1584,7 @@ router.post("/runware/riverflow-pro/edit", (req, res) => __awaiter(void 0, void 
 // POST /api/runware/seededit/edit
 // SeedEdit 3.0 - ByteDance's flagship image editing with advanced instruction-following
 // JSON body: { prompt: string, referenceImage: string, cfgScale?: number, feature?: string }
-router.post("/runware/seededit/edit", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+router.post("/runware/seededit/edit", apiKey_1.requireApiKey, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     var _a, _b, _c, _d, _e;
     try {
         const { prompt, referenceImage, referenceImages, cfgScale, feature } = req.body || {};
@@ -1613,7 +1675,7 @@ router.post("/runware/seededit/edit", (req, res) => __awaiter(void 0, void 0, vo
 // POST /api/runware/ideogram/edit
 // Ideogram 3.0 Edit (Inpainting) - surgically edit or replace parts of an image
 // JSON body: { prompt: string, seedImage: string, maskImage: string, width?: number, height?: number, ideogramSettings?: object, feature?: string }
-router.post("/runware/ideogram/edit", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+router.post("/runware/ideogram/edit", apiKey_1.requireApiKey, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     var _a, _b, _c, _d;
     try {
         const { prompt, seedImage, maskImage, width, height, ideogramSettings, feature, } = req.body || {};
@@ -1755,7 +1817,7 @@ router.post("/runware/ideogram/edit", (req, res) => __awaiter(void 0, void 0, vo
 // POST /api/runware/ideogram/reframe
 // Ideogram 3.0 Reframe (Outpainting) - expand visuals beyond original borders
 // JSON body: { prompt: string, seedImage: string, width?: number, height?: number, ideogramSettings?: object, feature?: string }
-router.post("/runware/ideogram/reframe", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+router.post("/runware/ideogram/reframe", apiKey_1.requireApiKey, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     var _a, _b, _c, _d;
     try {
         const { prompt, seedImage, width, height, ideogramSettings, feature } = req.body || {};
@@ -1924,7 +1986,7 @@ function pollEachLabsPrediction(predictionId_1) {
 // POST /api/runware/hunyuan/generate
 // Hunyuan Image V3 - Tencent's text-to-image model via EachLabs
 // JSON body: { prompt: string, negativePrompt?: string, imageSize?: string, numImages?: number, numInferenceSteps?: number, guidanceScale?: number, enableSafetyChecker?: boolean, outputFormat?: string, feature?: string }
-router.post("/runware/hunyuan/generate", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+router.post("/runware/hunyuan/generate", apiKey_1.requireApiKey, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     var _a, _b, _c, _d, _e, _f, _g;
     try {
         const { prompt, negativePrompt, imageSize, numImages, numInferenceSteps, guidanceScale, enableSafetyChecker, outputFormat, feature, 

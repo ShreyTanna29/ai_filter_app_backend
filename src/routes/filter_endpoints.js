@@ -192,7 +192,25 @@ router.get("/videos/:endpoint", (req, res) => __awaiter(void 0, void 0, void 0, 
     try {
         // Get videos directly from S3 bucket for this feature
         const videos = yield (0, s3_1.getVideosForFeatureFromS3)(req.params.endpoint);
-        // Sign S3 URLs for access
+        // Get database records with app permissions
+        const dbVideos = yield prisma_1.default.generatedVideo.findMany({
+            where: { feature: req.params.endpoint },
+            include: {
+                apps: {
+                    include: {
+                        app: {
+                            select: {
+                                id: true,
+                                name: true,
+                            },
+                        },
+                    },
+                },
+            },
+        });
+        // Create a map of URL to database record
+        const dbVideoMap = new Map(dbVideos.map((v) => [v.url, v]));
+        // Sign S3 URLs for access and merge with database records
         const out = yield Promise.all(videos.map((v, index) => __awaiter(void 0, void 0, void 0, function* () {
             let signed = v.url;
             try {
@@ -201,13 +219,15 @@ router.get("/videos/:endpoint", (req, res) => __awaiter(void 0, void 0, void 0, 
             catch (e) {
                 // keep original URL if signing fails
             }
+            const dbRecord = dbVideoMap.get(v.url);
             return {
-                id: index + 1, // Generate a pseudo-id based on index
+                id: (dbRecord === null || dbRecord === void 0 ? void 0 : dbRecord.id) || index + 1, // Use DB ID if exists, otherwise generate pseudo-id
                 feature: req.params.endpoint,
                 url: v.url,
                 key: v.key, // Include S3 key for deletion/selection operations
                 createdAt: v.lastModified,
                 signedUrl: signed,
+                apps: (dbRecord === null || dbRecord === void 0 ? void 0 : dbRecord.apps) || [], // Include app permissions
             };
         })));
         res.json(out);
@@ -240,6 +260,61 @@ router.delete("/videos/:endpoint", (req, res) => __awaiter(void 0, void 0, void 
     catch (error) {
         console.error("Error deleting generated video:", error);
         res.status(500).json({ error: "Failed to delete video" });
+    }
+}));
+// Update app permission for a generated video
+router.post("/videos/app-permission", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const { videoId, appId, allowed } = req.body;
+        if (!videoId || !appId || typeof allowed !== "boolean") {
+            res.status(400).json({
+                error: "Missing or invalid parameters: videoId, appId, and allowed are required",
+            });
+            return;
+        }
+        // Verify the video and app exist
+        const [video, app] = yield Promise.all([
+            prisma_1.default.generatedVideo.findUnique({ where: { id: videoId } }),
+            prisma_1.default.app.findUnique({ where: { id: appId } }),
+        ]);
+        if (!video) {
+            res.status(404).json({ error: "Video not found" });
+            return;
+        }
+        if (!app) {
+            res.status(404).json({ error: "App not found" });
+            return;
+        }
+        if (allowed) {
+            // Add permission if not exists
+            yield prisma_1.default.appGeneratedVideo.upsert({
+                where: {
+                    appId_generatedVideoId: {
+                        appId,
+                        generatedVideoId: videoId,
+                    },
+                },
+                update: {},
+                create: {
+                    appId,
+                    generatedVideoId: videoId,
+                },
+            });
+        }
+        else {
+            // Remove permission if exists
+            yield prisma_1.default.appGeneratedVideo.deleteMany({
+                where: {
+                    appId,
+                    generatedVideoId: videoId,
+                },
+            });
+        }
+        res.json({ success: true });
+    }
+    catch (error) {
+        console.error("Error updating app permission:", error);
+        res.status(500).json({ error: "Failed to update app permission" });
     }
 }));
 // Return latest S3 video per endpoint directly from S3 bucket

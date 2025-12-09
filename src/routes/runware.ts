@@ -201,6 +201,15 @@ const GPT_IMAGE_1_DIMENSIONS: Array<{ width: number; height: number }> = [
 ];
 const GPT_IMAGE_1_DEFAULT_DIMENSION = GPT_IMAGE_1_DIMENSIONS[0]; // 1024x1024
 
+// FLUX.1 Schnell - Black Forest Labs' fastest model
+const FLUX1_SCHNELL_MODEL_ID = "bfl:2@1";
+
+// FLUX.1 Dev - Black Forest Labs' development model
+const FLUX1_DEV_MODEL_ID = "bfl:1@8";
+
+// FLUX.1 Pro - Black Forest Labs' professional model
+const FLUX1_PRO_MODEL_ID = "bfl:1@4";
+
 // FLUX.2 [dev] - Black Forest Labs' open weights model with full architectural control
 // Dimensions: 512-2048 pixels (multiples of 16), up to 4 reference images
 // CFG Scale: 1-20 (default 4), Steps: 1-50, Acceleration: none/low/medium/high
@@ -220,6 +229,22 @@ const QWEN_IMAGE_MODEL_ID = "runware:108@1";
 
 // Qwen Image Edit Plus - Alibaba's image editing model via Runware
 const QWEN_IMAGE_EDIT_PLUS_MODEL_ID = "runware:108@22";
+
+// Midjourney V7 - Next-generation Midjourney with enhanced realism and control
+// Supports: text-to-image, image-to-image, 1 reference image via inputs.referenceImages
+// Number of results: Must be multiple of 4 (4, 8, 12, 16, 20, Default: 4)
+const MIDJOURNEY_V7_MODEL_ID = "midjourney:3@1";
+const MIDJOURNEY_V7_DIMENSIONS: Array<{ width: number; height: number }> = [
+  { width: 1456, height: 816 }, // 16:9
+  { width: 816, height: 1456 }, // 9:16
+  { width: 1024, height: 1024 }, // 1:1
+  { width: 1232, height: 928 }, // 4:3
+  { width: 928, height: 1232 }, // 3:4
+  { width: 1344, height: 896 }, // 3:2
+  { width: 896, height: 1344 }, // 2:3
+  { width: 1680, height: 720 }, // 21:9
+];
+const MIDJOURNEY_V7_DEFAULT_DIMENSION = MIDJOURNEY_V7_DIMENSIONS[0]; // 1456x816 (16:9)
 
 const IDEOGRAM_MODEL_ID = "ideogram:4@1";
 const IDEOGRAM_REMIX_MODEL_ID = "ideogram:4@2";
@@ -943,6 +968,22 @@ router.post(
       if (/^flux[-_\s]*schnell$/i.test(clientModel)) {
         chosenModel = "bfl:2@1";
       } else if (
+        /^flux[-_\s]*1[-_\s]*dev$/i.test(clientModel) ||
+        /^flux\.?1[-_\s]*dev$/i.test(clientModel) ||
+        normalizedModel === "flux 1 dev" ||
+        normalizedModel === "flux.1 dev" ||
+        normalizedModel === "flux1dev"
+      ) {
+        chosenModel = FLUX1_DEV_MODEL_ID;
+      } else if (
+        /^flux[-_\s]*1[-_\s]*pro$/i.test(clientModel) ||
+        /^flux\.?1[-_\s]*pro$/i.test(clientModel) ||
+        normalizedModel === "flux 1 pro" ||
+        normalizedModel === "flux.1 pro" ||
+        normalizedModel === "flux1pro"
+      ) {
+        chosenModel = FLUX1_PRO_MODEL_ID;
+      } else if (
         normalizedModel === "seeddream" ||
         normalizedModel === "seeddream4" ||
         normalizedModel === "seeddream 4" ||
@@ -1111,6 +1152,16 @@ router.post(
       }
       if (clientModel === HUNYUAN_IMAGE_V3_MODEL_ID) {
         chosenModel = HUNYUAN_IMAGE_V3_MODEL_ID;
+      }
+      // FLUX.1 models - pass through as-is if they match the AIR format
+      if (clientModel === FLUX1_SCHNELL_MODEL_ID) {
+        chosenModel = FLUX1_SCHNELL_MODEL_ID;
+      }
+      if (clientModel === FLUX1_DEV_MODEL_ID) {
+        chosenModel = FLUX1_DEV_MODEL_ID;
+      }
+      if (clientModel === FLUX1_PRO_MODEL_ID) {
+        chosenModel = FLUX1_PRO_MODEL_ID;
       }
 
       // Hunyuan Image V3 uses EachLabs API - redirect to dedicated endpoint

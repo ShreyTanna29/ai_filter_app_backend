@@ -210,7 +210,27 @@ router.get("/videos/:endpoint", async (req: Request, res: Response) => {
     // Get videos directly from S3 bucket for this feature
     const videos = await getVideosForFeatureFromS3(req.params.endpoint);
 
-    // Sign S3 URLs for access
+    // Get database records with app permissions
+    const dbVideos = await prisma.generatedVideo.findMany({
+      where: { feature: req.params.endpoint },
+      include: {
+        apps: {
+          include: {
+            app: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    // Create a map of URL to database record
+    const dbVideoMap = new Map(dbVideos.map((v) => [v.url, v]));
+
+    // Sign S3 URLs for access and merge with database records
     const out = await Promise.all(
       videos.map(async (v, index) => {
         let signed = v.url;
@@ -219,13 +239,16 @@ router.get("/videos/:endpoint", async (req: Request, res: Response) => {
         } catch (e) {
           // keep original URL if signing fails
         }
+
+        const dbRecord = dbVideoMap.get(v.url);
         return {
-          id: index + 1, // Generate a pseudo-id based on index
+          id: dbRecord?.id || index + 1, // Use DB ID if exists, otherwise generate pseudo-id
           feature: req.params.endpoint,
           url: v.url,
           key: v.key, // Include S3 key for deletion/selection operations
           createdAt: v.lastModified,
           signedUrl: signed,
+          apps: dbRecord?.apps || [], // Include app permissions
         };
       })
     );
@@ -263,6 +286,71 @@ router.delete("/videos/:endpoint", async (req: Request, res: Response) => {
   } catch (error) {
     console.error("Error deleting generated video:", error);
     res.status(500).json({ error: "Failed to delete video" });
+  }
+});
+
+// Update app permission for a generated video
+router.post("/videos/app-permission", async (req: Request, res: Response) => {
+  try {
+    const { videoId, appId, allowed } = req.body as {
+      videoId?: number;
+      appId?: number;
+      allowed?: boolean;
+    };
+
+    if (!videoId || !appId || typeof allowed !== "boolean") {
+      res.status(400).json({
+        error:
+          "Missing or invalid parameters: videoId, appId, and allowed are required",
+      });
+      return;
+    }
+
+    // Verify the video and app exist
+    const [video, app] = await Promise.all([
+      prisma.generatedVideo.findUnique({ where: { id: videoId } }),
+      prisma.app.findUnique({ where: { id: appId } }),
+    ]);
+
+    if (!video) {
+      res.status(404).json({ error: "Video not found" });
+      return;
+    }
+
+    if (!app) {
+      res.status(404).json({ error: "App not found" });
+      return;
+    }
+
+    if (allowed) {
+      // Add permission if not exists
+      await prisma.appGeneratedVideo.upsert({
+        where: {
+          appId_generatedVideoId: {
+            appId,
+            generatedVideoId: videoId,
+          },
+        },
+        update: {},
+        create: {
+          appId,
+          generatedVideoId: videoId,
+        },
+      });
+    } else {
+      // Remove permission if exists
+      await prisma.appGeneratedVideo.deleteMany({
+        where: {
+          appId,
+          generatedVideoId: videoId,
+        },
+      });
+    }
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Error updating app permission:", error);
+    res.status(500).json({ error: "Failed to update app permission" });
   }
 });
 
