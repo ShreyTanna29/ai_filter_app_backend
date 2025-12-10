@@ -6944,4 +6944,667 @@ router.post(
   }
 );
 
+// Text-to-Video endpoint (no image required) - Supports Veo 3 Fast and PixVerse v5
+router.post(
+  "/text-to-video/:feature",
+  requireApiKey,
+  async (req: Request, res: Response): Promise<void> => {
+    const startTime = Date.now();
+    const { feature } = req.params;
+    const apiKeyOwner = (req as any).apiKeyOwner;
+    const appId = apiKeyOwner?.type === "app" ? apiKeyOwner.app?.id : undefined;
+
+    let userModel: string | undefined;
+
+    try {
+      const { prompt, model, negativePrompt } = req.body;
+
+      // Validate prompt
+      if (!prompt || typeof prompt !== "string" || !prompt.trim()) {
+        await logAppApiCall(
+          appId,
+          feature,
+          "video",
+          undefined,
+          "error",
+          "Prompt is required for text-to-video",
+          Date.now() - startTime
+        );
+        res.status(400).json({
+          success: false,
+          error: "Prompt is required for text-to-video generation",
+        });
+        return;
+      }
+
+      // Get feature from DB for model fallback
+      const featureObj = await prisma.features.findUnique({
+        where: { endpoint: feature },
+      });
+
+      // Check app permissions
+      if (apiKeyOwner?.type === "app" && apiKeyOwner.app) {
+        const permAppId = apiKeyOwner.app.id;
+        let hasPermission = false;
+
+        if (featureObj) {
+          const allowed = await prisma.appFeature.findFirst({
+            where: { appId: permAppId, featureId: featureObj.id },
+          });
+          hasPermission = !!allowed;
+        }
+
+        if (!hasPermission) {
+          const errorMsg = `This app does not have permission to use the "${feature}" feature`;
+          await logAppApiCall(
+            appId,
+            feature,
+            "video",
+            undefined,
+            "error",
+            errorMsg,
+            Date.now() - startTime
+          );
+          res.status(403).json({
+            success: false,
+            error: errorMsg,
+          });
+          return;
+        }
+      }
+
+      // Determine model
+      const userModelFromRequest =
+        typeof model === "string" ? model.trim() : "";
+      const modelFromDb = featureObj?.model || "";
+      userModel = userModelFromRequest || modelFromDb;
+
+      if (!userModel) {
+        await logAppApiCall(
+          appId,
+          feature,
+          "video",
+          undefined,
+          "error",
+          "Model is required",
+          Date.now() - startTime
+        );
+        res.status(400).json({
+          success: false,
+          error:
+            "Model is required (either in request body or configured in the feature)",
+        });
+        return;
+      }
+
+      const rawModel = userModel;
+      const isVeo3 = /veo[\s-]*3(?!\s*fast)|google:3@0/i.test(rawModel);
+      const isPixverseV5 = /pixverse[\s-]*v5/i.test(rawModel);
+
+      if (!isVeo3 && !isPixverseV5) {
+        await logAppApiCall(
+          appId,
+          feature,
+          "video",
+          userModel,
+          "error",
+          "Unsupported model for text-to-video",
+          Date.now() - startTime
+        );
+        res.status(400).json({
+          success: false,
+          error:
+            'Only "veo 3" (google:3@0) and "pixverse v5" models are supported for text-to-video',
+        });
+        return;
+      }
+
+      // Google Veo 3 - Text-to-Video via Runware
+      if (isVeo3) {
+        try {
+          console.log("[Veo3 T2V] Start generation", {
+            feature,
+            promptLength: prompt.length,
+          });
+
+          const runwareHeaders = {
+            Authorization: `Bearer ${
+              process.env.RUNWARE_API_KEY || process.env.RUNWARE_KEY
+            }`,
+            "Content-Type": "application/json",
+          };
+
+          // Veo 3 supports text-to-video (no image required)
+          const createdTaskUUID = randomUUID();
+          const task: any = {
+            taskType: "videoInference",
+            taskUUID: createdTaskUUID,
+            model: "google:3@0",
+            positivePrompt: prompt,
+            width: 1280,
+            height: 720,
+            duration: 8,
+            providerSettings: {
+              google: {
+                generateAudio: true,
+              },
+            },
+          };
+
+          if (negativePrompt && typeof negativePrompt === "string") {
+            task.negativePrompt = negativePrompt;
+          }
+
+          console.log("[Veo3 T2V] Created task", {
+            taskUUID: createdTaskUUID,
+          });
+
+          const createResp = await axios.post(
+            "https://api.runware.ai/v1",
+            [task],
+            {
+              headers: runwareHeaders,
+              timeout: 180000,
+            }
+          );
+
+          const data = createResp.data;
+          const ackItem = Array.isArray(data?.data)
+            ? data.data.find((d: any) => d?.taskType === "videoInference") ||
+              data.data[0]
+            : data?.data;
+          let videoUrl =
+            ackItem?.videoURL ||
+            ackItem?.url ||
+            ackItem?.video ||
+            (Array.isArray(ackItem?.videos) ? ackItem.videos[0] : null);
+          let pollTaskUUID: string = ackItem?.taskUUID || createdTaskUUID;
+
+          console.log("[Veo3 T2V] Ack response", {
+            ackTaskUUID: ackItem?.taskUUID,
+            createdTaskUUID,
+            chosenPollTaskUUID: pollTaskUUID,
+            immediateVideo: !!videoUrl,
+            status: ackItem?.status || ackItem?.taskStatus,
+          });
+
+          // Poll for completion
+          if (!videoUrl && pollTaskUUID) {
+            const maxAttempts = 150;
+            const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
+            let consecutive400 = 0;
+
+            for (let attempt = 0; attempt < maxAttempts; attempt++) {
+              await delay(3000);
+              const pollPayload = [
+                { taskType: "getResponse", taskUUID: pollTaskUUID },
+              ];
+
+              try {
+                const poll = await axios.post(
+                  "https://api.runware.ai/v1",
+                  pollPayload,
+                  { headers: runwareHeaders, timeout: 60000 }
+                );
+                const pd = poll.data;
+                const item = Array.isArray(pd?.data)
+                  ? pd.data.find(
+                      (d: any) => d?.taskUUID === pollTaskUUID || d?.videoURL
+                    ) || pd.data[0]
+                  : pd?.data;
+                const status = item?.status || item?.taskStatus;
+
+                if (status)
+                  console.log("[Veo3 T2V] Poll status", {
+                    attempt,
+                    status,
+                  });
+
+                if (status === "success" || item?.videoURL || item?.url) {
+                  videoUrl =
+                    item?.videoURL ||
+                    item?.url ||
+                    item?.video ||
+                    (Array.isArray(item?.videos) ? item.videos[0] : null);
+                  if (videoUrl) break;
+                }
+
+                if (status === "error" || status === "failed") {
+                  respondRunwareError(
+                    res,
+                    502,
+                    "Veo 3 text-to-video generation failed during polling",
+                    pd
+                  );
+                  return;
+                }
+                consecutive400 = 0;
+              } catch (e: any) {
+                const statusCode = e?.response?.status;
+                if (statusCode === 400) {
+                  consecutive400++;
+                  if (consecutive400 >= 3) {
+                    respondRunwareError(
+                      res,
+                      502,
+                      "Veo 3 polling failed with repeated 400 errors",
+                      e?.response?.data || e
+                    );
+                    return;
+                  }
+                } else {
+                  consecutive400 = 0;
+                }
+                console.log("[Veo3 T2V] Poll error (retrying)", {
+                  attempt,
+                  statusCode,
+                });
+              }
+            }
+          }
+
+          if (!videoUrl) {
+            res.status(502).json({
+              success: false,
+              error: "Veo 3 text-to-video timed out after polling",
+            });
+            return;
+          }
+
+          console.log("[Veo3 T2V] Video ready", { videoUrl });
+
+          // Download and upload to S3
+          let veoStream;
+          try {
+            veoStream = await axios.get(videoUrl, {
+              responseType: "stream",
+              timeout: 180000,
+            });
+          } catch (e) {
+            res.status(500).json({
+              success: false,
+              error: "Failed to download Veo 3 video",
+              details: serializeError(e),
+            });
+            return;
+          }
+
+          let uploaded;
+          try {
+            uploaded = await uploadGeneratedVideo(
+              feature,
+              "veo3-t2v",
+              veoStream.data as Readable
+            );
+          } catch (e) {
+            res.status(500).json({
+              success: false,
+              error: "Failed to upload Veo 3 video to S3",
+              details: serializeError(e),
+            });
+            return;
+          }
+
+          await logAppApiCall(
+            appId,
+            feature,
+            "video",
+            userModel,
+            "success",
+            undefined,
+            Date.now() - startTime
+          );
+
+          res.status(200).json({
+            success: true,
+            video: {
+              url: uploaded.signedUrl,
+              signedUrl: uploaded.signedUrl,
+              key: uploaded.key,
+            },
+            s3Key: uploaded.key,
+            provider: "Runware (Veo 3)",
+          });
+          return;
+        } catch (err: any) {
+          console.error("[Veo3 T2V] Fatal error:", err?.response?.data || err);
+          await logAppApiCall(
+            appId,
+            feature,
+            "video",
+            userModel,
+            "error",
+            err?.message || "Veo 3 generation failed",
+            Date.now() - startTime
+          );
+          res.status(500).json({
+            success: false,
+            error: "Veo 3 text-to-video generation failed",
+            details: serializeError(err),
+          });
+          return;
+        }
+      }
+
+      // PixVerse v5 - Text-to-Video via Runware
+      if (isPixverseV5) {
+        try {
+          console.log("[PixVerse v5 T2V] Start generation", {
+            feature,
+            promptLength: prompt.length,
+          });
+
+          const runwareHeaders = {
+            Authorization: `Bearer ${
+              process.env.RUNWARE_API_KEY || process.env.RUNWARE_KEY
+            }`,
+            "Content-Type": "application/json",
+          };
+
+          // PixVerse v5 supports text-to-video (no image required)
+          const createdTaskUUID = randomUUID();
+
+          // Parse optional parameters from environment or request
+          const duration =
+            req.body.duration ||
+            (process.env.PIXVERSE_V5_DURATION
+              ? Number(process.env.PIXVERSE_V5_DURATION)
+              : 5);
+
+          // Resolution mapping - PixVerse v5 supports specific dimensions
+          const resolutionMap: Record<
+            string,
+            { width: number; height: number }
+          > = {
+            "360p": { width: 640, height: 360 },
+            "540p": { width: 960, height: 540 },
+            "720p": { width: 1280, height: 720 },
+            "1080p": { width: 1920, height: 1080 },
+          };
+
+          const resolution =
+            req.body.resolution || process.env.PIXVERSE_V5_RESOLUTION || "720p";
+          const dimensions = resolutionMap[resolution] || resolutionMap["720p"];
+
+          const task: any = {
+            taskType: "videoInference",
+            taskUUID: createdTaskUUID,
+            model: "pixverse:1@5",
+            positivePrompt: prompt,
+            width: dimensions.width,
+            height: dimensions.height,
+            duration: [5, 8].includes(duration) ? duration : 5,
+          };
+
+          // Add supported PixVerse provider settings
+          const pixverseSettings: Record<string, any> = {};
+
+          // Optional: camera movement
+          if (
+            req.body.cameraMovement ||
+            process.env.PIXVERSE_V5_CAMERA_MOVEMENT
+          ) {
+            pixverseSettings.cameraMovement =
+              req.body.cameraMovement ||
+              process.env.PIXVERSE_V5_CAMERA_MOVEMENT;
+          }
+
+          // Optional: style
+          if (req.body.style || process.env.PIXVERSE_V5_STYLE) {
+            pixverseSettings.style =
+              req.body.style || process.env.PIXVERSE_V5_STYLE;
+          }
+
+          // Optional: motion mode
+          if (req.body.motionMode || process.env.PIXVERSE_V5_MOTION_MODE) {
+            pixverseSettings.motionMode =
+              req.body.motionMode || process.env.PIXVERSE_V5_MOTION_MODE;
+          }
+
+          if (Object.keys(pixverseSettings).length > 0) {
+            task.providerSettings = { pixverse: pixverseSettings };
+          }
+
+          if (negativePrompt && typeof negativePrompt === "string") {
+            task.negativePrompt = negativePrompt;
+          }
+
+          console.log("[PixVerse v5 T2V] Created task", {
+            taskUUID: createdTaskUUID,
+            duration: task.duration,
+            resolution: `${dimensions.width}x${dimensions.height}`,
+            providerSettings: task.providerSettings,
+          });
+
+          const createResp = await axios.post(
+            "https://api.runware.ai/v1",
+            [task],
+            {
+              headers: runwareHeaders,
+              timeout: 180000,
+            }
+          );
+
+          const data = createResp.data;
+          const ackItem = Array.isArray(data?.data)
+            ? data.data.find((d: any) => d?.taskType === "videoInference") ||
+              data.data[0]
+            : data?.data;
+          let videoUrl =
+            ackItem?.videoURL ||
+            ackItem?.url ||
+            ackItem?.video ||
+            (Array.isArray(ackItem?.videos) ? ackItem.videos[0] : null);
+          let pollTaskUUID: string = ackItem?.taskUUID || createdTaskUUID;
+
+          console.log("[PixVerse v5 T2V] Ack response", {
+            ackTaskUUID: ackItem?.taskUUID,
+            createdTaskUUID,
+            chosenPollTaskUUID: pollTaskUUID,
+            immediateVideo: !!videoUrl,
+            status: ackItem?.status || ackItem?.taskStatus,
+          });
+
+          // Poll for completion
+          if (!videoUrl && pollTaskUUID) {
+            const maxAttempts = 100;
+            const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
+            let consecutive400 = 0;
+
+            for (let attempt = 0; attempt < maxAttempts; attempt++) {
+              await delay(5000);
+              const pollPayload = [
+                { taskType: "getResponse", taskUUID: pollTaskUUID },
+              ];
+
+              try {
+                const poll = await axios.post(
+                  "https://api.runware.ai/v1",
+                  pollPayload,
+                  { headers: runwareHeaders, timeout: 60000 }
+                );
+                const pd = poll.data;
+                const item = Array.isArray(pd?.data)
+                  ? pd.data.find(
+                      (d: any) => d?.taskUUID === pollTaskUUID || d?.videoURL
+                    ) || pd.data[0]
+                  : pd?.data;
+                const status = item?.status || item?.taskStatus;
+
+                if (status)
+                  console.log("[PixVerse v5 T2V] Poll status", {
+                    attempt,
+                    status,
+                  });
+
+                if (status === "success" || item?.videoURL || item?.url) {
+                  videoUrl =
+                    item?.videoURL ||
+                    item?.url ||
+                    item?.video ||
+                    (Array.isArray(item?.videos) ? item.videos[0] : null);
+                  if (videoUrl) break;
+                }
+
+                if (status === "error" || status === "failed") {
+                  respondRunwareError(
+                    res,
+                    502,
+                    "PixVerse v5 text-to-video generation failed during polling",
+                    pd
+                  );
+                  return;
+                }
+                consecutive400 = 0;
+              } catch (e: any) {
+                const statusCode = e?.response?.status;
+                if (statusCode === 400) {
+                  consecutive400++;
+                  if (consecutive400 >= 3) {
+                    respondRunwareError(
+                      res,
+                      502,
+                      "PixVerse v5 polling failed with repeated 400 errors",
+                      e?.response?.data || e
+                    );
+                    return;
+                  }
+                } else {
+                  consecutive400 = 0;
+                }
+                console.log("[PixVerse v5 T2V] Poll error (retrying)", {
+                  attempt,
+                  statusCode,
+                });
+              }
+            }
+          }
+
+          if (!videoUrl) {
+            res.status(502).json({
+              success: false,
+              error: "PixVerse v5 text-to-video timed out after polling",
+            });
+            return;
+          }
+
+          console.log("[PixVerse v5 T2V] Video ready", { videoUrl });
+
+          // Download and upload to S3
+          let pixStream;
+          try {
+            console.log("[PixVerse v5 T2V] Downloading video from:", videoUrl);
+            pixStream = await axios.get(videoUrl, {
+              responseType: "stream",
+              timeout: 180000,
+            });
+            console.log(
+              "[PixVerse v5 T2V] Download successful, starting S3 upload"
+            );
+          } catch (e) {
+            console.error(
+              "[PixVerse v5 T2V] Download error:",
+              serializeError(e)
+            );
+            res.status(500).json({
+              success: false,
+              error: "Failed to download PixVerse v5 video",
+              details: serializeError(e),
+            });
+            return;
+          }
+
+          let uploaded;
+          try {
+            uploaded = await uploadGeneratedVideo(
+              feature,
+              "pixverse-v5-t2v",
+              pixStream.data as Readable
+            );
+            console.log(
+              "[PixVerse v5 T2V] S3 upload successful:",
+              uploaded.key
+            );
+          } catch (e) {
+            console.error(
+              "[PixVerse v5 T2V] S3 upload error:",
+              serializeError(e)
+            );
+            res.status(500).json({
+              success: false,
+              error: "Failed to upload PixVerse v5 video to S3",
+              details: serializeError(e),
+            });
+            return;
+          }
+
+          await logAppApiCall(
+            appId,
+            feature,
+            "video",
+            userModel,
+            "success",
+            undefined,
+            Date.now() - startTime
+          );
+
+          res.status(200).json({
+            success: true,
+            video: {
+              url: uploaded.signedUrl,
+              signedUrl: uploaded.signedUrl,
+              key: uploaded.key,
+            },
+            s3Key: uploaded.key,
+            provider: "Runware (PixVerse v5)",
+          });
+          return;
+        } catch (err: any) {
+          console.error(
+            "[PixVerse v5 T2V] Fatal error:",
+            err?.response?.data || err
+          );
+
+          await logAppApiCall(
+            appId,
+            feature,
+            "video",
+            userModel,
+            "error",
+            err?.message || "PixVerse v5 generation failed",
+            Date.now() - startTime
+          );
+
+          res.status(500).json({
+            success: false,
+            error: "PixVerse v5 text-to-video generation failed",
+            details: serializeError(err),
+          });
+          return;
+        }
+      }
+    } catch (error) {
+      console.error("Error in text-to-video:", serializeError(error));
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error";
+
+      await logAppApiCall(
+        appId,
+        feature,
+        "video",
+        userModel,
+        "error",
+        errorMessage,
+        Date.now() - startTime
+      );
+
+      res.status(500).json({
+        success: false,
+        error: "Failed to generate text-to-video",
+        details: errorMessage,
+      });
+    }
+  }
+);
+
 export default router;
