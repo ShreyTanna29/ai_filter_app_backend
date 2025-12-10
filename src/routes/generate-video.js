@@ -356,17 +356,25 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                 return;
             }
         }
-        // Determine the model: use request body if provided, otherwise fall back to DB
+        // Determine the model: use request body if provided, otherwise fall back to DB, then to default
         const userModelFromRequest = typeof req.body.model === "string" ? req.body.model.trim() : "";
         const modelFromDb = (featureObj === null || featureObj === void 0 ? void 0 : featureObj.model) || "";
-        userModel = userModelFromRequest || modelFromDb;
-        if (!userModel) {
-            yield logAppApiCall(appId, feature, videoType, undefined, "error", "Model is required", Date.now() - startTime);
-            res.status(400).json({
-                success: false,
-                error: "Model is required (either in request body or configured in the feature)",
-            });
-            return;
+        const finalModel = userModelFromRequest || modelFromDb || "pixverse-v5-image-to-video";
+        userModel = finalModel; // Now guaranteed to be a string
+        // Model will always have a value now (either from request, DB, or default)
+        console.log(`[Model Selection] Using model: ${finalModel} for feature: ${feature}`);
+        // If model provided in request, update it in the Features table
+        if (userModelFromRequest && featureObj && videoType === "video") {
+            try {
+                yield prisma_1.default.features.update({
+                    where: { id: featureObj.id },
+                    data: { model: userModelFromRequest },
+                });
+                console.log(`[Model Update] Updated feature "${feature}" model to: ${userModelFromRequest}`);
+            }
+            catch (e) {
+                console.warn(`[Model Update] Failed to update model for feature "${feature}":`, e);
+            }
         }
         // Step 2: Prepare image for provider (S3 private bucket migration)
         const { providerUrl: imageCloudUrl } = yield prepareImageForProvider(imageUrl, feature);
@@ -389,7 +397,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                 ? featureObj.prompt
                 : "";
         // Step 4: Provider branching (Pixverse transition, then MiniMax, else Luma)
-        const rawModel = userModel;
+        const rawModel = finalModel; // Use the guaranteed string value
         const isPixverseTransition = /pixverse-v4-transition/i.test(rawModel);
         // Support v4, v4.5 and v5 image to video variants
         const isPixverseImage2Video = /pixverse-v4(?:\.5)?-image-to-video|pixverse-v5-image-to-video|kling-v1-pro-image-to-video|kling-v1-standard-image-to-video|kling-1\.5-pro-image-to-video|kling-v1\.6-pro-image-to-video|kling-1\.6-standard-image-to-video|kling-v2-master-image-to-video|kling-v2\.1-standard-image-to-video|kling-v2\.1-pro-image-to-video/i.test(rawModel);
@@ -5446,7 +5454,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                 return "ray-flash-2"; // fast Ray 2
             return "ray-2"; // default
         };
-        const selectedModel = resolveLumaModel(userModel);
+        const selectedModel = resolveLumaModel(finalModel); // Use guaranteed string value
         // Build payload per docs: POST https://api.lumalabs.ai/dream-machine/v1/generations
         const lumaPayload = {
             prompt,
@@ -5728,19 +5736,27 @@ const textToVideoHandler = (req, res) => __awaiter(void 0, void 0, void 0, funct
                 return;
             }
         }
-        // Determine model - model from request body takes priority
+        // Determine model - model from request body takes priority, then DB, then default
         const userModelFromRequest = typeof model === "string" ? model.trim() : "";
         const modelFromDb = (featureObj === null || featureObj === void 0 ? void 0 : featureObj.model) || "";
-        userModel = userModelFromRequest || modelFromDb;
-        if (!userModel) {
-            yield logAppApiCall(appId, feature || "text-to-video", "video", undefined, "error", "Model is required", Date.now() - startTime);
-            res.status(400).json({
-                success: false,
-                error: "Model is required in request body",
-            });
-            return;
+        const finalModel = userModelFromRequest || modelFromDb || "pixverse-v5-image-to-video";
+        userModel = finalModel; // Now guaranteed to be a string
+        // Model will always have a value now (either from request, DB, or default)
+        console.log(`[Text-to-Video Model] Using model: ${finalModel} for feature: ${feature || "text-to-video"}`);
+        // If model provided in request and feature exists, update it in the Features table
+        if (userModelFromRequest && featureObj) {
+            try {
+                yield prisma_1.default.features.update({
+                    where: { id: featureObj.id },
+                    data: { model: userModelFromRequest },
+                });
+                console.log(`[Model Update] Updated feature "${feature}" model to: ${userModelFromRequest}`);
+            }
+            catch (e) {
+                console.warn(`[Model Update] Failed to update model for feature "${feature}":`, e);
+            }
         }
-        const rawModel = userModel;
+        const rawModel = finalModel; // Use the guaranteed string value
         const isVeo3 = /veo[\s-]*3(?!\s*fast)|google:3@0/i.test(rawModel);
         const isPixverseV5 = /pixverse[\s-]*v5/i.test(rawModel);
         if (!isVeo3 && !isPixverseV5) {
