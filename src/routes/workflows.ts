@@ -76,6 +76,46 @@ router.get("/workflows", async (req: Request, res: Response): Promise<void> => {
   }
 });
 
+// GET /api/workflows/execution/:triggerId - Get workflow execution status
+// NOTE: This must come BEFORE /workflows/:id to avoid route matching conflicts
+router.get(
+  "/workflows/execution/:triggerId",
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { triggerId } = req.params;
+      const headers = getEachLabsHeaders();
+
+      // Poll the execution status
+      const response = await axios.get(
+        `${EACHLABS_API_URL}/prediction/${triggerId}`,
+        {
+          headers,
+          timeout: 30000,
+        }
+      );
+
+      const data = response.data;
+      const status = data?.status?.toLowerCase();
+
+      res.json({
+        success: true,
+        triggerId,
+        status: status,
+        output: data?.output,
+        error: data?.error,
+        createdAt: data?.created_at,
+        completedAt: data?.completed_at,
+      });
+    } catch (error: any) {
+      console.error("Error fetching execution status:", error.message);
+      res.status(500).json({
+        success: false,
+        error: error.message || "Failed to fetch execution status",
+      });
+    }
+  }
+);
+
 // GET /api/workflows/:id - Get a specific workflow details
 router.get(
   "/workflows/:id",
@@ -180,45 +220,6 @@ router.post(
       res.status(500).json({
         success: false,
         error: error.message || "Failed to trigger workflow",
-      });
-    }
-  }
-);
-
-// GET /api/workflows/execution/:triggerId - Get workflow execution status
-router.get(
-  "/workflows/execution/:triggerId",
-  async (req: Request, res: Response): Promise<void> => {
-    try {
-      const { triggerId } = req.params;
-      const headers = getEachLabsHeaders();
-
-      // Poll the execution status
-      const response = await axios.get(
-        `${EACHLABS_API_URL}/prediction/${triggerId}`,
-        {
-          headers,
-          timeout: 30000,
-        }
-      );
-
-      const data = response.data;
-      const status = data?.status?.toLowerCase();
-
-      res.json({
-        success: true,
-        triggerId,
-        status: status,
-        output: data?.output,
-        error: data?.error,
-        createdAt: data?.created_at,
-        completedAt: data?.completed_at,
-      });
-    } catch (error: any) {
-      console.error("Error fetching execution status:", error.message);
-      res.status(500).json({
-        success: false,
-        error: error.message || "Failed to fetch execution status",
       });
     }
   }

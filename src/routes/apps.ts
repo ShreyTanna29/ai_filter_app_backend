@@ -145,59 +145,66 @@ router.put(
 
     try {
       // Use transaction to update all permissions atomically
-      await prisma.$transaction(async (tx) => {
-        // Update Features permissions
-        if (Array.isArray(body.featureIds)) {
-          await tx.appFeature.deleteMany({ where: { appId: idNum } });
-          if (body.featureIds.length > 0) {
-            await tx.appFeature.createMany({
-              data: body.featureIds.map((featureId) => ({
-                appId: idNum,
-                featureId,
-              })),
-            });
+      // Increase timeout for large datasets
+      await prisma.$transaction(
+        async (tx) => {
+          // Update Features permissions
+          if (Array.isArray(body.featureIds)) {
+            await tx.appFeature.deleteMany({ where: { appId: idNum } });
+            if (body.featureIds.length > 0) {
+              await tx.appFeature.createMany({
+                data: body.featureIds.map((featureId) => ({
+                  appId: idNum,
+                  featureId,
+                })),
+              });
+            }
           }
-        }
 
-        // Update Photo Features permissions
-        if (Array.isArray(body.photoFeatureIds)) {
-          await tx.appPhotoFeature.deleteMany({ where: { appId: idNum } });
-          if (body.photoFeatureIds.length > 0) {
-            await tx.appPhotoFeature.createMany({
-              data: body.photoFeatureIds.map((photoFeatureId) => ({
-                appId: idNum,
-                photoFeatureId,
-              })),
-            });
+          // Update Photo Features permissions
+          if (Array.isArray(body.photoFeatureIds)) {
+            await tx.appPhotoFeature.deleteMany({ where: { appId: idNum } });
+            if (body.photoFeatureIds.length > 0) {
+              await tx.appPhotoFeature.createMany({
+                data: body.photoFeatureIds.map((photoFeatureId) => ({
+                  appId: idNum,
+                  photoFeatureId,
+                })),
+              });
+            }
           }
-        }
 
-        // Update Generated Videos permissions
-        if (Array.isArray(body.generatedVideoIds)) {
-          await tx.appGeneratedVideo.deleteMany({ where: { appId: idNum } });
-          if (body.generatedVideoIds.length > 0) {
-            await tx.appGeneratedVideo.createMany({
-              data: body.generatedVideoIds.map((generatedVideoId) => ({
-                appId: idNum,
-                generatedVideoId,
-              })),
-            });
+          // Update Generated Videos permissions
+          if (Array.isArray(body.generatedVideoIds)) {
+            await tx.appGeneratedVideo.deleteMany({ where: { appId: idNum } });
+            if (body.generatedVideoIds.length > 0) {
+              await tx.appGeneratedVideo.createMany({
+                data: body.generatedVideoIds.map((generatedVideoId) => ({
+                  appId: idNum,
+                  generatedVideoId,
+                })),
+              });
+            }
           }
-        }
 
-        // Update Generated Photos permissions
-        if (Array.isArray(body.generatedPhotoIds)) {
-          await tx.appGeneratedPhoto.deleteMany({ where: { appId: idNum } });
-          if (body.generatedPhotoIds.length > 0) {
-            await tx.appGeneratedPhoto.createMany({
-              data: body.generatedPhotoIds.map((generatedPhotoId) => ({
-                appId: idNum,
-                generatedPhotoId,
-              })),
-            });
+          // Update Generated Photos permissions
+          if (Array.isArray(body.generatedPhotoIds)) {
+            await tx.appGeneratedPhoto.deleteMany({ where: { appId: idNum } });
+            if (body.generatedPhotoIds.length > 0) {
+              await tx.appGeneratedPhoto.createMany({
+                data: body.generatedPhotoIds.map((generatedPhotoId) => ({
+                  appId: idNum,
+                  generatedPhotoId,
+                })),
+              });
+            }
           }
+        },
+        {
+          maxWait: 10000, // Maximum time to wait to start transaction (10s)
+          timeout: 30000, // Maximum time transaction can run (30s)
         }
-      });
+      );
 
       // Fetch updated app with permissions
       const app = await prisma.app.findUnique({

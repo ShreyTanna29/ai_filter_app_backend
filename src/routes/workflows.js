@@ -78,6 +78,38 @@ router.get("/workflows", (req, res) => __awaiter(void 0, void 0, void 0, functio
         });
     }
 }));
+// GET /api/workflows/execution/:triggerId - Get workflow execution status
+// NOTE: This must come BEFORE /workflows/:id to avoid route matching conflicts
+router.get("/workflows/execution/:triggerId", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a;
+    try {
+        const { triggerId } = req.params;
+        const headers = getEachLabsHeaders();
+        // Poll the execution status
+        const response = yield axios_1.default.get(`${EACHLABS_API_URL}/prediction/${triggerId}`, {
+            headers,
+            timeout: 30000,
+        });
+        const data = response.data;
+        const status = (_a = data === null || data === void 0 ? void 0 : data.status) === null || _a === void 0 ? void 0 : _a.toLowerCase();
+        res.json({
+            success: true,
+            triggerId,
+            status: status,
+            output: data === null || data === void 0 ? void 0 : data.output,
+            error: data === null || data === void 0 ? void 0 : data.error,
+            createdAt: data === null || data === void 0 ? void 0 : data.created_at,
+            completedAt: data === null || data === void 0 ? void 0 : data.completed_at,
+        });
+    }
+    catch (error) {
+        console.error("Error fetching execution status:", error.message);
+        res.status(500).json({
+            success: false,
+            error: error.message || "Failed to fetch execution status",
+        });
+    }
+}));
 // GET /api/workflows/:id - Get a specific workflow details
 router.get("/workflows/:id", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
@@ -158,37 +190,6 @@ router.post("/workflows/:id/trigger", roles_1.requireAdmin, (req, res) => __awai
         res.status(500).json({
             success: false,
             error: error.message || "Failed to trigger workflow",
-        });
-    }
-}));
-// GET /api/workflows/execution/:triggerId - Get workflow execution status
-router.get("/workflows/execution/:triggerId", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    var _a;
-    try {
-        const { triggerId } = req.params;
-        const headers = getEachLabsHeaders();
-        // Poll the execution status
-        const response = yield axios_1.default.get(`${EACHLABS_API_URL}/prediction/${triggerId}`, {
-            headers,
-            timeout: 30000,
-        });
-        const data = response.data;
-        const status = (_a = data === null || data === void 0 ? void 0 : data.status) === null || _a === void 0 ? void 0 : _a.toLowerCase();
-        res.json({
-            success: true,
-            triggerId,
-            status: status,
-            output: data === null || data === void 0 ? void 0 : data.output,
-            error: data === null || data === void 0 ? void 0 : data.error,
-            createdAt: data === null || data === void 0 ? void 0 : data.created_at,
-            completedAt: data === null || data === void 0 ? void 0 : data.completed_at,
-        });
-    }
-    catch (error) {
-        console.error("Error fetching execution status:", error.message);
-        res.status(500).json({
-            success: false,
-            error: error.message || "Failed to fetch execution status",
         });
     }
 }));

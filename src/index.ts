@@ -27,23 +27,85 @@ app.use(express.static("public")); // Serve static files from public directory
 
 // Feature management routes
 // Get all features without pagination (with optional status filter)
-app.get("/api/features/all", async (req, res) => {
+// If ADMIN_API_KEY is provided, returns all features
+// Otherwise, returns only features allowed for the app
+app.get("/api/features/all", async (req, res): Promise<any> => {
   try {
     const { status } = req.query;
 
-    const whereClause =
-      status && typeof status === "string" && status !== "all"
-        ? { status }
-        : {};
+    // Extract API key from request
+    const apiKey =
+      req.header("x-api-key") ||
+      req.header("x-apikey") ||
+      (req.header("authorization") || "").replace(/^bearer\s+/i, "").trim() ||
+      (req.query.api_key as string) ||
+      (req.query.apiKey as string);
 
-    const list = await prisma.features.findMany({
-      where: whereClause,
-      orderBy: { createdAt: "asc" },
+    if (!apiKey) {
+      return res.status(401).json({
+        success: false,
+        message: "API key is required",
+      });
+    }
+
+    // Check if it's admin API key
+    const adminKeys = [
+      process.env.ADMIN_API_KEY,
+      (process.env as any)["admin_api_key"],
+      process.env.ADMIN_KEY,
+    ].filter(Boolean) as string[];
+
+    const isAdmin = adminKeys.includes(apiKey);
+
+    if (isAdmin) {
+      // Return all features for admin
+      const whereClause =
+        status && typeof status === "string" && status !== "all"
+          ? { status }
+          : {};
+
+      const list = await prisma.features.findMany({
+        where: whereClause,
+        orderBy: { createdAt: "asc" },
+      });
+
+      return res.json({
+        success: true,
+        features: list,
+      });
+    }
+
+    // For non-admin, check if app exists and is active
+    const app = await prisma.app.findFirst({
+      where: { apiKey: apiKey, isActive: true },
+      include: {
+        allowedFeatures: {
+          include: {
+            feature: true,
+          },
+        },
+      },
     });
+
+    if (!app) {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid or inactive API key",
+      });
+    }
+
+    // Get only allowed features for this app
+    const allowedFeatures = app.allowedFeatures.map((af) => af.feature);
+
+    // Apply status filter if provided
+    const filteredFeatures =
+      status && typeof status === "string" && status !== "all"
+        ? allowedFeatures.filter((f) => f.status === status)
+        : allowedFeatures;
 
     res.json({
       success: true,
-      features: list,
+      features: filteredFeatures,
     });
   } catch (error) {
     console.error(error);

@@ -5682,8 +5682,8 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
         });
     }
 }));
-// Text-to-Video endpoint (no image required) - Supports Veo 3 Fast and PixVerse v5
-router.post("/text-to-video/:feature", apiKey_1.requireApiKey, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+// Text-to-Video endpoint handler (no image required) - Supports Veo 3 and PixVerse v5
+const textToVideoHandler = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     var _a, _b, _c, _d, _e, _f, _g;
     const startTime = Date.now();
     const { feature } = req.params;
@@ -5694,19 +5694,22 @@ router.post("/text-to-video/:feature", apiKey_1.requireApiKey, (req, res) => __a
         const { prompt, model, negativePrompt } = req.body;
         // Validate prompt
         if (!prompt || typeof prompt !== "string" || !prompt.trim()) {
-            yield logAppApiCall(appId, feature, "video", undefined, "error", "Prompt is required for text-to-video", Date.now() - startTime);
+            yield logAppApiCall(appId, feature || "text-to-video", "video", undefined, "error", "Prompt is required for text-to-video", Date.now() - startTime);
             res.status(400).json({
                 success: false,
                 error: "Prompt is required for text-to-video generation",
             });
             return;
         }
-        // Get feature from DB for model fallback
-        const featureObj = yield prisma_1.default.features.findUnique({
-            where: { endpoint: feature },
-        });
-        // Check app permissions
-        if ((apiKeyOwner === null || apiKeyOwner === void 0 ? void 0 : apiKeyOwner.type) === "app" && apiKeyOwner.app) {
+        // Get feature from DB for model fallback (optional)
+        let featureObj = null;
+        if (feature) {
+            featureObj = yield prisma_1.default.features.findUnique({
+                where: { endpoint: feature },
+            });
+        }
+        // Check app permissions only if feature is specified
+        if (feature && (apiKeyOwner === null || apiKeyOwner === void 0 ? void 0 : apiKeyOwner.type) === "app" && apiKeyOwner.app) {
             const permAppId = apiKeyOwner.app.id;
             let hasPermission = false;
             if (featureObj) {
@@ -5725,15 +5728,15 @@ router.post("/text-to-video/:feature", apiKey_1.requireApiKey, (req, res) => __a
                 return;
             }
         }
-        // Determine model
+        // Determine model - model from request body takes priority
         const userModelFromRequest = typeof model === "string" ? model.trim() : "";
         const modelFromDb = (featureObj === null || featureObj === void 0 ? void 0 : featureObj.model) || "";
         userModel = userModelFromRequest || modelFromDb;
         if (!userModel) {
-            yield logAppApiCall(appId, feature, "video", undefined, "error", "Model is required", Date.now() - startTime);
+            yield logAppApiCall(appId, feature || "text-to-video", "video", undefined, "error", "Model is required", Date.now() - startTime);
             res.status(400).json({
                 success: false,
-                error: "Model is required (either in request body or configured in the feature)",
+                error: "Model is required in request body",
             });
             return;
         }
@@ -5884,7 +5887,7 @@ router.post("/text-to-video/:feature", apiKey_1.requireApiKey, (req, res) => __a
                 }
                 let uploaded;
                 try {
-                    uploaded = yield uploadGeneratedVideo(feature, "veo3-t2v", veoStream.data);
+                    uploaded = yield uploadGeneratedVideo(feature || "text-to-video", "veo3-t2v", veoStream.data);
                 }
                 catch (e) {
                     res.status(500).json({
@@ -5894,7 +5897,7 @@ router.post("/text-to-video/:feature", apiKey_1.requireApiKey, (req, res) => __a
                     });
                     return;
                 }
-                yield logAppApiCall(appId, feature, "video", userModel, "success", undefined, Date.now() - startTime);
+                yield logAppApiCall(appId, feature || "text-to-video", "video", userModel, "success", undefined, Date.now() - startTime);
                 res.status(200).json({
                     success: true,
                     video: {
@@ -5909,7 +5912,7 @@ router.post("/text-to-video/:feature", apiKey_1.requireApiKey, (req, res) => __a
             }
             catch (err) {
                 console.error("[Veo3 T2V] Fatal error:", ((_d = err === null || err === void 0 ? void 0 : err.response) === null || _d === void 0 ? void 0 : _d.data) || err);
-                yield logAppApiCall(appId, feature, "video", userModel, "error", (err === null || err === void 0 ? void 0 : err.message) || "Veo 3 generation failed", Date.now() - startTime);
+                yield logAppApiCall(appId, feature || "text-to-video", "video", userModel, "error", (err === null || err === void 0 ? void 0 : err.message) || "Veo 3 generation failed", Date.now() - startTime);
                 res.status(500).json({
                     success: false,
                     error: "Veo 3 text-to-video generation failed",
@@ -5960,8 +5963,7 @@ router.post("/text-to-video/:feature", apiKey_1.requireApiKey, (req, res) => __a
                 if (req.body.cameraMovement ||
                     process.env.PIXVERSE_V5_CAMERA_MOVEMENT) {
                     pixverseSettings.cameraMovement =
-                        req.body.cameraMovement ||
-                            process.env.PIXVERSE_V5_CAMERA_MOVEMENT;
+                        req.body.cameraMovement || process.env.PIXVERSE_V5_CAMERA_MOVEMENT;
                 }
                 // Optional: style
                 if (req.body.style || process.env.PIXVERSE_V5_STYLE) {
@@ -6091,7 +6093,7 @@ router.post("/text-to-video/:feature", apiKey_1.requireApiKey, (req, res) => __a
                 }
                 let uploaded;
                 try {
-                    uploaded = yield uploadGeneratedVideo(feature, "pixverse-v5-t2v", pixStream.data);
+                    uploaded = yield uploadGeneratedVideo(feature || "text-to-video", "pixverse-v5-t2v", pixStream.data);
                     console.log("[PixVerse v5 T2V] S3 upload successful:", uploaded.key);
                 }
                 catch (e) {
@@ -6103,7 +6105,7 @@ router.post("/text-to-video/:feature", apiKey_1.requireApiKey, (req, res) => __a
                     });
                     return;
                 }
-                yield logAppApiCall(appId, feature, "video", userModel, "success", undefined, Date.now() - startTime);
+                yield logAppApiCall(appId, feature || "text-to-video", "video", userModel, "success", undefined, Date.now() - startTime);
                 res.status(200).json({
                     success: true,
                     video: {
@@ -6118,7 +6120,7 @@ router.post("/text-to-video/:feature", apiKey_1.requireApiKey, (req, res) => __a
             }
             catch (err) {
                 console.error("[PixVerse v5 T2V] Fatal error:", ((_g = err === null || err === void 0 ? void 0 : err.response) === null || _g === void 0 ? void 0 : _g.data) || err);
-                yield logAppApiCall(appId, feature, "video", userModel, "error", (err === null || err === void 0 ? void 0 : err.message) || "PixVerse v5 generation failed", Date.now() - startTime);
+                yield logAppApiCall(appId, feature || "text-to-video", "video", userModel, "error", (err === null || err === void 0 ? void 0 : err.message) || "PixVerse v5 generation failed", Date.now() - startTime);
                 res.status(500).json({
                     success: false,
                     error: "PixVerse v5 text-to-video generation failed",
@@ -6131,12 +6133,15 @@ router.post("/text-to-video/:feature", apiKey_1.requireApiKey, (req, res) => __a
     catch (error) {
         console.error("Error in text-to-video:", serializeError(error));
         const errorMessage = error instanceof Error ? error.message : "Unknown error";
-        yield logAppApiCall(appId, feature, "video", userModel, "error", errorMessage, Date.now() - startTime);
+        yield logAppApiCall(appId, feature || "text-to-video", "video", userModel, "error", errorMessage, Date.now() - startTime);
         res.status(500).json({
             success: false,
             error: "Failed to generate text-to-video",
             details: errorMessage,
         });
     }
-}));
+});
+// Register both routes - with and without the feature parameter
+router.post("/text-to-video/:feature", apiKey_1.requireApiKey, textToVideoHandler);
+router.post("/text-to-video", apiKey_1.requireApiKey, textToVideoHandler);
 exports.default = router;

@@ -23,10 +23,19 @@ const signedUrl_1 = require("../middleware/signedUrl");
 const router = (0, express_1.Router)();
 // In-memory map to track registered template routes
 const templateRouteMap = {};
+// Helper to sanitize template name for use in route path
+// Replaces special characters with hyphens, keeps only alphanumeric and hyphens
+function sanitizeTemplateNameForRoute(name) {
+    return name
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-") // Replace non-alphanumeric with hyphens
+        .replace(/^-+|-+$/g, ""); // Remove leading/trailing hyphens
+}
 // Helper to register a dynamic endpoint for a template
 function registerTemplateEndpoint(template) {
     return __awaiter(this, void 0, void 0, function* () {
-        const endpoint = `/template-endpoint/${encodeURIComponent(template.name)}`;
+        const sanitizedName = sanitizeTemplateNameForRoute(template.name);
+        const endpoint = `/template-endpoint/${sanitizedName}`;
         // Remove existing route if present
         if (templateRouteMap[endpoint]) {
             router.stack = router.stack.filter((layer) => !(layer.route && layer.route.path === endpoint));
@@ -80,7 +89,8 @@ function registerTemplateEndpoint(template) {
 }
 // Helper to unregister a template endpoint
 function unregisterTemplateEndpoint(template) {
-    const endpoint = `/template-endpoint/${encodeURIComponent(template.name)}`;
+    const sanitizedName = sanitizeTemplateNameForRoute(template.name);
+    const endpoint = `/template-endpoint/${sanitizedName}`;
     if (templateRouteMap[endpoint]) {
         router.stack = router.stack.filter((layer) => !(layer.route && layer.route.path === endpoint));
         delete templateRouteMap[endpoint];

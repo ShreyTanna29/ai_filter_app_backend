@@ -15,9 +15,19 @@ const router = Router();
 // In-memory map to track registered template routes
 const templateRouteMap: Record<string, any> = {};
 
+// Helper to sanitize template name for use in route path
+// Replaces special characters with hyphens, keeps only alphanumeric and hyphens
+function sanitizeTemplateNameForRoute(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-") // Replace non-alphanumeric with hyphens
+    .replace(/^-+|-+$/g, ""); // Remove leading/trailing hyphens
+}
+
 // Helper to register a dynamic endpoint for a template
 async function registerTemplateEndpoint(template: any) {
-  const endpoint = `/template-endpoint/${encodeURIComponent(template.name)}`;
+  const sanitizedName = sanitizeTemplateNameForRoute(template.name);
+  const endpoint = `/template-endpoint/${sanitizedName}`;
   // Remove existing route if present
   if (templateRouteMap[endpoint]) {
     router.stack = router.stack.filter(
@@ -73,7 +83,8 @@ async function registerTemplateEndpoint(template: any) {
 
 // Helper to unregister a template endpoint
 function unregisterTemplateEndpoint(template: any) {
-  const endpoint = `/template-endpoint/${encodeURIComponent(template.name)}`;
+  const sanitizedName = sanitizeTemplateNameForRoute(template.name);
+  const endpoint = `/template-endpoint/${sanitizedName}`;
   if (templateRouteMap[endpoint]) {
     router.stack = router.stack.filter(
       (layer: any) => !(layer.route && layer.route.path === endpoint)

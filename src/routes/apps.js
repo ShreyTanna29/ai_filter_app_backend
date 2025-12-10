@@ -133,6 +133,7 @@ router.put("/:id/permissions", (req, res) => __awaiter(void 0, void 0, void 0, f
     const body = req.body;
     try {
         // Use transaction to update all permissions atomically
+        // Increase timeout for large datasets
         yield prisma_1.default.$transaction((tx) => __awaiter(void 0, void 0, void 0, function* () {
             // Update Features permissions
             if (Array.isArray(body.featureIds)) {
@@ -182,7 +183,10 @@ router.put("/:id/permissions", (req, res) => __awaiter(void 0, void 0, void 0, f
                     });
                 }
             }
-        }));
+        }), {
+            maxWait: 10000, // Maximum time to wait to start transaction (10s)
+            timeout: 30000, // Maximum time transaction can run (30s)
+        });
         // Fetch updated app with permissions
         const app = yield prisma_1.default.app.findUnique({
             where: { id: idNum },
