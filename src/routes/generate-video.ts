@@ -386,8 +386,10 @@ const textToVideoHandler = async (
     const rawModel = finalModel;
     const isVeo3 = /veo[\s-]*3(?!\s*fast)|google:3@0/i.test(rawModel);
     const isPixverseV5 = /pixverse[\s-]*v5/i.test(rawModel);
+    const isKling25TurboPro =
+      /kling-v?2\.5-turbo-pro(?!.*image)|klingai:6@1/i.test(rawModel);
 
-    if (!isVeo3 && !isPixverseV5) {
+    if (!isVeo3 && !isPixverseV5 && !isKling25TurboPro) {
       await logAppApiCall(
         appId,
         "text-to-video",
@@ -623,6 +625,290 @@ const textToVideoHandler = async (
           success: false,
           error: "Veo 3 text-to-video generation failed",
           details: serializeError(err),
+        });
+        return;
+      }
+    }
+
+    // KlingAI 2.5 Turbo Pro - Text-to-Video via Runware
+    if (isKling25TurboPro) {
+      try {
+        console.log("[Kling 2.5 Turbo Pro Text-to-Video] Start generation", {
+          prompt: prompt.slice(0, 100),
+        });
+
+        const runwareHeaders = {
+          Authorization: `Bearer ${
+            process.env.RUNWARE_API_KEY || process.env.RUNWARE_KEY
+          }`,
+          "Content-Type": "application/json",
+        };
+
+        const createdTaskUUID = randomUUID();
+        const task: any = {
+          taskType: "videoInference",
+          taskUUID: createdTaskUUID,
+          model: "klingai:6@1",
+          positivePrompt: prompt,
+          width: 1280,
+          height: 720,
+          duration: 10,
+        };
+
+        if (negativePrompt && typeof negativePrompt === "string") {
+          task.negativePrompt = negativePrompt;
+        }
+
+        console.log("[Kling 2.5 Turbo Pro Text-to-Video] Created task", {
+          taskUUID: createdTaskUUID,
+        });
+
+        console.log(
+          "[Kling 2.5 Turbo Pro Text-to-Video] Request payload:",
+          JSON.stringify([task], null, 2)
+        );
+
+        const createResp = await axios.post(
+          "https://api.runware.ai/v1",
+          [task],
+          {
+            headers: runwareHeaders,
+            timeout: 600000,
+          }
+        );
+
+        const data = createResp.data;
+        const ackItem = Array.isArray(data?.data)
+          ? data.data.find((d: any) => d?.taskType === "videoInference") ||
+            data.data[0]
+          : data?.data;
+        let videoUrl =
+          ackItem?.videoURL ||
+          ackItem?.url ||
+          ackItem?.video ||
+          (Array.isArray(ackItem?.videos) ? ackItem.videos[0] : null);
+        let pollTaskUUID: string = ackItem?.taskUUID || createdTaskUUID;
+
+        console.log("[Kling 2.5 Turbo Pro Text-to-Video] Ack response", {
+          ackTaskUUID: ackItem?.taskUUID,
+          createdTaskUUID,
+          chosenPollTaskUUID: pollTaskUUID,
+          immediateVideo: !!videoUrl,
+          status: ackItem?.status || ackItem?.taskStatus,
+        });
+
+        if (!videoUrl && pollTaskUUID) {
+          const maxAttempts = 150;
+          const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
+          let consecutive400 = 0;
+
+          for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+            await delay(4000);
+            const pollPayload = [
+              { taskType: "getResponse", taskUUID: pollTaskUUID },
+            ];
+
+            console.log(
+              `[Kling 2.5 Turbo Pro Text-to-Video] Poll attempt ${attempt} payload:`,
+              JSON.stringify(pollPayload, null, 2)
+            );
+
+            try {
+              const statusResp = await axios.post(
+                "https://api.runware.ai/v1",
+                pollPayload,
+                { headers: runwareHeaders, timeout: 60000 }
+              );
+              const pollData = statusResp.data;
+              const pollItem = Array.isArray(pollData?.data)
+                ? pollData.data.find((d: any) => d?.taskUUID === pollTaskUUID)
+                : pollData?.data;
+
+              console.log(
+                `[Kling 2.5 Turbo Pro Text-to-Video] Poll attempt ${attempt}:`,
+                {
+                  taskUUID: pollTaskUUID,
+                  status: pollItem?.status || pollItem?.taskStatus,
+                  hasVideo: !!pollItem?.videoURL,
+                }
+              );
+
+              videoUrl =
+                pollItem?.videoURL ||
+                pollItem?.url ||
+                pollItem?.video ||
+                (Array.isArray(pollItem?.videos) ? pollItem.videos[0] : null);
+
+              if (videoUrl) {
+                console.log(
+                  `[Kling 2.5 Turbo Pro Text-to-Video] Video ready after ${attempt} polls`
+                );
+                break;
+              }
+
+              const pollStatus = pollItem?.status || pollItem?.taskStatus;
+              if (
+                pollStatus &&
+                /failed|error/i.test(String(pollStatus).toLowerCase())
+              ) {
+                console.error(
+                  "[Kling 2.5 Turbo Pro Text-to-Video] Task failed:",
+                  pollItem
+                );
+                await logAppApiCall(
+                  appId,
+                  "text-to-video",
+                  "video",
+                  userModel,
+                  "error",
+                  "Video generation failed",
+                  Date.now() - startTime
+                );
+                return respondRunwareError(
+                  res,
+                  500,
+                  "Video generation failed",
+                  pollItem
+                );
+              }
+
+              consecutive400 = 0;
+            } catch (pollErr: any) {
+              if (pollErr?.response?.status === 400) {
+                consecutive400++;
+                console.warn(
+                  `[Kling 2.5 Turbo Pro Text-to-Video] Poll 400 error (${consecutive400}/3):`,
+                  {
+                    error: serializeError(pollErr),
+                    responseData: pollErr?.response?.data,
+                  }
+                );
+                if (consecutive400 >= 3) {
+                  console.error(
+                    "[Kling 2.5 Turbo Pro Text-to-Video] Too many 400s during polling"
+                  );
+                  await logAppApiCall(
+                    appId,
+                    "text-to-video",
+                    "video",
+                    userModel,
+                    "error",
+                    "Polling failed with repeated 400 errors",
+                    Date.now() - startTime
+                  );
+                  return respondRunwareError(
+                    res,
+                    500,
+                    "Polling failed with repeated 400 errors",
+                    pollErr?.response?.data
+                  );
+                }
+              } else {
+                console.error(
+                  "[Kling 2.5 Turbo Pro Text-to-Video] Poll error:",
+                  serializeError(pollErr)
+                );
+              }
+            }
+          }
+        }
+
+        if (!videoUrl) {
+          console.error(
+            "[Kling 2.5 Turbo Pro Text-to-Video] Missing videoURL after polling"
+          );
+          await logAppApiCall(
+            appId,
+            "text-to-video",
+            "video",
+            userModel,
+            "error",
+            "Missing videoURL in response",
+            Date.now() - startTime
+          );
+          return respondRunwareError(
+            res,
+            500,
+            "Missing videoURL in Runware response"
+          );
+        }
+
+        console.log(
+          `[Kling 2.5 Turbo Pro Text-to-Video] Video URL received: ${videoUrl.slice(
+            0,
+            100
+          )}`
+        );
+
+        const videoResponse = await axios.get(videoUrl, {
+          responseType: "stream",
+          timeout: 180000,
+        });
+
+        const {
+          key,
+          url: s3Url,
+          signedUrl,
+        } = await uploadGeneratedVideo(
+          "text-to-video-kling25turbo",
+          "text-to-video",
+          videoResponse.data
+        );
+
+        console.log(
+          `[Kling 2.5 Turbo Pro Text-to-Video] Video uploaded to S3: ${key}`
+        );
+
+        await logAppApiCall(
+          appId,
+          "text-to-video",
+          "video",
+          userModel,
+          "success",
+          undefined,
+          Date.now() - startTime
+        );
+
+        res.json({
+          success: true,
+          videoUrl: signedUrl,
+          key,
+          taskUUID: createdTaskUUID,
+          model: "klingai:6@1",
+        });
+        return;
+      } catch (error: any) {
+        console.error(
+          "[Kling 2.5 Turbo Pro Text-to-Video] Error:",
+          serializeError(error)
+        );
+
+        const errorMessage =
+          error?.response?.data?.message || error?.message || "Unknown error";
+
+        await logAppApiCall(
+          appId,
+          "text-to-video",
+          "video",
+          userModel,
+          "error",
+          errorMessage,
+          Date.now() - startTime
+        );
+
+        if (error?.response?.data) {
+          return respondRunwareError(
+            res,
+            error.response.status || 500,
+            "Kling 2.5 Turbo Pro text-to-video generation failed",
+            error.response.data
+          );
+        }
+
+        res.status(500).json({
+          success: false,
+          error: "Kling 2.5 Turbo Pro text-to-video generation failed",
+          details: errorMessage,
         });
         return;
       }
@@ -1090,7 +1376,7 @@ router.post(
       const isPixverseTransition = /pixverse-v4-transition/i.test(rawModel);
       // Support v4, v4.5 and v5 image to video variants
       const isPixverseImage2Video =
-        /pixverse-v4(?:\.5)?-image-to-video|pixverse-v5-image-to-video|kling-v1-pro-image-to-video|kling-v1-standard-image-to-video|kling-1\.5-pro-image-to-video|kling-v1\.6-pro-image-to-video|kling-1\.6-standard-image-to-video|kling-v2-master-image-to-video|kling-v2\.1-standard-image-to-video|kling-v2\.1-pro-image-to-video/i.test(
+        /pixverse-v4(?:\.5)?-image-to-video|pixverse-v5-image-to-video|kling-v1-pro-image-to-video|kling-v1-standard-image-to-video|kling-1\.5-pro-image-to-video|kling-v1\.6-pro-image-to-video|kling-1\.6-standard-image-to-video|kling-v2-master-image-to-video|kling-v2\.1-standard-image-to-video|kling-v2\.1-pro-image-to-video|kling-v?2\.5-turbo-pro-image-to-video|kling-2\.5-turbo-pro|klingai:6@1/i.test(
           rawModel
         );
       // Runware Veo 3 Fast (native audio) direct support
