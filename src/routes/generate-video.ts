@@ -673,7 +673,6 @@ const textToVideoHandler = async (
           [task],
           {
             headers: runwareHeaders,
-            timeout: 600000,
           }
         );
 
