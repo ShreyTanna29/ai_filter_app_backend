@@ -228,6 +228,7 @@ router.get("/videos/:endpoint", (req, res) => __awaiter(void 0, void 0, void 0, 
                 createdAt: v.lastModified,
                 signedUrl: signed,
                 apps: (dbRecord === null || dbRecord === void 0 ? void 0 : dbRecord.apps) || [], // Include app permissions
+                audioUrl: (dbRecord === null || dbRecord === void 0 ? void 0 : dbRecord.audioUrl) || null, // Include audio URL from database
             };
         })));
         res.json(out);

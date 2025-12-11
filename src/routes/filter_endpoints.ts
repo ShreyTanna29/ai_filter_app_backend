@@ -249,6 +249,7 @@ router.get("/videos/:endpoint", async (req: Request, res: Response) => {
           createdAt: v.lastModified,
           signedUrl: signed,
           apps: dbRecord?.apps || [], // Include app permissions
+          audioUrl: dbRecord?.audioUrl || null, // Include audio URL from database
         };
       })
     );

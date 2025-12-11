@@ -477,23 +477,75 @@ if (!document.getElementById("step-video-modal")) {
     <div id="step-video-modal-content" style="background:#fff; padding:0; border-radius:8px; max-width:90vw; max-height:90vh; display:flex; flex-direction:column; align-items:center;">
       <button id="step-video-modal-close" style="align-self:flex-end; margin:8px 8px 0 0; font-size:1.5rem; background:none; border:none; cursor:pointer;">&times;</button>
       <video id="step-video-modal-player" controls style="max-width:80vw; max-height:70vh; border-radius:8px;"></video>
+      <audio id="step-video-modal-audio" style="display:none;"></audio>
     </div>
   `;
   document.body.appendChild(modal);
   document.getElementById("step-video-modal-close").onclick = function () {
     modal.style.display = "none";
-    document.getElementById("step-video-modal-player").src = "";
+    const player = document.getElementById("step-video-modal-player");
+    const audio = document.getElementById("step-video-modal-audio");
+    player.pause();
+    audio.pause();
+    player.src = "";
+    audio.src = "";
   };
 }
 
 function showStepVideoModal(videoUrl, audioUrl = null) {
   const modal = document.getElementById("step-video-modal");
   const player = document.getElementById("step-video-modal-player");
+  const audio = document.getElementById("step-video-modal-audio");
+
   player.src = videoUrl;
 
-  // If audio URL is provided, create a composite video with audio
-  // For now, we'll just play the video - browser should handle audio if it's embedded
-  // TODO: In future, could mix video and separate audio track
+  // If audio URL is provided, set it up to play synchronized with video
+  if (audioUrl) {
+    audio.src = audioUrl;
+    audio.loop = true; // Loop audio to match video duration
+
+    // Synchronize audio with video playback
+    player.onplay = () => {
+      audio.currentTime = player.currentTime % audio.duration || 0;
+      audio.play().catch((e) => console.error("Audio play failed:", e));
+    };
+
+    player.onpause = () => {
+      audio.pause();
+    };
+
+    player.onseeked = () => {
+      // When seeking in video, adjust audio to corresponding position in its loop
+      if (audio.duration) {
+        audio.currentTime = player.currentTime % audio.duration;
+      }
+    };
+
+    player.ontimeupdate = () => {
+      // Keep audio in sync during playback, accounting for loops
+      if (audio.duration && !audio.paused && !player.paused) {
+        const expectedAudioTime = player.currentTime % audio.duration;
+        const timeDiff = Math.abs(audio.currentTime - expectedAudioTime);
+        // Re-sync if drift is more than 0.3 seconds
+        if (timeDiff > 0.3) {
+          audio.currentTime = expectedAudioTime;
+        }
+      }
+    };
+
+    // Ensure audio volume matches video (video is muted, audio provides sound)
+    player.muted = true;
+    audio.volume = 1.0;
+  } else {
+    // No audio URL, unmute video in case it has embedded audio
+    player.muted = false;
+    audio.src = "";
+    audio.loop = false;
+    player.onplay = null;
+    player.onpause = null;
+    player.onseeked = null;
+    player.ontimeupdate = null;
+  }
 
   modal.style.display = "flex";
 }
