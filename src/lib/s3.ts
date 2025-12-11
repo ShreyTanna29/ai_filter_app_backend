@@ -138,44 +138,50 @@ export interface LatestVideoResult {
   lastModified: Date;
 }
 
-// Get the latest video for each feature directly from S3
+// Get the latest video for each feature directly from S3 (from both videos/ and generated-videos/)
 export async function getLatestVideosFromS3(): Promise<LatestVideoResult[]> {
   const videosByFeature: Map<string, { key: string; lastModified: Date }> =
     new Map();
 
-  let continuationToken: string | undefined;
+  // Fetch from both 'videos/' and 'generated-videos/' prefixes
+  const prefixes = ["videos/", "generated-videos/"];
 
-  do {
-    const command = new ListObjectsV2Command({
-      Bucket: BUCKET,
-      Prefix: "videos/",
-      ContinuationToken: continuationToken,
-    });
+  for (const prefix of prefixes) {
+    let continuationToken: string | undefined;
 
-    const response = await s3.send(command);
+    do {
+      const command = new ListObjectsV2Command({
+        Bucket: BUCKET,
+        Prefix: prefix,
+        ContinuationToken: continuationToken,
+      });
 
-    if (response.Contents) {
-      for (const obj of response.Contents) {
-        if (obj.Key && obj.Key.endsWith(".mp4") && obj.LastModified) {
-          // Extract feature from key: "videos/{feature}/{feature}-{timestamp}-{random}.mp4"
-          const parts = obj.Key.split("/");
-          if (parts.length >= 2) {
-            const feature = parts[1]; // The folder name is the feature/endpoint
+      const response = await s3.send(command);
 
-            const existing = videosByFeature.get(feature);
-            if (!existing || obj.LastModified > existing.lastModified) {
-              videosByFeature.set(feature, {
-                key: obj.Key,
-                lastModified: obj.LastModified,
-              });
+      if (response.Contents) {
+        for (const obj of response.Contents) {
+          if (obj.Key && obj.Key.endsWith(".mp4") && obj.LastModified) {
+            // Extract feature from key: "videos/{feature}/{feature}-{timestamp}-{random}.mp4"
+            // or "generated-videos/{feature}/{feature}-{timestamp}-{random}.mp4"
+            const parts = obj.Key.split("/");
+            if (parts.length >= 2) {
+              const feature = parts[1]; // The folder name is the feature/endpoint
+
+              const existing = videosByFeature.get(feature);
+              if (!existing || obj.LastModified > existing.lastModified) {
+                videosByFeature.set(feature, {
+                  key: obj.Key,
+                  lastModified: obj.LastModified,
+                });
+              }
             }
           }
         }
       }
-    }
 
-    continuationToken = response.NextContinuationToken;
-  } while (continuationToken);
+      continuationToken = response.NextContinuationToken;
+    } while (continuationToken);
+  }
 
   // Convert map to array of results
   const results: LatestVideoResult[] = [];
@@ -191,38 +197,46 @@ export async function getLatestVideosFromS3(): Promise<LatestVideoResult[]> {
   return results;
 }
 
-// Get all videos for a specific feature from S3
+// Get all videos for a specific feature from S3 (from both videos/ and generated-videos/)
 export async function getVideosForFeatureFromS3(
   feature: string
 ): Promise<{ key: string; url: string; lastModified: Date }[]> {
   const videos: { key: string; url: string; lastModified: Date }[] = [];
-  const featurePrefix = `videos/${feature.replace(/[^a-zA-Z0-9_-]/g, "-")}/`;
+  const normalizedFeature = feature.replace(/[^a-zA-Z0-9_-]/g, "-");
 
-  let continuationToken: string | undefined;
+  // Fetch from both 'videos/' and 'generated-videos/' prefixes
+  const prefixes = [
+    `videos/${normalizedFeature}/`,
+    `generated-videos/${normalizedFeature}/`,
+  ];
 
-  do {
-    const command = new ListObjectsV2Command({
-      Bucket: BUCKET,
-      Prefix: featurePrefix,
-      ContinuationToken: continuationToken,
-    });
+  for (const featurePrefix of prefixes) {
+    let continuationToken: string | undefined;
 
-    const response = await s3.send(command);
+    do {
+      const command = new ListObjectsV2Command({
+        Bucket: BUCKET,
+        Prefix: featurePrefix,
+        ContinuationToken: continuationToken,
+      });
 
-    if (response.Contents) {
-      for (const obj of response.Contents) {
-        if (obj.Key && obj.Key.endsWith(".mp4") && obj.LastModified) {
-          videos.push({
-            key: obj.Key,
-            url: publicUrlFor(obj.Key),
-            lastModified: obj.LastModified,
-          });
+      const response = await s3.send(command);
+
+      if (response.Contents) {
+        for (const obj of response.Contents) {
+          if (obj.Key && obj.Key.endsWith(".mp4") && obj.LastModified) {
+            videos.push({
+              key: obj.Key,
+              url: publicUrlFor(obj.Key),
+              lastModified: obj.LastModified,
+            });
+          }
         }
       }
-    }
 
-    continuationToken = response.NextContinuationToken;
-  } while (continuationToken);
+      continuationToken = response.NextContinuationToken;
+    } while (continuationToken);
+  }
 
   // Sort by lastModified descending (newest first)
   videos.sort((a, b) => b.lastModified.getTime() - a.lastModified.getTime());

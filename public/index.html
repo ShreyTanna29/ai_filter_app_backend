@@ -133,6 +133,39 @@
        .workflow-category-btn {
          transition: all 0.2s ease;
        }
+
+       /* Step video card scrollbar styling */
+       .scrollbar-thin {
+         scrollbar-width: thin;
+         scrollbar-color: #cbd5e0 #f3f4f6;
+       }
+
+       .scrollbar-thin::-webkit-scrollbar {
+         width: 6px;
+       }
+
+       .scrollbar-thin::-webkit-scrollbar-track {
+         background: #f3f4f6;
+         border-radius: 3px;
+       }
+
+       .scrollbar-thin::-webkit-scrollbar-thumb {
+         background: #cbd5e0;
+         border-radius: 3px;
+       }
+
+       .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+         background: #94a3b8;
+       }
+
+       /* Video card hover animation */
+       .step-video-card {
+         transition: transform 0.2s ease-in-out;
+       }
+
+       .step-video-card:hover {
+         transform: translateY(-2px);
+       }
     </style>
   </head>
   <body class="bg-gray-50 min-h-screen">
@@ -293,8 +326,14 @@
               </div>
               <!-- Existing videos now full-width at bottom -->
               <div class="mt-10">
-                <h3 class="text-sm font-semibold text-gray-700 mb-3">Existing Videos</h3>
-                <div id="stepGeneratedList" class="grid gap-3 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 text-xs text-gray-500">No videos yet.</div>
+                <div class="flex items-center gap-2 mb-4">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-blue-600">
+                    <polygon points="23 7 16 12 23 17 23 7"></polygon>
+                    <rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect>
+                  </svg>
+                  <h3 class="text-lg font-bold text-gray-800">Existing Videos</h3>
+                </div>
+                <div id="stepGeneratedList" class="grid gap-4 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 text-xs text-gray-500">No videos yet.</div>
               </div>
             </div>
           </div>

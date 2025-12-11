@@ -125,38 +125,43 @@ function ensureImageSizeFromUrl(url, width, height) {
         return { buffer: resized, contentType: "image/png" };
     });
 }
-// Get the latest video for each feature directly from S3
+// Get the latest video for each feature directly from S3 (from both videos/ and generated-videos/)
 function getLatestVideosFromS3() {
     return __awaiter(this, void 0, void 0, function* () {
         const videosByFeature = new Map();
-        let continuationToken;
-        do {
-            const command = new client_s3_1.ListObjectsV2Command({
-                Bucket: BUCKET,
-                Prefix: "videos/",
-                ContinuationToken: continuationToken,
-            });
-            const response = yield exports.s3.send(command);
-            if (response.Contents) {
-                for (const obj of response.Contents) {
-                    if (obj.Key && obj.Key.endsWith(".mp4") && obj.LastModified) {
-                        // Extract feature from key: "videos/{feature}/{feature}-{timestamp}-{random}.mp4"
-                        const parts = obj.Key.split("/");
-                        if (parts.length >= 2) {
-                            const feature = parts[1]; // The folder name is the feature/endpoint
-                            const existing = videosByFeature.get(feature);
-                            if (!existing || obj.LastModified > existing.lastModified) {
-                                videosByFeature.set(feature, {
-                                    key: obj.Key,
-                                    lastModified: obj.LastModified,
-                                });
+        // Fetch from both 'videos/' and 'generated-videos/' prefixes
+        const prefixes = ["videos/", "generated-videos/"];
+        for (const prefix of prefixes) {
+            let continuationToken;
+            do {
+                const command = new client_s3_1.ListObjectsV2Command({
+                    Bucket: BUCKET,
+                    Prefix: prefix,
+                    ContinuationToken: continuationToken,
+                });
+                const response = yield exports.s3.send(command);
+                if (response.Contents) {
+                    for (const obj of response.Contents) {
+                        if (obj.Key && obj.Key.endsWith(".mp4") && obj.LastModified) {
+                            // Extract feature from key: "videos/{feature}/{feature}-{timestamp}-{random}.mp4"
+                            // or "generated-videos/{feature}/{feature}-{timestamp}-{random}.mp4"
+                            const parts = obj.Key.split("/");
+                            if (parts.length >= 2) {
+                                const feature = parts[1]; // The folder name is the feature/endpoint
+                                const existing = videosByFeature.get(feature);
+                                if (!existing || obj.LastModified > existing.lastModified) {
+                                    videosByFeature.set(feature, {
+                                        key: obj.Key,
+                                        lastModified: obj.LastModified,
+                                    });
+                                }
                             }
                         }
                     }
                 }
-            }
-            continuationToken = response.NextContinuationToken;
-        } while (continuationToken);
+                continuationToken = response.NextContinuationToken;
+            } while (continuationToken);
+        }
         // Convert map to array of results
         const results = [];
         for (const [endpoint, data] of videosByFeature) {
@@ -170,32 +175,39 @@ function getLatestVideosFromS3() {
         return results;
     });
 }
-// Get all videos for a specific feature from S3
+// Get all videos for a specific feature from S3 (from both videos/ and generated-videos/)
 function getVideosForFeatureFromS3(feature) {
     return __awaiter(this, void 0, void 0, function* () {
         const videos = [];
-        const featurePrefix = `videos/${feature.replace(/[^a-zA-Z0-9_-]/g, "-")}/`;
-        let continuationToken;
-        do {
-            const command = new client_s3_1.ListObjectsV2Command({
-                Bucket: BUCKET,
-                Prefix: featurePrefix,
-                ContinuationToken: continuationToken,
-            });
-            const response = yield exports.s3.send(command);
-            if (response.Contents) {
-                for (const obj of response.Contents) {
-                    if (obj.Key && obj.Key.endsWith(".mp4") && obj.LastModified) {
-                        videos.push({
-                            key: obj.Key,
-                            url: publicUrlFor(obj.Key),
-                            lastModified: obj.LastModified,
-                        });
+        const normalizedFeature = feature.replace(/[^a-zA-Z0-9_-]/g, "-");
+        // Fetch from both 'videos/' and 'generated-videos/' prefixes
+        const prefixes = [
+            `videos/${normalizedFeature}/`,
+            `generated-videos/${normalizedFeature}/`,
+        ];
+        for (const featurePrefix of prefixes) {
+            let continuationToken;
+            do {
+                const command = new client_s3_1.ListObjectsV2Command({
+                    Bucket: BUCKET,
+                    Prefix: featurePrefix,
+                    ContinuationToken: continuationToken,
+                });
+                const response = yield exports.s3.send(command);
+                if (response.Contents) {
+                    for (const obj of response.Contents) {
+                        if (obj.Key && obj.Key.endsWith(".mp4") && obj.LastModified) {
+                            videos.push({
+                                key: obj.Key,
+                                url: publicUrlFor(obj.Key),
+                                lastModified: obj.LastModified,
+                            });
+                        }
                     }
                 }
-            }
-            continuationToken = response.NextContinuationToken;
-        } while (continuationToken);
+                continuationToken = response.NextContinuationToken;
+            } while (continuationToken);
+        }
         // Sort by lastModified descending (newest first)
         videos.sort((a, b) => b.lastModified.getTime() - a.lastModified.getTime());
         return videos;

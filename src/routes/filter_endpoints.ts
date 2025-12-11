@@ -270,11 +270,14 @@ router.delete("/videos/:endpoint", async (req: Request, res: Response) => {
 
     // Validate that the key belongs to the specified endpoint
     const endpoint = req.params.endpoint;
-    const expectedPrefix = `videos/${endpoint.replace(
-      /[^a-zA-Z0-9_-]/g,
-      "-"
-    )}/`;
-    if (!key.startsWith(expectedPrefix)) {
+    const normalizedEndpoint = endpoint.replace(/[^a-zA-Z0-9_-]/g, "-");
+    const validPrefixes = [
+      `videos/${normalizedEndpoint}/`,
+      `generated-videos/${normalizedEndpoint}/`,
+    ];
+
+    const isValidKey = validPrefixes.some((prefix) => key.startsWith(prefix));
+    if (!isValidKey) {
       res
         .status(400)
         .json({ error: "Key does not match the specified endpoint" });
@@ -393,11 +396,16 @@ router.post(
 
       // Validate that the key belongs to the specified endpoint (if key is provided)
       if (key) {
-        const expectedPrefix = `videos/${endpoint.replace(
-          /[^a-zA-Z0-9_-]/g,
-          "-"
-        )}/`;
-        if (!key.startsWith(expectedPrefix)) {
+        const normalizedEndpoint = endpoint.replace(/[^a-zA-Z0-9_-]/g, "-");
+        const validPrefixes = [
+          `videos/${normalizedEndpoint}/`,
+          `generated-videos/${normalizedEndpoint}/`,
+        ];
+
+        const isValidKey = validPrefixes.some((prefix) =>
+          key.startsWith(prefix)
+        );
+        if (!isValidKey) {
           res
             .status(400)
             .json({ error: "Key does not match the specified endpoint" });

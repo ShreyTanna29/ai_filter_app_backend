@@ -486,10 +486,15 @@ if (!document.getElementById("step-video-modal")) {
   };
 }
 
-function showStepVideoModal(videoUrl) {
+function showStepVideoModal(videoUrl, audioUrl = null) {
   const modal = document.getElementById("step-video-modal");
   const player = document.getElementById("step-video-modal-player");
   player.src = videoUrl;
+
+  // If audio URL is provided, create a composite video with audio
+  // For now, we'll just play the video - browser should handle audio if it's embedded
+  // TODO: In future, could mix video and separate audio track
+
   modal.style.display = "flex";
 }
 // Ensure the add feature modal is hidden on page load
@@ -4178,7 +4183,19 @@ function showStepDetailPage(templateId, stepIndex, subcatIndex) {
           .map((v) => {
             const vidUrl = v.signedUrl || v.url;
             const deleteBtn = isAdmin()
-              ? `<button class="absolute top-1 right-1 bg-red-600/80 text-white text-[10px] px-1.5 py-0.5 rounded opacity-0 group-hover:opacity-100 transition delete-step-video-btn" title="Delete video"><svg xmlns='http://www.w3.org/2000/svg' width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' class='pointer-events-none'><path d='M3 6h18'/><path d='M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2'/><path d='M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6'/><path d='M10 11v6'/><path d='M14 11v6'/></svg></button>`
+              ? `<button class="absolute top-2 right-2 bg-red-600 text-white p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-all shadow-lg hover:bg-red-700 delete-step-video-btn z-10" title="Delete video"><svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' class='pointer-events-none'><path d='M3 6h18'/><path d='M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2'/><path d='M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6'/><path d='M10 11v6'/><path d='M14 11v6'/></svg></button>`
+              : "";
+
+            // Audio indicator overlay
+            const audioIndicator = v.audioUrl
+              ? `<div class="absolute top-2 left-2 bg-gradient-to-r from-purple-600 to-pink-600 text-white px-2 py-1 rounded-lg flex items-center gap-1 text-[10px] font-semibold shadow-lg z-10">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                    <path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+                    <path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path>
+                  </svg>
+                  <span>Audio</span>
+                </div>`
               : "";
 
             // Create app checkboxes for this video (admin only)
@@ -4186,22 +4203,29 @@ function showStepDetailPage(templateId, stepIndex, subcatIndex) {
             if (isAdmin() && allApps.length > 0) {
               const allowedAppIds = new Set((v.apps || []).map((a) => a.appId));
               appCheckboxesHtml = `
-                <div class="mt-2 p-2 bg-gray-50 rounded border border-gray-200">
-                  <div class="text-[10px] font-semibold text-gray-600 mb-1">Allowed Apps:</div>
-                  <div class="flex flex-col gap-1 max-h-24 overflow-y-auto">
+                <div class="mt-3 p-3 bg-gradient-to-br from-gray-50 to-gray-100 rounded-lg border border-gray-200 shadow-sm">
+                  <div class="text-xs font-bold text-gray-700 mb-2 flex items-center gap-1">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <rect x="3" y="3" width="7" height="7"></rect>
+                      <rect x="14" y="3" width="7" height="7"></rect>
+                      <rect x="14" y="14" width="7" height="7"></rect>
+                      <rect x="3" y="14" width="7" height="7"></rect>
+                    </svg>
+                    Allowed Apps
+                  </div>
+                  <div class="flex flex-col gap-1.5 max-h-28 overflow-y-auto scrollbar-thin">
                     ${allApps
                       .map(
                         (app) => `
-                      <label class="flex items-center gap-1 text-[10px] cursor-pointer hover:bg-white px-1 py-0.5 rounded">
+                      <label class="flex items-center gap-2 text-xs cursor-pointer hover:bg-white px-2 py-1.5 rounded-md transition-colors">
                         <input type="checkbox" 
-                          class="video-app-checkbox" 
+                          class="video-app-checkbox w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500" 
                           data-video-id="${v.id}" 
                           data-app-id="${app.id}" 
-                          ${allowedAppIds.has(app.id) ? "checked" : ""} 
-                          style="width: 12px; height: 12px;">
-                        <span class="truncate" title="${app.name}">${
+                          ${allowedAppIds.has(app.id) ? "checked" : ""}>
+                        <span class="truncate font-medium text-gray-700" title="${
                           app.name
-                        }</span>
+                        }">${app.name}</span>
                       </label>
                     `
                       )
@@ -4215,30 +4239,72 @@ function showStepDetailPage(templateId, stepIndex, subcatIndex) {
             let audioSelectorHtml = "";
             if (isAdmin()) {
               audioSelectorHtml = `
-                <div class="mt-2 p-2 bg-gray-50 rounded border border-gray-200">
-                  <div class="text-[10px] font-semibold text-gray-600 mb-1">Audio:</div>
-                  <button class="video-audio-btn text-[10px] px-2 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 w-full" data-video-id="${
-                    v.id
-                  }">
-                    ${v.audioUrl ? "🔊 Change" : "🎵 Add Audio"}
-                  </button>
+                <div class="mt-3 p-3 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg border border-blue-200 shadow-sm">
+                  <div class="text-xs font-bold text-gray-700 mb-2 flex items-center gap-1">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M9 18V5l12-2v13"></path>
+                      <circle cx="6" cy="18" r="3"></circle>
+                      <circle cx="18" cy="16" r="3"></circle>
+                    </svg>
+                    Audio Track
+                  </div>
                   ${
                     v.audioUrl
-                      ? `<div class="text-[9px] text-gray-500 mt-1 truncate" title="${v.audioUrl}">✓ Audio set</div>`
-                      : ""
+                      ? `<div class="mb-2 p-2 bg-white rounded border border-green-200 flex items-center gap-2">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <path d="M9 12l2 2 4-4"></path>
+                          </svg>
+                          <span class="text-[10px] text-green-700 font-semibold flex-1 truncate" title="${v.audioUrl}">Audio Added</span>
+                        </div>`
+                      : `<div class="mb-2 p-2 bg-white rounded border border-gray-200 flex items-center gap-2">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <line x1="15" y1="9" x2="9" y2="15"></line>
+                            <line x1="9" y1="9" x2="15" y2="15"></line>
+                          </svg>
+                          <span class="text-[10px] text-gray-500 flex-1">No audio</span>
+                        </div>`
                   }
+                  <button class="video-audio-btn text-xs px-3 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-lg hover:from-blue-700 hover:to-indigo-700 w-full font-semibold transition-all shadow-sm flex items-center justify-center gap-2" data-video-id="${
+                    v.id
+                  }">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                      <path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+                    </svg>
+                    ${v.audioUrl ? "Change Audio" : "Add Audio"}
+                  </button>
+                </div>
+              `;
+            } else if (v.audioUrl) {
+              // Show audio indicator for non-admin users
+              audioSelectorHtml = `
+                <div class="mt-3 p-2.5 bg-gradient-to-br from-green-50 to-emerald-50 rounded-lg border border-green-200">
+                  <div class="flex items-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                      <path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+                      <path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path>
+                    </svg>
+                    <span class="text-xs text-green-700 font-semibold">Has Audio</span>
+                  </div>
                 </div>
               `;
             }
 
-            return `<div class="step-video-card" style="display: flex; flex-direction: column;">
-              <div class="relative rounded-lg overflow-hidden border border-gray-200 hover:border-blue-400 hover:shadow group step-detail-thumb" data-url="${vidUrl}" data-key="${
-              v.key || ""
-            }" data-endpoint="${v.feature || ""}" data-video-id="${
+            return `<div class="step-video-card transition-all hover:scale-[1.02]" style="display: flex; flex-direction: column;">
+              <div class="relative rounded-xl overflow-hidden border-2 border-gray-200 hover:border-blue-400 hover:shadow-xl group step-detail-thumb transition-all" data-url="${vidUrl}" data-audio-url="${
+              v.audioUrl || ""
+            }" data-key="${v.key || ""}" data-endpoint="${
+              v.feature || ""
+            }" data-video-id="${
               v.id
-            }" style="width:120px;height:213px;background:#000;cursor:pointer;">
+            }" style="width:140px;height:249px;background:#000;cursor:pointer;">
                 <video src="${vidUrl}" class="w-full h-full object-cover" preload="metadata" muted playsinline style="width:100%;height:100%;object-fit:cover;pointer-events:none;"></video>
+                ${audioIndicator}
                 ${deleteBtn}
+                <div class="absolute inset-0 bg-gradient-to-t from-black/20 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"></div>
               </div>
               ${appCheckboxesHtml}
               ${audioSelectorHtml}
@@ -4284,7 +4350,8 @@ function showStepDetailPage(templateId, stepIndex, subcatIndex) {
             if (e.target.classList.contains("delete-step-video-btn")) return;
             if (e.target.classList.contains("video-app-checkbox")) return;
             const url = el.getAttribute("data-url");
-            if (url) showStepVideoModal(url);
+            const audioUrl = el.getAttribute("data-audio-url");
+            if (url) showStepVideoModal(url, audioUrl || null);
           });
         });
 
@@ -4755,8 +4822,15 @@ function showVideoAudioModal(
 
       setTimeout(() => {
         modal.classList.add("hidden");
-        if (audioModalCallback) audioModalCallback();
-      }, 1000);
+        saveBtn.disabled = false;
+        saveBtn.textContent = "Save";
+
+        // Call callback before clearing it
+        const callback = audioModalCallback;
+        currentVideoIdForAudio = null;
+        audioModalCallback = null;
+        if (callback) callback();
+      }, 800);
     } catch (error) {
       console.error("Error updating video audio:", error);
       statusEl.textContent = "✗ Failed to update audio";
