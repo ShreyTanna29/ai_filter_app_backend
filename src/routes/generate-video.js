@@ -521,7 +521,6 @@ const textToVideoHandler = (req, res) => __awaiter(void 0, void 0, void 0, funct
                 console.log("[Kling 2.5 Turbo Pro Text-to-Video] Request payload:", JSON.stringify([task], null, 2));
                 const createResp = yield axios_1.default.post("https://api.runware.ai/v1", [task], {
                     headers: runwareHeaders,
-                    timeout: 600000,
                 });
                 const data = createResp.data;
                 const ackItem = Array.isArray(data === null || data === void 0 ? void 0 : data.data)
