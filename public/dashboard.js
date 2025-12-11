@@ -2220,7 +2220,9 @@ async function loadAllFeatures() {
     const url = currentStatusFilter
       ? `/api/features/all?status=${encodeURIComponent(currentStatusFilter)}`
       : `/api/features/all`;
-    const response = await fetch(url);
+    const response = await fetch(url, {
+      headers: apiKeyHeaders(),
+    });
 
     const data = await response.json();
     if (!response.ok) throw new Error(data.message || "Failed");
@@ -2266,7 +2268,9 @@ async function loadAllPhotoFeatures() {
   }
 
   try {
-    const response = await fetch(`/api/photo-features/all`);
+    const response = await fetch(`/api/photo-features/all`, {
+      headers: apiKeyHeaders(),
+    });
     const data = await response.json();
     if (!response.ok) throw new Error(data.message || "Failed");
     const incomingPhotoFeatures =
@@ -4139,6 +4143,7 @@ function showStepDetailPage(templateId, stepIndex, subcatIndex) {
     step.endpoint || "";
   document.getElementById("stepDetailPromptInput").value = step.prompt || "";
   document.getElementById("stepDetailStatus").textContent = "";
+
   // Hide all tab content and show only step details
   document
     .querySelectorAll(".tab-content, #featureDetailPage")
@@ -4206,6 +4211,26 @@ function showStepDetailPage(templateId, stepIndex, subcatIndex) {
               `;
             }
 
+            // Audio selector for this video (admin only)
+            let audioSelectorHtml = "";
+            if (isAdmin()) {
+              audioSelectorHtml = `
+                <div class="mt-2 p-2 bg-gray-50 rounded border border-gray-200">
+                  <div class="text-[10px] font-semibold text-gray-600 mb-1">Audio:</div>
+                  <button class="video-audio-btn text-[10px] px-2 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 w-full" data-video-id="${
+                    v.id
+                  }">
+                    ${v.audioUrl ? "🔊 Change" : "🎵 Add Audio"}
+                  </button>
+                  ${
+                    v.audioUrl
+                      ? `<div class="text-[9px] text-gray-500 mt-1 truncate" title="${v.audioUrl}">✓ Audio set</div>`
+                      : ""
+                  }
+                </div>
+              `;
+            }
+
             return `<div class="step-video-card" style="display: flex; flex-direction: column;">
               <div class="relative rounded-lg overflow-hidden border border-gray-200 hover:border-blue-400 hover:shadow group step-detail-thumb" data-url="${vidUrl}" data-key="${
               v.key || ""
@@ -4216,6 +4241,7 @@ function showStepDetailPage(templateId, stepIndex, subcatIndex) {
                 ${deleteBtn}
               </div>
               ${appCheckboxesHtml}
+              ${audioSelectorHtml}
             </div>`;
           })
           .join("");
@@ -4303,6 +4329,22 @@ function showStepDetailPage(templateId, stepIndex, subcatIndex) {
               }
             });
           });
+
+        // Handle audio button clicks
+        generatedListEl.querySelectorAll(".video-audio-btn").forEach((btn) => {
+          btn.addEventListener("click", async (e) => {
+            e.stopPropagation();
+            const videoId = parseInt(btn.dataset.videoId);
+            const video = videos.find((v) => v.id === videoId);
+            if (video) {
+              showVideoAudioModal(videoId, video.audioUrl, () => {
+                // Reload videos after audio update
+                showStepDetailPage(templateId, stepIndex, subcatIndex);
+              });
+            }
+          });
+        });
+
         // Deletion
         generatedListEl
           .querySelectorAll(".delete-step-video-btn")
@@ -4619,6 +4661,192 @@ function showStepDetailPage(templateId, stepIndex, subcatIndex) {
   }
 }
 
+// Video Audio Modal functionality
+let cachedSounds = null;
+let currentVideoIdForAudio = null;
+let audioModalCallback = null;
+
+async function fetchSounds() {
+  if (cachedSounds) return cachedSounds;
+
+  try {
+    const response = await fetch("/api/sounds");
+    const data = await response.json();
+    if (data.success) {
+      cachedSounds = data.sounds;
+      return cachedSounds;
+    }
+  } catch (error) {
+    console.error("Error fetching sounds:", error);
+  }
+  return {};
+}
+
+function showVideoAudioModal(
+  videoId,
+  existingAudioUrl = null,
+  callback = null
+) {
+  const modal = document.getElementById("videoAudioModal");
+  const categorySelect = document.getElementById("videoAudioCategorySelect");
+  const soundSelect = document.getElementById("videoAudioSoundSelect");
+  const audioPreview = document.getElementById("videoAudioPreview");
+  const audioPlayer = document.getElementById("videoAudioPlayer");
+  const clearBtn = document.getElementById("videoAudioClearBtn");
+  const saveBtn = document.getElementById("videoAudioSaveBtn");
+  const closeBtn = document.getElementById("videoAudioModalClose");
+  const statusEl = document.getElementById("videoAudioStatus");
+
+  currentVideoIdForAudio = videoId;
+  audioModalCallback = callback;
+
+  // Reset and show modal
+  modal.classList.remove("hidden");
+  statusEl.textContent = "";
+  window._selectedAudioUrl = existingAudioUrl || null;
+
+  // Initialize dropdowns
+  initializeVideoAudioDropdowns(existingAudioUrl);
+
+  // Close button
+  closeBtn.onclick = () => {
+    modal.classList.add("hidden");
+    currentVideoIdForAudio = null;
+    audioModalCallback = null;
+  };
+
+  // Clear button
+  clearBtn.onclick = () => {
+    window._selectedAudioUrl = null;
+    categorySelect.value = "";
+    soundSelect.innerHTML = '<option value="">Select sound...</option>';
+    soundSelect.disabled = true;
+    audioPreview.classList.add("hidden");
+    audioPlayer.src = "";
+  };
+
+  // Save button
+  saveBtn.onclick = async () => {
+    saveBtn.disabled = true;
+    saveBtn.textContent = "Saving...";
+    statusEl.textContent = "";
+
+    try {
+      const response = await fetch(
+        `/api/videos/${currentVideoIdForAudio}/audio`,
+        {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            ...apiKeyHeaders(),
+          },
+          body: JSON.stringify({
+            audioUrl: window._selectedAudioUrl || null,
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error("Failed to update audio");
+      }
+
+      statusEl.textContent = "✓ Audio updated successfully!";
+      statusEl.style.color = "#059669";
+
+      setTimeout(() => {
+        modal.classList.add("hidden");
+        if (audioModalCallback) audioModalCallback();
+      }, 1000);
+    } catch (error) {
+      console.error("Error updating video audio:", error);
+      statusEl.textContent = "✗ Failed to update audio";
+      statusEl.style.color = "#dc2626";
+      saveBtn.disabled = false;
+      saveBtn.textContent = "Save";
+    }
+  };
+}
+
+async function initializeVideoAudioDropdowns(existingAudioUrl = null) {
+  const categorySelect = document.getElementById("videoAudioCategorySelect");
+  const soundSelect = document.getElementById("videoAudioSoundSelect");
+  const audioPreview = document.getElementById("videoAudioPreview");
+  const audioPlayer = document.getElementById("videoAudioPlayer");
+
+  if (!categorySelect || !soundSelect) return;
+
+  // Reset
+  categorySelect.innerHTML = '<option value="">Loading categories...</option>';
+  soundSelect.innerHTML = '<option value="">Select sound...</option>';
+  soundSelect.disabled = true;
+  audioPreview.classList.add("hidden");
+
+  // Fetch sounds
+  const sounds = await fetchSounds();
+  const categories = Object.keys(sounds).sort();
+
+  // Populate categories
+  categorySelect.innerHTML =
+    '<option value="">Select category...</option>' +
+    categories.map((cat) => `<option value="${cat}">${cat}</option>`).join("");
+
+  // Category change handler
+  categorySelect.onchange = () => {
+    const selectedCategory = categorySelect.value;
+    if (!selectedCategory) {
+      soundSelect.innerHTML = '<option value="">Select sound...</option>';
+      soundSelect.disabled = true;
+      return;
+    }
+
+    const categorySounds = sounds[selectedCategory] || [];
+    soundSelect.innerHTML =
+      '<option value="">Select sound...</option>' +
+      categorySounds
+        .map(
+          (sound) => `<option value="${sound.signedUrl}">${sound.name}</option>`
+        )
+        .join("");
+    soundSelect.disabled = false;
+  };
+
+  // Sound change handler
+  soundSelect.onchange = () => {
+    const selectedUrl = soundSelect.value;
+    if (!selectedUrl) {
+      audioPreview.classList.add("hidden");
+      window._selectedAudioUrl = null;
+      return;
+    }
+
+    window._selectedAudioUrl = selectedUrl;
+    audioPlayer.src = selectedUrl;
+    audioPreview.classList.remove("hidden");
+  };
+
+  // If existing audio, try to pre-select it
+  if (existingAudioUrl) {
+    window._selectedAudioUrl = existingAudioUrl;
+    audioPlayer.src = existingAudioUrl;
+    audioPreview.classList.remove("hidden");
+
+    // Try to find and select the matching category and sound
+    for (const [category, categorySounds] of Object.entries(sounds)) {
+      const matchingSound = categorySounds.find(
+        (s) => s.signedUrl === existingAudioUrl || s.url === existingAudioUrl
+      );
+      if (matchingSound) {
+        categorySelect.value = category;
+        categorySelect.dispatchEvent(new Event("change"));
+        setTimeout(() => {
+          soundSelect.value = matchingSound.signedUrl;
+        }, 100);
+        break;
+      }
+    }
+  }
+}
+
 function closeStepDetailPage() {
   console.log("Closing step detail page");
 
@@ -4778,7 +5006,9 @@ async function editTemplate(templateId) {
   // Ensure endpoints are loaded
   if (!window.featureEndpointsFull || !window.featureEndpointsFull.length) {
     try {
-      const res = await fetch("/api/features/all");
+      const res = await fetch("/api/features/all", {
+        headers: { ...apiKeyHeaders() },
+      });
       const data = await res.json();
       window.featureEndpointsFull = data.features || [];
     } catch {

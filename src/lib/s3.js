@@ -23,6 +23,7 @@ exports.ensure512SquareImageFromUrl = ensure512SquareImageFromUrl;
 exports.ensureImageSizeFromUrl = ensureImageSizeFromUrl;
 exports.getLatestVideosFromS3 = getLatestVideosFromS3;
 exports.getVideosForFeatureFromS3 = getVideosForFeatureFromS3;
+exports.getSoundsFromS3 = getSoundsFromS3;
 const client_s3_1 = require("@aws-sdk/client-s3");
 const lib_storage_1 = require("@aws-sdk/lib-storage");
 const sharp_1 = __importDefault(require("sharp"));
@@ -198,5 +199,47 @@ function getVideosForFeatureFromS3(feature) {
         // Sort by lastModified descending (newest first)
         videos.sort((a, b) => b.lastModified.getTime() - a.lastModified.getTime());
         return videos;
+    });
+}
+// Get all sounds organized by category from S3
+function getSoundsFromS3() {
+    return __awaiter(this, void 0, void 0, function* () {
+        const soundsByCategory = {};
+        const soundsPrefix = "Sounds/";
+        let continuationToken;
+        do {
+            const command = new client_s3_1.ListObjectsV2Command({
+                Bucket: BUCKET,
+                Prefix: soundsPrefix,
+                ContinuationToken: continuationToken,
+            });
+            const response = yield exports.s3.send(command);
+            if (response.Contents) {
+                for (const obj of response.Contents) {
+                    if (obj.Key && obj.Key.endsWith(".mp3")) {
+                        // Extract category and file name from key: "Sounds/{category}/{filename}.mp3"
+                        const parts = obj.Key.split("/");
+                        if (parts.length >= 3) {
+                            const category = parts[1]; // The folder name is the category
+                            const fileName = parts[parts.length - 1]; // The actual file name
+                            if (!soundsByCategory[category]) {
+                                soundsByCategory[category] = [];
+                            }
+                            soundsByCategory[category].push({
+                                key: obj.Key,
+                                url: publicUrlFor(obj.Key),
+                                name: fileName.replace(".mp3", ""), // Remove extension for display
+                            });
+                        }
+                    }
+                }
+            }
+            continuationToken = response.NextContinuationToken;
+        } while (continuationToken);
+        // Sort sounds within each category by name
+        for (const category in soundsByCategory) {
+            soundsByCategory[category].sort((a, b) => a.name.localeCompare(b.name));
+        }
+        return soundsByCategory;
     });
 }

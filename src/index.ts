@@ -11,7 +11,12 @@ import categoriesRouter from "./routes/categories";
 import appsRouter from "./routes/apps";
 import workflowsRouter from "./routes/workflows";
 import multer from "multer";
-import { uploadBuffer, makeKey, ensure512SquareImageFromUrl } from "./lib/s3";
+import {
+  uploadBuffer,
+  makeKey,
+  ensure512SquareImageFromUrl,
+  getSoundsFromS3,
+} from "./lib/s3";
 import { signKey, deriveKey } from "./middleware/signedUrl";
 
 // Load environment variables
@@ -24,6 +29,56 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json({ limit: "10mb" }));
 app.use(express.static("public")); // Serve static files from public directory
+
+// Cache for features and apps with permissions
+let featuresCache: any[] = [];
+let appsWithPermissionsCache: any[] = [];
+let featuresCacheTimestamp = 0;
+const FEATURES_CACHE_TTL = 60 * 60 * 1000; // 1 hour
+
+// Initialize cache on server start
+async function initializeFeaturesCache() {
+  try {
+    console.log("[CACHE] Initializing features cache...");
+    const [features, apps] = await Promise.all([
+      prisma.features.findMany({
+        orderBy: { createdAt: "asc" },
+      }),
+      prisma.app.findMany({
+        where: { isActive: true },
+        include: {
+          allowedFeatures: {
+            include: {
+              feature: true,
+            },
+          },
+        },
+      }),
+    ]);
+
+    featuresCache = features;
+    appsWithPermissionsCache = apps;
+    featuresCacheTimestamp = Date.now();
+    console.log(
+      `[CACHE] Cached ${features.length} features and ${apps.length} apps`
+    );
+  } catch (error) {
+    console.error("[CACHE] Error initializing features cache:", error);
+  }
+}
+
+// Refresh cache if expired
+async function ensureFeaturesCache() {
+  if (Date.now() - featuresCacheTimestamp > FEATURES_CACHE_TTL) {
+    await initializeFeaturesCache();
+  }
+}
+
+// Invalidate cache (call when features or app permissions change)
+function invalidateFeaturesCache() {
+  featuresCacheTimestamp = 0;
+  console.log("[CACHE] Features cache invalidated");
+}
 
 // Feature management routes
 // Get all features without pagination (with optional status filter)
@@ -48,6 +103,9 @@ app.get("/api/features/all", async (req, res): Promise<any> => {
       });
     }
 
+    // Ensure cache is fresh
+    await ensureFeaturesCache();
+
     // Check if it's admin API key
     const adminKeys = [
       process.env.ADMIN_API_KEY,
@@ -58,16 +116,15 @@ app.get("/api/features/all", async (req, res): Promise<any> => {
     const isAdmin = adminKeys.includes(apiKey);
 
     if (isAdmin) {
-      // Return all features for admin
+      // Return all features for admin from cache
       const whereClause =
         status && typeof status === "string" && status !== "all"
           ? { status }
           : {};
 
-      const list = await prisma.features.findMany({
-        where: whereClause,
-        orderBy: { createdAt: "asc" },
-      });
+      const list = whereClause.status
+        ? featuresCache.filter((f) => f.status === whereClause.status)
+        : featuresCache;
 
       return res.json({
         success: true,
@@ -75,17 +132,10 @@ app.get("/api/features/all", async (req, res): Promise<any> => {
       });
     }
 
-    // For non-admin, check if app exists and is active
-    const app = await prisma.app.findFirst({
-      where: { apiKey: apiKey, isActive: true },
-      include: {
-        allowedFeatures: {
-          include: {
-            feature: true,
-          },
-        },
-      },
-    });
+    // For non-admin, find app in cache
+    const app = appsWithPermissionsCache.find(
+      (a) => a.apiKey === apiKey && a.isActive
+    );
 
     if (!app) {
       return res.status(401).json({
@@ -95,12 +145,12 @@ app.get("/api/features/all", async (req, res): Promise<any> => {
     }
 
     // Get only allowed features for this app
-    const allowedFeatures = app.allowedFeatures.map((af) => af.feature);
+    const allowedFeatures = app.allowedFeatures.map((af: any) => af.feature);
 
     // Apply status filter if provided
     const filteredFeatures =
       status && typeof status === "string" && status !== "all"
-        ? allowedFeatures.filter((f) => f.status === status)
+        ? allowedFeatures.filter((f: any) => f.status === status)
         : allowedFeatures;
 
     res.json({
@@ -182,6 +232,9 @@ app.patch("/api/features/:endpoint/status", async (req, res): Promise<any> => {
       data: { status },
     });
 
+    // Invalidate cache
+    invalidateFeaturesCache();
+
     res.json({
       success: true,
       message: "Feature status updated successfully",
@@ -219,6 +272,9 @@ app.put("/api/features/:endpoint", async (req, res): Promise<any> => {
       where: { endpoint },
       data: { prompt },
     });
+
+    // Invalidate cache
+    invalidateFeaturesCache();
 
     res.json({
       success: true,
@@ -259,6 +315,9 @@ app.post("/api/features", async (req, res): Promise<any> => {
         isActive: true,
       },
     });
+
+    // Invalidate cache
+    invalidateFeaturesCache();
 
     res.status(201).json({
       success: true,
@@ -311,6 +370,9 @@ app.put("/api/features/:endpoint/rename", async (req, res): Promise<any> => {
       data: { endpoint: newEndpoint },
     });
 
+    // Invalidate cache
+    invalidateFeaturesCache();
+
     res.json({
       success: true,
       message: "Feature renamed successfully",
@@ -339,6 +401,9 @@ app.delete("/api/features/:endpoint", async (req, res): Promise<any> => {
     await prisma.features.delete({
       where: { endpoint },
     });
+
+    // Invalidate cache
+    invalidateFeaturesCache();
 
     res.json({
       success: true,
@@ -833,6 +898,90 @@ app.use("/api/categories", categoriesRouter);
 app.use("/api/apps", appsRouter);
 app.use("/api", workflowsRouter);
 
+// Get all sounds organized by category from S3
+app.get("/api/sounds", async (req, res) => {
+  try {
+    const sounds = await getSoundsFromS3();
+
+    // Sign URLs for all sounds
+    const signedSounds: {
+      [category: string]: {
+        key: string;
+        url: string;
+        signedUrl: string;
+        name: string;
+      }[];
+    } = {};
+
+    for (const category in sounds) {
+      signedSounds[category] = await Promise.all(
+        sounds[category].map(async (sound) => {
+          let signedUrl = sound.url;
+          try {
+            if (sound.key) {
+              signedUrl = await signKey(sound.key);
+            }
+          } catch (err) {
+            console.error(`Failed to sign URL for ${sound.key}:`, err);
+          }
+          return {
+            ...sound,
+            signedUrl,
+          };
+        })
+      );
+    }
+
+    res.json({
+      success: true,
+      sounds: signedSounds,
+    });
+  } catch (error) {
+    console.error("Error fetching sounds:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch sounds",
+    });
+  }
+});
+
+// Update audio for a specific video
+app.put("/api/videos/:videoId/audio", async (req, res): Promise<any> => {
+  try {
+    const videoId = parseInt(req.params.videoId);
+    const { audioUrl } = req.body;
+
+    if (isNaN(videoId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid video ID",
+      });
+    }
+
+    const updatedVideo = await prisma.generatedVideo.update({
+      where: { id: videoId },
+      data: { audioUrl: audioUrl || null },
+    });
+
+    res.json({
+      success: true,
+      video: updatedVideo,
+    });
+  } catch (error: any) {
+    console.error("Error updating video audio:", error);
+    if (error.code === "P2025") {
+      return res.status(404).json({
+        success: false,
+        message: "Video not found",
+      });
+    }
+    res.status(500).json({
+      success: false,
+      message: "Failed to update video audio",
+    });
+  }
+});
+
 // S3-based image upload replacing legacy Cloudinary upload.
 // Supports multipart file under field 'file' OR JSON body with { image_url }.
 const upload = multer({
@@ -1003,6 +1152,9 @@ app.use(function (err: any, req: any, res: any, next: any) {
   res.status(500).json({ message: "Internal server error" });
 });
 
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   console.log(`Server is running on http://localhost:${PORT}`);
+
+  // Initialize cache on server start
+  await initializeFeaturesCache();
 });

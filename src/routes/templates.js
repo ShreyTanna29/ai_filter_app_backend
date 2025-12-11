@@ -12,6 +12,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.invalidateEndpointsCache = invalidateEndpointsCache;
 const express_1 = require("express");
 const prisma_1 = __importDefault(require("../lib/prisma"));
 const axios_1 = __importDefault(require("axios"));
@@ -21,6 +22,42 @@ const signedUrl_1 = require("../middleware/signedUrl");
 // We keep DB column `videoUrl` but store canonical S3 public-style URL (not presigned).
 // Responses enrich with `signedUrl` so clients can access private objects.
 const router = (0, express_1.Router)();
+// Cache for endpoints
+let endpointsCache = [];
+let endpointsCacheTimestamp = 0;
+const ENDPOINTS_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+// Initialize endpoints cache
+function initializeEndpointsCache() {
+    return __awaiter(this, void 0, void 0, function* () {
+        try {
+            console.log("[CACHE] Initializing endpoints cache...");
+            const allFeatures = yield prisma_1.default.features.findMany({
+                orderBy: { endpoint: "asc" },
+            });
+            endpointsCache = allFeatures;
+            endpointsCacheTimestamp = Date.now();
+            console.log(`[CACHE] Cached ${allFeatures.length} endpoints`);
+        }
+        catch (error) {
+            console.error("[CACHE] Error initializing endpoints cache:", error);
+        }
+    });
+}
+// Refresh cache if expired
+function ensureEndpointsCache() {
+    return __awaiter(this, void 0, void 0, function* () {
+        if (Date.now() - endpointsCacheTimestamp > ENDPOINTS_CACHE_TTL) {
+            yield initializeEndpointsCache();
+        }
+    });
+}
+// Invalidate cache (export for use when features are modified)
+function invalidateEndpointsCache() {
+    endpointsCacheTimestamp = 0;
+    console.log("[CACHE] Endpoints cache invalidated");
+}
+// Initialize cache when module loads
+initializeEndpointsCache();
 // In-memory map to track registered template routes
 const templateRouteMap = {};
 // Helper to sanitize template name for use in route path
@@ -183,10 +220,10 @@ router.get("/templates", (req, res) => __awaiter(void 0, void 0, void 0, functio
 // Get available endpoints for template creation
 router.get("/templates/endpoints", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
-        const allFeatures = yield prisma_1.default.features.findMany({
-            orderBy: { endpoint: "asc" },
-        });
-        res.json(allFeatures);
+        // Ensure cache is fresh
+        yield ensureEndpointsCache();
+        // Return cached endpoints
+        res.json(endpointsCache);
     }
     catch (error) {
         console.error("Error fetching endpoints:", error);

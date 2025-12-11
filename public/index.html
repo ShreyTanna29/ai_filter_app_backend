@@ -1766,6 +1766,54 @@
       </div>
     </div>
 
+    <!-- Video Audio Selection Modal -->
+    <div
+      id="videoAudioModal"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 hidden"
+    >
+      <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 relative">
+        <button
+          id="videoAudioModalClose"
+          class="absolute top-4 right-4 text-gray-400 hover:text-gray-700 text-2xl"
+        >
+          &times;
+        </button>
+        <h2 class="text-xl font-bold text-gray-800 mb-4">Select Audio for Video</h2>
+        
+        <div class="space-y-4">
+          <div>
+            <label class="block text-sm font-semibold text-gray-700 mb-2">Category</label>
+            <select id="videoAudioCategorySelect" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400">
+              <option value="">Select category...</option>
+            </select>
+          </div>
+          
+          <div>
+            <label class="block text-sm font-semibold text-gray-700 mb-2">Sound</label>
+            <select id="videoAudioSoundSelect" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400" disabled>
+              <option value="">Select sound...</option>
+            </select>
+          </div>
+          
+          <div id="videoAudioPreview" class="hidden p-3 bg-gray-50 rounded-lg border border-gray-200">
+            <div class="text-xs text-gray-600 mb-2">Preview:</div>
+            <audio id="videoAudioPlayer" controls class="w-full" style="height: 40px;"></audio>
+          </div>
+          
+          <div class="flex gap-2 justify-end mt-6">
+            <button id="videoAudioClearBtn" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300">
+              Clear Audio
+            </button>
+            <button id="videoAudioSaveBtn" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+              Save
+            </button>
+          </div>
+          
+          <div id="videoAudioStatus" class="text-sm text-center"></div>
+        </div>
+      </div>
+    </div>
+
     <script src="/dashboard.js"></script>
   </body>
 </html>

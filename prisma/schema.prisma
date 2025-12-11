@@ -58,6 +58,7 @@ model GeneratedVideo {
   id        Int      @id @default(autoincrement())
   feature   String
   url       String // Cloudinary URL
+  audioUrl  String? // Optional audio URL for this video
   createdAt DateTime @default(now())
 
   apps AppGeneratedVideo[]

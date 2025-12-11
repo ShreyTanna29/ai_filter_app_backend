@@ -35,6 +35,54 @@ const PORT = process.env.PORT || 3000;
 app.use((0, cors_1.default)());
 app.use(express_1.default.json({ limit: "10mb" }));
 app.use(express_1.default.static("public")); // Serve static files from public directory
+// Cache for features and apps with permissions
+let featuresCache = [];
+let appsWithPermissionsCache = [];
+let featuresCacheTimestamp = 0;
+const FEATURES_CACHE_TTL = 60 * 60 * 1000; // 1 hour
+// Initialize cache on server start
+function initializeFeaturesCache() {
+    return __awaiter(this, void 0, void 0, function* () {
+        try {
+            console.log("[CACHE] Initializing features cache...");
+            const [features, apps] = yield Promise.all([
+                prisma_1.default.features.findMany({
+                    orderBy: { createdAt: "asc" },
+                }),
+                prisma_1.default.app.findMany({
+                    where: { isActive: true },
+                    include: {
+                        allowedFeatures: {
+                            include: {
+                                feature: true,
+                            },
+                        },
+                    },
+                }),
+            ]);
+            featuresCache = features;
+            appsWithPermissionsCache = apps;
+            featuresCacheTimestamp = Date.now();
+            console.log(`[CACHE] Cached ${features.length} features and ${apps.length} apps`);
+        }
+        catch (error) {
+            console.error("[CACHE] Error initializing features cache:", error);
+        }
+    });
+}
+// Refresh cache if expired
+function ensureFeaturesCache() {
+    return __awaiter(this, void 0, void 0, function* () {
+        if (Date.now() - featuresCacheTimestamp > FEATURES_CACHE_TTL) {
+            yield initializeFeaturesCache();
+        }
+    });
+}
+// Invalidate cache (call when features or app permissions change)
+function invalidateFeaturesCache() {
+    featuresCacheTimestamp = 0;
+    console.log("[CACHE] Features cache invalidated");
+}
 // Feature management routes
 // Get all features without pagination (with optional status filter)
 // If ADMIN_API_KEY is provided, returns all features
@@ -54,6 +102,8 @@ app.get("/api/features/all", (req, res) => __awaiter(void 0, void 0, void 0, fun
                 message: "API key is required",
             });
         }
+        // Ensure cache is fresh
+        yield ensureFeaturesCache();
         // Check if it's admin API key
         const adminKeys = [
             process.env.ADMIN_API_KEY,
@@ -62,30 +112,20 @@ app.get("/api/features/all", (req, res) => __awaiter(void 0, void 0, void 0, fun
         ].filter(Boolean);
         const isAdmin = adminKeys.includes(apiKey);
         if (isAdmin) {
-            // Return all features for admin
+            // Return all features for admin from cache
             const whereClause = status && typeof status === "string" && status !== "all"
                 ? { status }
                 : {};
-            const list = yield prisma_1.default.features.findMany({
-                where: whereClause,
-                orderBy: { createdAt: "asc" },
-            });
+            const list = whereClause.status
+                ? featuresCache.filter((f) => f.status === whereClause.status)
+                : featuresCache;
             return res.json({
                 success: true,
                 features: list,
             });
         }
-        // For non-admin, check if app exists and is active
-        const app = yield prisma_1.default.app.findFirst({
-            where: { apiKey: apiKey, isActive: true },
-            include: {
-                allowedFeatures: {
-                    include: {
-                        feature: true,
-                    },
-                },
-            },
-        });
+        // For non-admin, find app in cache
+        const app = appsWithPermissionsCache.find((a) => a.apiKey === apiKey && a.isActive);
         if (!app) {
             return res.status(401).json({
                 success: false,
@@ -170,6 +210,8 @@ app.patch("/api/features/:endpoint/status", (req, res) => __awaiter(void 0, void
             where: { endpoint },
             data: { status },
         });
+        // Invalidate cache
+        invalidateFeaturesCache();
         res.json({
             success: true,
             message: "Feature status updated successfully",
@@ -205,6 +247,8 @@ app.put("/api/features/:endpoint", (req, res) => __awaiter(void 0, void 0, void 
             where: { endpoint },
             data: { prompt },
         });
+        // Invalidate cache
+        invalidateFeaturesCache();
         res.json({
             success: true,
             message: "Feature updated successfully",
@@ -242,6 +286,8 @@ app.post("/api/features", (req, res) => __awaiter(void 0, void 0, void 0, functi
                 isActive: true,
             },
         });
+        // Invalidate cache
+        invalidateFeaturesCache();
         res.status(201).json({
             success: true,
             message: "Feature created successfully",
@@ -288,6 +334,8 @@ app.put("/api/features/:endpoint/rename", (req, res) => __awaiter(void 0, void 0
             where: { endpoint },
             data: { endpoint: newEndpoint },
         });
+        // Invalidate cache
+        invalidateFeaturesCache();
         res.json({
             success: true,
             message: "Feature renamed successfully",
@@ -315,6 +363,8 @@ app.delete("/api/features/:endpoint", (req, res) => __awaiter(void 0, void 0, vo
         yield prisma_1.default.features.delete({
             where: { endpoint },
         });
+        // Invalidate cache
+        invalidateFeaturesCache();
         res.json({
             success: true,
             message: "Feature deleted successfully",
@@ -764,6 +814,73 @@ app.use("/api/auth", simple_auth_1.default);
 app.use("/api/categories", categories_1.default);
 app.use("/api/apps", apps_1.default);
 app.use("/api", workflows_1.default);
+// Get all sounds organized by category from S3
+app.get("/api/sounds", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const sounds = yield (0, s3_1.getSoundsFromS3)();
+        // Sign URLs for all sounds
+        const signedSounds = {};
+        for (const category in sounds) {
+            signedSounds[category] = yield Promise.all(sounds[category].map((sound) => __awaiter(void 0, void 0, void 0, function* () {
+                let signedUrl = sound.url;
+                try {
+                    if (sound.key) {
+                        signedUrl = yield (0, signedUrl_1.signKey)(sound.key);
+                    }
+                }
+                catch (err) {
+                    console.error(`Failed to sign URL for ${sound.key}:`, err);
+                }
+                return Object.assign(Object.assign({}, sound), { signedUrl });
+            })));
+        }
+        res.json({
+            success: true,
+            sounds: signedSounds,
+        });
+    }
+    catch (error) {
+        console.error("Error fetching sounds:", error);
+        res.status(500).json({
+            success: false,
+            message: "Failed to fetch sounds",
+        });
+    }
+}));
+// Update audio for a specific video
+app.put("/api/videos/:videoId/audio", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const videoId = parseInt(req.params.videoId);
+        const { audioUrl } = req.body;
+        if (isNaN(videoId)) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid video ID",
+            });
+        }
+        const updatedVideo = yield prisma_1.default.generatedVideo.update({
+            where: { id: videoId },
+            data: { audioUrl: audioUrl || null },
+        });
+        res.json({
+            success: true,
+            video: updatedVideo,
+        });
+    }
+    catch (error) {
+        console.error("Error updating video audio:", error);
+        if (error.code === "P2025") {
+            return res.status(404).json({
+                success: false,
+                message: "Video not found",
+            });
+        }
+        res.status(500).json({
+            success: false,
+            message: "Failed to update video audio",
+        });
+    }
+}));
 // S3-based image upload replacing legacy Cloudinary upload.
 // Supports multipart file under field 'file' OR JSON body with { image_url }.
 const upload = (0, multer_1.default)({
@@ -910,6 +1027,8 @@ app.use(function (err, req, res, next) {
     console.error("Unhandled error:", err);
     res.status(500).json({ message: "Internal server error" });
 });
-app.listen(PORT, () => {
+app.listen(PORT, () => __awaiter(void 0, void 0, void 0, function* () {
     console.log(`Server is running on http://localhost:${PORT}`);
-});
+    // Initialize cache on server start
+    yield initializeFeaturesCache();
+}));

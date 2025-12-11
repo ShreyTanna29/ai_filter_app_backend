@@ -12,6 +12,42 @@ import { GetObjectCommand } from "@aws-sdk/client-s3";
 
 const router = Router();
 
+// Cache for endpoints
+let endpointsCache: any[] = [];
+let endpointsCacheTimestamp = 0;
+const ENDPOINTS_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+// Initialize endpoints cache
+async function initializeEndpointsCache() {
+  try {
+    console.log("[CACHE] Initializing endpoints cache...");
+    const allFeatures = await prisma.features.findMany({
+      orderBy: { endpoint: "asc" },
+    });
+    endpointsCache = allFeatures;
+    endpointsCacheTimestamp = Date.now();
+    console.log(`[CACHE] Cached ${allFeatures.length} endpoints`);
+  } catch (error) {
+    console.error("[CACHE] Error initializing endpoints cache:", error);
+  }
+}
+
+// Refresh cache if expired
+async function ensureEndpointsCache() {
+  if (Date.now() - endpointsCacheTimestamp > ENDPOINTS_CACHE_TTL) {
+    await initializeEndpointsCache();
+  }
+}
+
+// Invalidate cache (export for use when features are modified)
+export function invalidateEndpointsCache() {
+  endpointsCacheTimestamp = 0;
+  console.log("[CACHE] Endpoints cache invalidated");
+}
+
+// Initialize cache when module loads
+initializeEndpointsCache();
+
 // In-memory map to track registered template routes
 const templateRouteMap: Record<string, any> = {};
 
@@ -188,10 +224,11 @@ router.get(
   "/templates/endpoints",
   async (req: Request, res: Response): Promise<void> => {
     try {
-      const allFeatures = await prisma.features.findMany({
-        orderBy: { endpoint: "asc" },
-      });
-      res.json(allFeatures);
+      // Ensure cache is fresh
+      await ensureEndpointsCache();
+
+      // Return cached endpoints
+      res.json(endpointsCache);
     } catch (error) {
       console.error("Error fetching endpoints:", error);
       res.status(500).json({ error: "Failed to fetch endpoints" });

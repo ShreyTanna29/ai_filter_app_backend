@@ -229,3 +229,57 @@ export async function getVideosForFeatureFromS3(
 
   return videos;
 }
+
+// Get all sounds organized by category from S3
+export async function getSoundsFromS3(): Promise<{
+  [category: string]: { key: string; url: string; name: string }[];
+}> {
+  const soundsByCategory: {
+    [category: string]: { key: string; url: string; name: string }[];
+  } = {};
+  const soundsPrefix = "Sounds/";
+
+  let continuationToken: string | undefined;
+
+  do {
+    const command = new ListObjectsV2Command({
+      Bucket: BUCKET,
+      Prefix: soundsPrefix,
+      ContinuationToken: continuationToken,
+    });
+
+    const response = await s3.send(command);
+
+    if (response.Contents) {
+      for (const obj of response.Contents) {
+        if (obj.Key && obj.Key.endsWith(".mp3")) {
+          // Extract category and file name from key: "Sounds/{category}/{filename}.mp3"
+          const parts = obj.Key.split("/");
+          if (parts.length >= 3) {
+            const category = parts[1]; // The folder name is the category
+            const fileName = parts[parts.length - 1]; // The actual file name
+
+            if (!soundsByCategory[category]) {
+              soundsByCategory[category] = [];
+            }
+
+            soundsByCategory[category].push({
+              key: obj.Key,
+              url: publicUrlFor(obj.Key),
+              name: fileName.replace(".mp3", ""), // Remove extension for display
+            });
+          }
+        }
+      }
+    }
+
+    continuationToken = response.NextContinuationToken;
+  } while (continuationToken);
+
+  // Sort sounds within each category by name
+  for (const category in soundsByCategory) {
+    soundsByCategory[category].sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  return soundsByCategory;
+}
