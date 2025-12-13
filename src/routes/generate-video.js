@@ -2601,7 +2601,8 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                     : Number(process.env.RUNWAY_TURBO_HEIGHT || supportedDefaults.height), 256, 1080);
                 const duration = clamp(req.body.duration !== undefined
                     ? Number(req.body.duration)
-                    : Number(process.env.RUNWAY_TURBO_DURATION || supportedDefaults.duration), 2, 10);
+                    : Number(process.env.RUNWAY_TURBO_DURATION ||
+                        supportedDefaults.duration), 2, 10);
                 const fps = clamp(req.body.fps !== undefined
                     ? Number(req.body.fps)
                     : Number(process.env.RUNWAY_TURBO_FPS || supportedDefaults.fps), 15, 60);
@@ -3619,7 +3620,8 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                 // Optional prompt optimizer from request, fallback to env
                 const promptOptimizer = req.body.promptOptimizer !== undefined
                     ? Boolean(req.body.promptOptimizer)
-                    : String(process.env.HAILUO23_PROMPT_OPTIMIZER || "false") === "true";
+                    : String(process.env.HAILUO23_PROMPT_OPTIMIZER || "false") ===
+                        "true";
                 const createdTaskUUID = (0, crypto_1.randomUUID)();
                 const frameImages = [
                     { inputImage: firstUUID, frame: "first" },
@@ -4271,9 +4273,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
             // Optional parameters from request, fallback to env vars
             const pixVersion = process.env.PIXVERSE_VERSION || "0.0.1";
             const commonInput = {
-                motion_mode: req.body.motionMode ||
-                    process.env.PIXVERSE_MOTION_MODE ||
-                    "normal",
+                motion_mode: req.body.motionMode || process.env.PIXVERSE_MOTION_MODE || "normal",
                 quality: req.body.quality || process.env.PIXVERSE_QUALITY || "540p",
                 duration: req.body.duration !== undefined
                     ? Number(req.body.duration)
