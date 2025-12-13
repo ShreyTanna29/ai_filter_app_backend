@@ -337,6 +337,10 @@ const textToVideoHandler = (req, res) => __awaiter(void 0, void 0, void 0, funct
                     "Content-Type": "application/json",
                 };
                 const createdTaskUUID = (0, crypto_1.randomUUID)();
+                // Duration: optional from request, default to 8
+                const duration = req.body.duration !== undefined ? Number(req.body.duration) : 8;
+                // Generate audio: optional from request, default to true
+                const generateAudio = req.body.generateAudio !== undefined ? req.body.generateAudio : true;
                 const task = {
                     taskType: "videoInference",
                     taskUUID: createdTaskUUID,
@@ -344,10 +348,10 @@ const textToVideoHandler = (req, res) => __awaiter(void 0, void 0, void 0, funct
                     positivePrompt: prompt,
                     width: 1280,
                     height: 720,
-                    duration: 8,
+                    duration: duration,
                     providerSettings: {
                         google: {
-                            generateAudio: true,
+                            generateAudio: generateAudio,
                         },
                     },
                 };
@@ -503,6 +507,8 @@ const textToVideoHandler = (req, res) => __awaiter(void 0, void 0, void 0, funct
                     "Content-Type": "application/json",
                 };
                 const createdTaskUUID = (0, crypto_1.randomUUID)();
+                // Duration: optional from request, default to 10
+                const duration = req.body.duration !== undefined ? Number(req.body.duration) : 10;
                 const task = {
                     taskType: "videoInference",
                     taskUUID: createdTaskUUID,
@@ -510,7 +516,7 @@ const textToVideoHandler = (req, res) => __awaiter(void 0, void 0, void 0, funct
                     positivePrompt: prompt,
                     width: 1280,
                     height: 720,
-                    duration: 10,
+                    duration: duration,
                 };
                 if (negativePrompt && typeof negativePrompt === "string") {
                     task.negativePrompt = negativePrompt;
@@ -645,16 +651,19 @@ const textToVideoHandler = (req, res) => __awaiter(void 0, void 0, void 0, funct
                     "Content-Type": "application/json",
                 };
                 const createdTaskUUID = (0, crypto_1.randomUUID)();
-                const duration = req.body.duration ||
-                    (process.env.PIXVERSE_V5_DURATION
+                // Duration: optional from request, fallback to env, then default
+                const duration = req.body.duration !== undefined
+                    ? Number(req.body.duration)
+                    : process.env.PIXVERSE_V5_DURATION
                         ? Number(process.env.PIXVERSE_V5_DURATION)
-                        : 5);
+                        : 5;
                 const resolutionMap = {
                     "360p": { width: 640, height: 360 },
                     "540p": { width: 960, height: 540 },
                     "720p": { width: 1280, height: 720 },
                     "1080p": { width: 1920, height: 1080 },
                 };
+                // Resolution: optional from request, fallback to env, then default
                 const resolution = req.body.resolution || process.env.PIXVERSE_V5_RESOLUTION || "720p";
                 const dimensions = resolutionMap[resolution] || resolutionMap["720p"];
                 const task = {
@@ -1018,6 +1027,11 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                     return;
                 }
                 // 2) Create videoInference task
+                // Optional parameters from request, fallback to defaults
+                const duration = req.body.duration !== undefined ? Number(req.body.duration) : 5;
+                const cameraFixed = req.body.cameraFixed !== undefined
+                    ? Boolean(req.body.cameraFixed)
+                    : false;
                 const taskUUIDCreated = (0, crypto_1.randomUUID)();
                 const task = {
                     taskType: "videoInference",
@@ -1026,16 +1040,17 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                     positivePrompt: prompt || "",
                     width: 864,
                     height: 480,
-                    duration: 5,
+                    duration,
                     deliveryMethod: "async",
                     frameImages: [{ inputImage: firstUUID, frame: "first" }],
-                    providerSettings: { bytedance: { cameraFixed: false } },
+                    providerSettings: { bytedance: { cameraFixed } },
                 };
                 console.log("[Seedance] Created task", {
                     taskUUID: taskUUIDCreated,
                     width: 864,
                     height: 480,
-                    duration: 5,
+                    duration,
+                    cameraFixed,
                 });
                 const createResp = yield axios_1.default.post("https://api.runware.ai/v1", [task], { headers: runwareHeaders, timeout: 180000 });
                 const createData = createResp.data;
@@ -1228,11 +1243,24 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                     });
                     return;
                 }
-                // Defaults per docs: 1080p, 6/8/10 sec; enable audio
-                const width = Number(process.env.LTX2_WIDTH || 1920);
-                const height = Number(process.env.LTX2_HEIGHT || 1080);
-                const duration = Number(process.env.LTX2_DURATION || 8);
-                const generateAudio = String(process.env.LTX2_AUDIO || "true") === "true";
+                // Optional parameters from request, fallback to env vars and defaults
+                const width = req.body.width !== undefined
+                    ? Number(req.body.width)
+                    : Number(process.env.LTX2_WIDTH || 1920);
+                const height = req.body.height !== undefined
+                    ? Number(req.body.height)
+                    : Number(process.env.LTX2_HEIGHT || 1080);
+                const duration = req.body.duration !== undefined
+                    ? Number(req.body.duration)
+                    : Number(process.env.LTX2_DURATION || 8);
+                const generateAudio = req.body.generateAudio !== undefined
+                    ? Boolean(req.body.generateAudio)
+                    : String(process.env.LTX2_AUDIO || "true") === "true";
+                const cfgScale = req.body.cfgScale !== undefined
+                    ? Number(req.body.cfgScale)
+                    : undefined;
+                const steps = req.body.steps !== undefined ? Number(req.body.steps) : undefined;
+                const seed = req.body.seed !== undefined ? Number(req.body.seed) : undefined;
                 // 2) Create videoInference task
                 const createdTaskUUID = (0, crypto_1.randomUUID)();
                 const task = {
@@ -1246,12 +1274,22 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                     frameImages: [{ inputImage: firstUUID, frame: "first" }],
                     providerSettings: { lightricks: { generateAudio } },
                 };
+                // Add optional parameters if provided
+                if (cfgScale !== undefined)
+                    task.cfgScale = cfgScale;
+                if (steps !== undefined)
+                    task.steps = steps;
+                if (seed !== undefined)
+                    task.seed = seed;
                 console.log("[LTX2] Created task", {
                     taskUUID: createdTaskUUID,
                     width,
                     height,
                     duration,
                     generateAudio,
+                    cfgScale,
+                    steps,
+                    seed,
                 });
                 const createResp = yield axios_1.default.post("https://api.runware.ai/v1", [task], {
                     headers: runwareHeaders,
@@ -1442,11 +1480,23 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                     });
                     return;
                 }
-                // Defaults: use env overrides if provided
-                const width = Number(process.env.LTX2F_WIDTH || 1920);
-                const height = Number(process.env.LTX2F_HEIGHT || 1080);
-                const duration = Number(process.env.LTX2F_DURATION || 8);
-                const generateAudio = String(process.env.LTX2F_AUDIO || "true") === "true";
+                // Optional parameters from request, fallback to env vars and defaults
+                const width = req.body.width !== undefined
+                    ? Number(req.body.width)
+                    : Number(process.env.LTX2F_WIDTH || 1920);
+                const height = req.body.height !== undefined
+                    ? Number(req.body.height)
+                    : Number(process.env.LTX2F_HEIGHT || 1080);
+                const duration = req.body.duration !== undefined
+                    ? Number(req.body.duration)
+                    : Number(process.env.LTX2F_DURATION || 8);
+                const generateAudio = req.body.generateAudio !== undefined
+                    ? Boolean(req.body.generateAudio)
+                    : String(process.env.LTX2F_AUDIO || "true") === "true";
+                const cfgScale = req.body.cfgScale !== undefined
+                    ? Number(req.body.cfgScale)
+                    : undefined;
+                const steps = req.body.steps !== undefined ? Number(req.body.steps) : undefined;
                 // 2) Create videoInference task (lightricks:2@1)
                 const createdTaskUUID = (0, crypto_1.randomUUID)();
                 const task = {
@@ -1460,12 +1510,19 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                     frameImages: [{ inputImage: firstUUID, frame: "first" }],
                     providerSettings: { lightricks: { generateAudio } },
                 };
+                // Add optional parameters if provided
+                if (cfgScale !== undefined)
+                    task.cfgScale = cfgScale;
+                if (steps !== undefined)
+                    task.steps = steps;
                 console.log("[LTX2F] Created task", {
                     taskUUID: createdTaskUUID,
                     width,
                     height,
                     duration,
                     generateAudio,
+                    cfgScale,
+                    steps,
                 });
                 const createResp = yield axios_1.default.post("https://api.runware.ai/v1", [task], {
                     headers: runwareHeaders,
@@ -1670,10 +1727,16 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                         console.warn("[VIDUQ2] imageUpload last failed (continuing as single frame)", ((_x = e === null || e === void 0 ? void 0 : e.response) === null || _x === void 0 ? void 0 : _x.data) || (e === null || e === void 0 ? void 0 : e.message) || e);
                     }
                 }
-                // Model-specific params
-                const duration = Number(process.env.VIDUQ2_DURATION || 5);
-                const movementAmplitude = process.env.VIDUQ2_MOVEMENT_AMPLITUDE || "medium"; // low|medium|large
-                const bgm = String(process.env.VIDUQ2_BGM || "false") === "true";
+                // Model-specific params - optional from request body, fallback to env
+                const duration = req.body.duration !== undefined
+                    ? Number(req.body.duration)
+                    : Number(process.env.VIDUQ2_DURATION || 5);
+                const movementAmplitude = req.body.movementAmplitude ||
+                    process.env.VIDUQ2_MOVEMENT_AMPLITUDE ||
+                    "medium"; // low|medium|large
+                const bgm = req.body.bgm !== undefined
+                    ? Boolean(req.body.bgm)
+                    : String(process.env.VIDUQ2_BGM || "false") === "true";
                 // 2) Create videoInference task (omit width/height when using frameImages)
                 const createdTaskUUID = (0, crypto_1.randomUUID)();
                 const frameImages = [
@@ -1883,9 +1946,19 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                     }
                     frameImages.push({ inputImage: lastUUID, frame: "last" });
                 }
-                const width = Number(process.env.VEO31_WIDTH || 1280);
-                const height = Number(process.env.VEO31_HEIGHT || 720);
-                const duration = Number(process.env.VEO31_DURATION || 8);
+                // Optional parameters from request, fallback to env vars
+                const width = req.body.width !== undefined
+                    ? Number(req.body.width)
+                    : Number(process.env.VEO31_WIDTH || 1280);
+                const height = req.body.height !== undefined
+                    ? Number(req.body.height)
+                    : Number(process.env.VEO31_HEIGHT || 720);
+                const duration = req.body.duration !== undefined
+                    ? Number(req.body.duration)
+                    : Number(process.env.VEO31_DURATION || 8);
+                const generateAudio = req.body.generateAudio !== undefined
+                    ? req.body.generateAudio
+                    : true;
                 const createdTaskUUID = (0, crypto_1.randomUUID)();
                 const task = {
                     taskType: "videoInference",
@@ -1896,7 +1969,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                     height,
                     duration,
                     deliveryMethod: "async",
-                    providerSettings: { google: { generateAudio: true } },
+                    providerSettings: { google: { generateAudio } },
                     frameImages,
                 };
                 console.log("veo 3.1 task:", task);
@@ -2084,9 +2157,19 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                     }
                     frameImages.push({ inputImage: lastUUID, frame: "last" });
                 }
-                const width = Number(process.env.VEO31F_WIDTH || 1280);
-                const height = Number(process.env.VEO31F_HEIGHT || 720);
-                const duration = Number(process.env.VEO31F_DURATION || 8);
+                // Optional parameters from request, fallback to env vars
+                const width = req.body.width !== undefined
+                    ? Number(req.body.width)
+                    : Number(process.env.VEO31F_WIDTH || 1280);
+                const height = req.body.height !== undefined
+                    ? Number(req.body.height)
+                    : Number(process.env.VEO31F_HEIGHT || 720);
+                const duration = req.body.duration !== undefined
+                    ? Number(req.body.duration)
+                    : Number(process.env.VEO31F_DURATION || 8);
+                const generateAudio = req.body.generateAudio !== undefined
+                    ? req.body.generateAudio
+                    : true;
                 const createdTaskUUID = (0, crypto_1.randomUUID)();
                 const task = {
                     taskType: "videoInference",
@@ -2097,7 +2180,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                     height,
                     duration,
                     deliveryMethod: "async",
-                    providerSettings: { google: { generateAudio: true } },
+                    providerSettings: { google: { generateAudio } },
                     frameImages,
                 };
                 console.log("[VEO31F] Created task", {
@@ -2297,6 +2380,12 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                     }
                     frameImages.push({ inputImage: lastUUID, frame: "last" });
                 }
+                // Duration: optional from request, default to 8
+                const duration = req.body.duration !== undefined ? Number(req.body.duration) : 8;
+                // Generate audio: optional from request, default to true
+                const generateAudio = req.body.generateAudio !== undefined
+                    ? req.body.generateAudio
+                    : true;
                 const task = {
                     taskType: "videoInference",
                     taskUUID: (0, crypto_1.randomUUID)(),
@@ -2305,10 +2394,10 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                     positivePrompt: prompt || "",
                     width: 1280,
                     height: 720,
-                    duration: 8,
+                    duration: duration,
                     deliveryMethod: "async", // video generation requires async; we'll poll for completion
                     providerSettings: {
-                        google: { generateAudio: true },
+                        google: { generateAudio: generateAudio },
                     },
                     // Frame images: first and optional last as objects
                     frameImages,
@@ -2503,12 +2592,25 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                     fps: 24,
                     cfg: 7.5,
                 };
-                const width = clamp(Number(process.env.RUNWAY_TURBO_WIDTH || supportedDefaults.width), 256, 1920);
-                const height = clamp(Number(process.env.RUNWAY_TURBO_HEIGHT || supportedDefaults.height), 256, 1080);
-                const duration = clamp(Number(process.env.RUNWAY_TURBO_DURATION || supportedDefaults.duration), 2, 10);
-                const fps = clamp(Number(process.env.RUNWAY_TURBO_FPS || supportedDefaults.fps), 15, 60);
-                const cfgScale = clamp(Number(process.env.RUNWAY_TURBO_CFG || supportedDefaults.cfg), 1, 20);
-                const publicFigureThreshold = process.env.RUNWAY_TURBO_PUBLIC_FIGURE_THRESHOLD || undefined;
+                // Optional parameters from request, fallback to env vars
+                const width = clamp(req.body.width !== undefined
+                    ? Number(req.body.width)
+                    : Number(process.env.RUNWAY_TURBO_WIDTH || supportedDefaults.width), 256, 1920);
+                const height = clamp(req.body.height !== undefined
+                    ? Number(req.body.height)
+                    : Number(process.env.RUNWAY_TURBO_HEIGHT || supportedDefaults.height), 256, 1080);
+                const duration = clamp(req.body.duration !== undefined
+                    ? Number(req.body.duration)
+                    : Number(process.env.RUNWAY_TURBO_DURATION || supportedDefaults.duration), 2, 10);
+                const fps = clamp(req.body.fps !== undefined
+                    ? Number(req.body.fps)
+                    : Number(process.env.RUNWAY_TURBO_FPS || supportedDefaults.fps), 15, 60);
+                const cfgScale = clamp(req.body.cfgScale !== undefined
+                    ? Number(req.body.cfgScale)
+                    : Number(process.env.RUNWAY_TURBO_CFG || supportedDefaults.cfg), 1, 20);
+                const publicFigureThreshold = req.body.publicFigureThreshold !== undefined
+                    ? String(req.body.publicFigureThreshold)
+                    : process.env.RUNWAY_TURBO_PUBLIC_FIGURE_THRESHOLD || undefined;
                 const createdTaskUUID = (0, crypto_1.randomUUID)();
                 const frameImages = [{ image: firstUUID, frame: "first" }];
                 if (lastUUID)
@@ -2755,15 +2857,20 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                 });
                 const pickDuration = () => {
                     const allowed = [4, 8, 12];
-                    const envVal = Number(process.env.SORA2_DURATION);
-                    if (allowed.includes(envVal))
-                        return envVal;
+                    // Optional from request, fallback to env
+                    const requestedDuration = req.body.duration !== undefined
+                        ? Number(req.body.duration)
+                        : Number(process.env.SORA2_DURATION);
+                    if (allowed.includes(requestedDuration))
+                        return requestedDuration;
                     return 8;
                 };
                 const duration = pickDuration();
-                const orientation = (process.env.SORA2_ORIENTATION ||
+                // Optional orientation from request, fallback to env
+                const orientation = req.body.orientation ||
+                    process.env.SORA2_ORIENTATION ||
                     process.env.SORA2_ASPECT ||
-                    "").toLowerCase();
+                    "";
                 const usePortrait = /portrait|vertical|9[:x]16|720x1280/.test(orientation);
                 const targetWidth = usePortrait ? 720 : 1280;
                 const targetHeight = usePortrait ? 1280 : 720;
@@ -3499,14 +3606,20 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                     return;
                 }
                 const allowedDurations = [6, 10];
-                const requestedDuration = Number(process.env.HAILUO23_DURATION);
+                // Optional from request, fallback to env
+                const requestedDuration = req.body.duration !== undefined
+                    ? Number(req.body.duration)
+                    : Number(process.env.HAILUO23_DURATION);
                 const duration = allowedDurations.includes(requestedDuration)
                     ? requestedDuration
                     : 6;
                 if (duration === 10) {
                     console.log("[Hailuo2.3] Using 10s duration – ensure source frame is 1366x768 per Runware docs");
                 }
-                const promptOptimizer = String(process.env.HAILUO23_PROMPT_OPTIMIZER || "false") === "true";
+                // Optional prompt optimizer from request, fallback to env
+                const promptOptimizer = req.body.promptOptimizer !== undefined
+                    ? Boolean(req.body.promptOptimizer)
+                    : String(process.env.HAILUO23_PROMPT_OPTIMIZER || "false") === "true";
                 const createdTaskUUID = (0, crypto_1.randomUUID)();
                 const frameImages = [
                     { inputImage: firstUUID, frame: "first" },
@@ -4155,11 +4268,16 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                 return;
             }
             // Create prediction (single attempt, simplified)
+            // Optional parameters from request, fallback to env vars
             const pixVersion = process.env.PIXVERSE_VERSION || "0.0.1";
             const commonInput = {
-                motion_mode: process.env.PIXVERSE_MOTION_MODE || "normal",
-                quality: process.env.PIXVERSE_QUALITY || "540p",
-                duration: Number(process.env.PIXVERSE_DURATION || 5),
+                motion_mode: req.body.motionMode ||
+                    process.env.PIXVERSE_MOTION_MODE ||
+                    "normal",
+                quality: req.body.quality || process.env.PIXVERSE_QUALITY || "540p",
+                duration: req.body.duration !== undefined
+                    ? Number(req.body.duration)
+                    : Number(process.env.PIXVERSE_DURATION || 5),
                 prompt,
                 webhook_url: process.env.PIXVERSE_WEBHOOK_URL || "",
             };

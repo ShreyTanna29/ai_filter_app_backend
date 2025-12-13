@@ -1258,6 +1258,195 @@
                 </button>
               </div>
 
+              <!-- Model-specific configuration options -->
+              <div
+                id="modelConfigPanel"
+                style="display:none"
+                class="mt-4 bg-gradient-to-br from-purple-50 to-pink-50 rounded-2xl p-4 border border-purple-100 shadow-sm"
+              >
+                <h4 class="text-sm font-semibold text-gray-800 mb-3 flex items-center gap-2">
+                  <i class="fas fa-cog text-purple-600"></i>
+                  Model Configuration
+                </h4>
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  <!-- Duration -->
+                  <label id="durationField" class="flex flex-col text-xs font-semibold text-gray-600" style="display:none">
+                    Duration (seconds)
+                    <select id="modelDurationSelect" class="mt-1 border rounded px-2 py-2 text-sm">
+                      <option value="">Default</option>
+                      <option value="4">4s</option>
+                      <option value="5">5s</option>
+                      <option value="6">6s</option>
+                      <option value="8">8s</option>
+                      <option value="10">10s</option>
+                      <option value="12">12s</option>
+                    </select>
+                  </label>
+                  
+                  <!-- Resolution -->
+                  <label id="resolutionField" class="flex flex-col text-xs font-semibold text-gray-600" style="display:none">
+                    Resolution
+                    <select id="modelResolutionSelect" class="mt-1 border rounded px-2 py-2 text-sm">
+                      <option value="">Default</option>
+                      <option value="360p">360p (640x360)</option>
+                      <option value="540p">540p (960x540)</option>
+                      <option value="720p">720p (1280x720)</option>
+                      <option value="1080p">1080p (1920x1080)</option>
+                    </select>
+                  </label>
+                  
+                  <!-- Width x Height (Runway, LTX, ControlNet) -->
+                  <label id="widthField" class="flex flex-col text-xs font-semibold text-gray-600" style="display:none">
+                    Width (px)
+                    <input type="number" id="modelWidthInput" class="mt-1 border rounded px-2 py-2 text-sm" placeholder="1280" min="256" max="1920" step="64" />
+                  </label>
+                  
+                  <label id="heightField" class="flex flex-col text-xs font-semibold text-gray-600" style="display:none">
+                    Height (px)
+                    <input type="number" id="modelHeightInput" class="mt-1 border rounded px-2 py-2 text-sm" placeholder="720" min="256" max="1080" step="64" />
+                  </label>
+                  
+                  <!-- FPS (Runway) -->
+                  <label id="fpsField" class="flex flex-col text-xs font-semibold text-gray-600" style="display:none">
+                    FPS
+                    <input type="number" id="modelFpsInput" class="mt-1 border rounded px-2 py-2 text-sm" placeholder="24" min="15" max="60" />
+                  </label>
+                  
+                  <!-- CFG Scale (Runway, LTX, ControlNet) -->
+                  <label id="cfgScaleField" class="flex flex-col text-xs font-semibold text-gray-600" style="display:none">
+                    CFG Scale
+                    <input type="number" id="modelCfgScaleInput" class="mt-1 border rounded px-2 py-2 text-sm" placeholder="7.5" min="1" max="20" step="0.1" />
+                  </label>
+                  
+                  <!-- Steps (LTX, ControlNet) -->
+                  <label id="stepsField" class="flex flex-col text-xs font-semibold text-gray-600" style="display:none">
+                    Steps
+                    <input type="number" id="modelStepsInput" class="mt-1 border rounded px-2 py-2 text-sm" placeholder="30" min="1" max="150" />
+                  </label>
+                  
+                  <!-- Camera Movement (PixVerse) -->
+                  <label id="cameraMovementField" class="flex flex-col text-xs font-semibold text-gray-600" style="display:none">
+                    Camera Movement
+                    <select id="modelCameraMovementSelect" class="mt-1 border rounded px-2 py-2 text-sm">
+                      <option value="">Default</option>
+                      <option value="static">Static</option>
+                      <option value="pan_left">Pan Left</option>
+                      <option value="pan_right">Pan Right</option>
+                      <option value="zoom_in">Zoom In</option>
+                      <option value="zoom_out">Zoom Out</option>
+                    </select>
+                  </label>
+                  
+                  <!-- Style (PixVerse) -->
+                  <label id="styleField" class="flex flex-col text-xs font-semibold text-gray-600" style="display:none">
+                    Style
+                    <select id="modelStyleSelect" class="mt-1 border rounded px-2 py-2 text-sm">
+                      <option value="">Default</option>
+                      <option value="realistic">Realistic</option>
+                      <option value="anime">Anime</option>
+                      <option value="3d">3D</option>
+                    </select>
+                  </label>
+                  
+                  <!-- Motion Mode (PixVerse) -->
+                  <label id="motionModeField" class="flex flex-col text-xs font-semibold text-gray-600" style="display:none">
+                    Motion Mode
+                    <select id="modelMotionModeSelect" class="mt-1 border rounded px-2 py-2 text-sm">
+                      <option value="">Default</option>
+                      <option value="slow">Slow</option>
+                      <option value="normal">Normal</option>
+                      <option value="fast">Fast</option>
+                    </select>
+                  </label>
+                  
+                  <!-- Quality (PixVerse) -->
+                  <label id="qualityField" class="flex flex-col text-xs font-semibold text-gray-600" style="display:none">
+                    Quality
+                    <select id="modelQualitySelect" class="mt-1 border rounded px-2 py-2 text-sm">
+                      <option value="">Default</option>
+                      <option value="360p">360p</option>
+                      <option value="540p">540p</option>
+                      <option value="720p">720p</option>
+                      <option value="1080p">1080p</option>
+                    </select>
+                  </label>
+                  
+                  <!-- Movement Amplitude (Vidu) -->
+                  <label id="movementAmplitudeField" class="flex flex-col text-xs font-semibold text-gray-600" style="display:none">
+                    Movement Amplitude
+                    <select id="modelMovementAmplitudeSelect" class="mt-1 border rounded px-2 py-2 text-sm">
+                      <option value="">Default</option>
+                      <option value="low">Low</option>
+                      <option value="medium">Medium</option>
+                      <option value="large">Large</option>
+                    </select>
+                  </label>
+                  
+                  <!-- BGM (Vidu) -->
+                  <label id="bgmField" class="flex items-center gap-2 text-xs font-semibold text-gray-600" style="display:none">
+                    <input type="checkbox" id="modelBgmCheck" class="w-4 h-4">
+                    <span>Background Music</span>
+                  </label>
+                  
+                  <!-- Generate Audio (Google Veo) -->
+                  <label id="generateAudioField" class="flex items-center gap-2 text-xs font-semibold text-gray-600" style="display:none">
+                    <input type="checkbox" id="modelGenerateAudioCheck" class="w-4 h-4" checked>
+                    <span>Generate Audio</span>
+                  </label>
+                  
+                  <!-- Aspect Ratio/Orientation (Sora 2) -->
+                  <label id="orientationField" class="flex flex-col text-xs font-semibold text-gray-600" style="display:none">
+                    Orientation
+                    <select id="modelOrientationSelect" class="mt-1 border rounded px-2 py-2 text-sm">
+                      <option value="">Default (Landscape)</option>
+                      <option value="landscape">Landscape (16:9)</option>
+                      <option value="portrait">Portrait (9:16)</option>
+                    </select>
+                  </label>
+                  
+                  <!-- Prompt Optimizer (Hailuo 2.3) -->
+                  <label id="promptOptimizerField" class="flex items-center gap-2 text-xs font-semibold text-gray-600" style="display:none">
+                    <input type="checkbox" id="modelPromptOptimizerCheck" class="w-4 h-4">
+                    <span>Prompt Optimizer</span>
+                  </label>
+                  
+                  <!-- Camera Fixed (Seedance) -->
+                  <label id="cameraFixedField" class="flex items-center gap-2 text-xs font-semibold text-gray-600" style="display:none">
+                    <input type="checkbox" id="modelCameraFixedCheck" class="w-4 h-4">
+                    <span>Camera Fixed</span>
+                  </label>
+                  
+                  <!-- Public Figure Threshold (Runway) -->
+                  <label id="publicFigureThresholdField" class="flex flex-col text-xs font-semibold text-gray-600" style="display:none">
+                    Public Figure Threshold
+                    <input type="number" id="modelPublicFigureThresholdInput" class="mt-1 border rounded px-2 py-2 text-sm" placeholder="0.5" min="0" max="1" step="0.1" />
+                  </label>
+                  
+                  <!-- Control Mode (ControlNet) -->
+                  <label id="controlModeField" class="flex flex-col text-xs font-semibold text-gray-600" style="display:none">
+                    Control Mode
+                    <select id="modelControlModeSelect" class="mt-1 border rounded px-2 py-2 text-sm">
+                      <option value="">Default</option>
+                      <option value="canny">Canny Edge</option>
+                      <option value="depth">Depth</option>
+                      <option value="pose">Pose</option>
+                    </select>
+                  </label>
+                  
+                  <!-- Seed -->
+                  <label id="seedField" class="flex flex-col text-xs font-semibold text-gray-600" style="display:none">
+                    Seed
+                    <input type="number" id="modelSeedInput" class="mt-1 border rounded px-2 py-2 text-sm" placeholder="Random" min="0" />
+                  </label>
+                  
+                  <!-- Negative Prompt -->
+                  <label id="negativePromptField" class="flex flex-col text-xs font-semibold text-gray-600 col-span-full" style="display:none">
+                    Negative Prompt
+                    <textarea id="modelNegativePromptInput" class="mt-1 border rounded px-2 py-2 text-sm" rows="2" placeholder="Elements to avoid..."></textarea>
+                  </label>
+                </div>
+              </div>
+
               <!-- Ideogram-specific controls (shown only when Ideogram model selected) -->
               <div
                 id="ideogramOptionsPanel"

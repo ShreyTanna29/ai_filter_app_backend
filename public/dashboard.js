@@ -3194,6 +3194,225 @@ function showFeatureDetailPage(endpoint, sourceTab = "filters") {
       featureModelSelect.addEventListener("change", toggleFeatureLastFrame);
       setTimeout(toggleFeatureLastFrame, 0);
 
+      // Model configuration panel handling
+      const modelConfigPanel = document.getElementById("modelConfigPanel");
+      const durationField = document.getElementById("durationField");
+      // Get all config field references
+      const resolutionField = document.getElementById("resolutionField");
+      const cameraMovementField = document.getElementById(
+        "cameraMovementField"
+      );
+      const styleField = document.getElementById("styleField");
+      const motionModeField = document.getElementById("motionModeField");
+      const generateAudioField = document.getElementById("generateAudioField");
+      const qualityField = document.getElementById("qualityField");
+      const widthField = document.getElementById("widthField");
+      const heightField = document.getElementById("heightField");
+      const fpsField = document.getElementById("fpsField");
+      const cfgScaleField = document.getElementById("cfgScaleField");
+      const stepsField = document.getElementById("stepsField");
+      const movementAmplitudeField = document.getElementById(
+        "movementAmplitudeField"
+      );
+      const bgmField = document.getElementById("bgmField");
+      const orientationField = document.getElementById("orientationField");
+      const promptOptimizerField = document.getElementById(
+        "promptOptimizerField"
+      );
+      const cameraFixedField = document.getElementById("cameraFixedField");
+      const publicFigureThresholdField = document.getElementById(
+        "publicFigureThresholdField"
+      );
+      const controlModeField = document.getElementById("controlModeField");
+      const seedField = document.getElementById("seedField");
+      const negativePromptField = document.getElementById(
+        "negativePromptField"
+      );
+
+      function updateModelConfigPanel() {
+        const selectedModel = featureModelSelect?.value || "";
+
+        // Hide all fields first
+        const allFields = [
+          durationField,
+          resolutionField,
+          cameraMovementField,
+          styleField,
+          motionModeField,
+          generateAudioField,
+          qualityField,
+          widthField,
+          heightField,
+          fpsField,
+          cfgScaleField,
+          stepsField,
+          movementAmplitudeField,
+          bgmField,
+          orientationField,
+          promptOptimizerField,
+          cameraFixedField,
+          publicFigureThresholdField,
+          controlModeField,
+          seedField,
+          negativePromptField,
+        ];
+        allFields.forEach((field) => {
+          if (field) field.style.display = "none";
+        });
+
+        let showPanel = false;
+
+        // PixVerse V5 (Text-to-Video via Runware)
+        if (
+          /pixverse-v5-image-to-video/i.test(selectedModel) ||
+          /pixverse:4@1/i.test(selectedModel)
+        ) {
+          showPanel = true;
+          if (durationField) durationField.style.display = "flex";
+          if (resolutionField) resolutionField.style.display = "flex";
+          if (cameraMovementField) cameraMovementField.style.display = "flex";
+          if (styleField) styleField.style.display = "flex";
+          if (motionModeField) motionModeField.style.display = "flex";
+        }
+        // Google Veo 3 / 3.1 / 3.1 Fast models (native audio support)
+        else if (
+          /google:3@0|google:3@2|google:3@3|veo.*3.*(?:image|fast)|veo3@fast|veo.*3\.1/i.test(
+            selectedModel
+          )
+        ) {
+          showPanel = true;
+          if (durationField) durationField.style.display = "flex";
+          if (generateAudioField) generateAudioField.style.display = "flex";
+        }
+        // Kling 2.5 Turbo Pro (Text-to-Video)
+        else if (
+          /klingai:6@1|kling-2\.5-turbo-pro(?!.*image)/i.test(selectedModel)
+        ) {
+          showPanel = true;
+          if (durationField) durationField.style.display = "flex";
+        }
+        // Kling Image-to-Video models
+        else if (/kling.*image-to-video/i.test(selectedModel)) {
+          showPanel = true;
+          if (durationField) durationField.style.display = "flex";
+        }
+        // Seedance Pro Fast (Bytedance)
+        else if (/seedance.*fast|bytedance:2@2/i.test(selectedModel)) {
+          showPanel = true;
+          if (durationField) durationField.style.display = "flex";
+          if (cameraFixedField) cameraFixedField.style.display = "flex";
+        }
+        // LTX-2 Pro
+        else if (/ltx.*2.*pro|lightricks:2@0/i.test(selectedModel)) {
+          showPanel = true;
+          if (durationField) durationField.style.display = "flex";
+          if (widthField) widthField.style.display = "flex";
+          if (heightField) heightField.style.display = "flex";
+          if (cfgScaleField) cfgScaleField.style.display = "flex";
+          if (stepsField) stepsField.style.display = "flex";
+          if (seedField) seedField.style.display = "flex";
+        }
+        // LTX-2 Fast
+        else if (/ltx.*2.*fast|lightricks:2@1/i.test(selectedModel)) {
+          showPanel = true;
+          if (durationField) durationField.style.display = "flex";
+          if (widthField) widthField.style.display = "flex";
+          if (heightField) heightField.style.display = "flex";
+          if (cfgScaleField) cfgScaleField.style.display = "flex";
+          if (stepsField) stepsField.style.display = "flex";
+        }
+        // Vidu Q2 Turbo
+        else if (/vidu.*q?2.*turbo|vidu:3@2/i.test(selectedModel)) {
+          showPanel = true;
+          if (durationField) durationField.style.display = "flex";
+          if (movementAmplitudeField)
+            movementAmplitudeField.style.display = "flex";
+          if (bgmField) bgmField.style.display = "flex";
+        }
+        // Vidu Q2 Pro
+        else if (/vidu.*q?2.*pro|vidu:3@1/i.test(selectedModel)) {
+          showPanel = true;
+          if (durationField) durationField.style.display = "flex";
+          if (movementAmplitudeField)
+            movementAmplitudeField.style.display = "flex";
+          if (bgmField) bgmField.style.display = "flex";
+        }
+        // Runway Gen-4 Turbo
+        else if (/runway.*gen.*4.*turbo|runway:1@1/i.test(selectedModel)) {
+          showPanel = true;
+          if (durationField) durationField.style.display = "flex";
+          if (widthField) widthField.style.display = "flex";
+          if (heightField) heightField.style.display = "flex";
+          if (fpsField) fpsField.style.display = "flex";
+          if (cfgScaleField) cfgScaleField.style.display = "flex";
+          if (publicFigureThresholdField)
+            publicFigureThresholdField.style.display = "flex";
+        }
+        // Sora 2 (OpenAI)
+        else if (/sora.*2(?!.*pro)|openai:3@1/i.test(selectedModel)) {
+          showPanel = true;
+          if (durationField) durationField.style.display = "flex";
+          if (orientationField) orientationField.style.display = "flex";
+        }
+        // Sora 2 Pro
+        else if (/sora.*2.*pro|openai:3@2/i.test(selectedModel)) {
+          showPanel = true;
+          if (durationField) durationField.style.display = "flex";
+          if (orientationField) orientationField.style.display = "flex";
+        }
+        // Hailuo 2.3 Fast (MiniMax)
+        else if (/hailuo.*2\.?3.*fast|minimax:4@2/i.test(selectedModel)) {
+          showPanel = true;
+          if (durationField) durationField.style.display = "flex";
+        }
+        // Hailuo 2.3
+        else if (/hailuo.*2\.?3(?!.*fast)|minimax:4@1/i.test(selectedModel)) {
+          showPanel = true;
+          if (durationField) durationField.style.display = "flex";
+          if (promptOptimizerField) promptOptimizerField.style.display = "flex";
+        }
+        // ControlNet XL Video
+        else if (
+          /controlnet.*xl.*video|civitai:136070@267493/i.test(selectedModel)
+        ) {
+          showPanel = true;
+          if (durationField) durationField.style.display = "flex";
+          if (widthField) widthField.style.display = "flex";
+          if (heightField) heightField.style.display = "flex";
+          if (cfgScaleField) cfgScaleField.style.display = "flex";
+          if (stepsField) stepsField.style.display = "flex";
+          if (controlModeField) controlModeField.style.display = "flex";
+          if (seedField) seedField.style.display = "flex";
+        }
+        // Claymotion F1
+        else if (/claymotion.*f1|civitai:855822@957548/i.test(selectedModel)) {
+          showPanel = true;
+          if (durationField) durationField.style.display = "flex";
+          if (widthField) widthField.style.display = "flex";
+          if (heightField) heightField.style.display = "flex";
+          if (cfgScaleField) cfgScaleField.style.display = "flex";
+          if (stepsField) stepsField.style.display = "flex";
+        }
+        // PixVerse v4/v4.5 Transition and Image-to-Video models (via EachLabs API)
+        else if (
+          /pixverse-v4(?:\.5)?-(transition|image-to-video)/i.test(selectedModel)
+        ) {
+          showPanel = true;
+          if (durationField) durationField.style.display = "flex";
+          if (qualityField) qualityField.style.display = "flex";
+          if (motionModeField) motionModeField.style.display = "flex";
+        }
+
+        if (modelConfigPanel) {
+          modelConfigPanel.style.display = showPanel ? "block" : "none";
+        }
+      }
+
+      if (featureModelSelect) {
+        featureModelSelect.addEventListener("change", updateModelConfigPanel);
+        setTimeout(updateModelConfigPanel, 0);
+      }
+
       if (featureAudioInput && featureAudioStatus && featureAudioPreview) {
         featureAudioInput.onchange = function () {
           const file = featureAudioInput.files && featureAudioInput.files[0];
@@ -3614,6 +3833,133 @@ function showFeatureDetailPage(endpoint, sourceTab = "filters") {
                         model: selectedModel,
                         prompt: promptOverride,
                       };
+
+                      // Add model configuration parameters if set
+                      const durationSelect = document.getElementById(
+                        "modelDurationSelect"
+                      );
+                      const resolutionSelect = document.getElementById(
+                        "modelResolutionSelect"
+                      );
+                      const cameraMovementSelect = document.getElementById(
+                        "modelCameraMovementSelect"
+                      );
+                      const styleSelect =
+                        document.getElementById("modelStyleSelect");
+                      const motionModeSelect = document.getElementById(
+                        "modelMotionModeSelect"
+                      );
+                      const generateAudioCheck = document.getElementById(
+                        "modelGenerateAudioCheck"
+                      );
+                      const qualitySelect =
+                        document.getElementById("modelQualitySelect");
+                      const widthInput =
+                        document.getElementById("modelWidthInput");
+                      const heightInput =
+                        document.getElementById("modelHeightInput");
+                      const fpsInput = document.getElementById("modelFpsInput");
+                      const cfgScaleInput =
+                        document.getElementById("modelCfgScaleInput");
+                      const stepsInput =
+                        document.getElementById("modelStepsInput");
+                      const movementAmplitudeSelect = document.getElementById(
+                        "modelMovementAmplitudeSelect"
+                      );
+                      const bgmCheck = document.getElementById("modelBgmCheck");
+                      const orientationSelect = document.getElementById(
+                        "modelOrientationSelect"
+                      );
+                      const promptOptimizerCheck = document.getElementById(
+                        "modelPromptOptimizerCheck"
+                      );
+                      const cameraFixedCheck = document.getElementById(
+                        "modelCameraFixedCheck"
+                      );
+                      const publicFigureThresholdInput =
+                        document.getElementById(
+                          "modelPublicFigureThresholdInput"
+                        );
+                      const controlModeSelect = document.getElementById(
+                        "modelControlModeSelect"
+                      );
+                      const seedInput =
+                        document.getElementById("modelSeedInput");
+                      const negativePromptInput = document.getElementById(
+                        "modelNegativePromptInput"
+                      );
+
+                      // Basic parameters
+                      if (durationSelect?.value) {
+                        payload.duration = Number(durationSelect.value);
+                      }
+                      if (resolutionSelect?.value) {
+                        payload.resolution = resolutionSelect.value;
+                      }
+                      if (cameraMovementSelect?.value) {
+                        payload.cameraMovement = cameraMovementSelect.value;
+                      }
+                      if (styleSelect?.value) {
+                        payload.style = styleSelect.value;
+                      }
+                      if (motionModeSelect?.value) {
+                        payload.motionMode = motionModeSelect.value;
+                      }
+                      if (generateAudioCheck) {
+                        payload.generateAudio = generateAudioCheck.checked;
+                      }
+
+                      // Additional parameters
+                      if (qualitySelect?.value) {
+                        payload.quality = qualitySelect.value;
+                      }
+                      if (widthInput?.value) {
+                        payload.width = Number(widthInput.value);
+                      }
+                      if (heightInput?.value) {
+                        payload.height = Number(heightInput.value);
+                      }
+                      if (fpsInput?.value) {
+                        payload.fps = Number(fpsInput.value);
+                      }
+                      if (cfgScaleInput?.value) {
+                        payload.cfgScale = Number(cfgScaleInput.value);
+                      }
+                      if (stepsInput?.value) {
+                        payload.steps = Number(stepsInput.value);
+                      }
+                      if (movementAmplitudeSelect?.value) {
+                        payload.movementAmplitude =
+                          movementAmplitudeSelect.value;
+                      }
+                      if (bgmCheck) {
+                        payload.bgm = bgmCheck.checked;
+                      }
+                      if (orientationSelect?.value) {
+                        payload.orientation = orientationSelect.value;
+                      }
+                      if (promptOptimizerCheck) {
+                        payload.promptOptimizer = promptOptimizerCheck.checked;
+                      }
+                      if (cameraFixedCheck) {
+                        payload.cameraFixed = cameraFixedCheck.checked;
+                      }
+                      if (publicFigureThresholdInput?.value) {
+                        payload.publicFigureThreshold = Number(
+                          publicFigureThresholdInput.value
+                        );
+                      }
+                      if (controlModeSelect?.value) {
+                        payload.controlMode = controlModeSelect.value;
+                      }
+                      if (seedInput?.value) {
+                        payload.seed = Number(seedInput.value);
+                      }
+                      if (negativePromptInput?.value?.trim()) {
+                        payload.negativePrompt =
+                          negativePromptInput.value.trim();
+                      }
+
                       if (
                         /pixverse-v4-transition/i.test(selectedModel || "") &&
                         featureLastFrameUrl
