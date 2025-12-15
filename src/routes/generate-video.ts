@@ -6299,6 +6299,226 @@ router.post(
         return;
       }
 
+      // Eachlabs Wan 2.5 Image to Video branch
+      const isWan25Image2Video = /wan-2\.5-image-to-video/i.test(rawModel);
+      if (isWan25Image2Video) {
+        const eachLabsKey = process.env.EACHLABS_API_KEY;
+        if (!eachLabsKey) {
+          res.status(500).json({
+            success: false,
+            error: "EACHLABS API key not set",
+          });
+          return;
+        }
+
+        const wanVersion = "0.0.1";
+
+        // Validate and get duration from request body (only 5 or 10 allowed)
+        let duration = req.body.duration ? Number(req.body.duration) : 5;
+        if (![5, 10].includes(duration)) {
+          duration = 5; // Default to 5 if invalid
+        }
+
+        // Validate and get resolution from request body (only 480p, 720p, 1080p allowed)
+        let resolution = req.body.resolution
+          ? String(req.body.resolution)
+          : "720p";
+        if (!["480p", "720p", "1080p"].includes(resolution)) {
+          resolution = "720p"; // Default to 720p if invalid
+        }
+
+        const input = {
+          image: imageCloudUrl, // EachLabs API expects 'image' not 'image_url'
+          prompt: prompt,
+          duration: duration,
+          resolution: resolution,
+        };
+
+        const createPayload = {
+          model: "wan-2-5-image-to-video",
+          version: wanVersion,
+          input,
+        };
+
+        let createResp: any;
+        let predictionId: string;
+        try {
+          createResp = await axios.post(
+            "https://api.eachlabs.ai/v1/prediction/",
+            createPayload,
+            {
+              headers: {
+                "X-API-Key": eachLabsKey,
+                "Content-Type": "application/json",
+              },
+              timeout: 30000,
+            }
+          );
+          const prediction = createResp.data || {};
+          console.log("Wan 2.5 create response:", prediction);
+          const statusStr = String(prediction.status || "").toLowerCase();
+          if (statusStr !== "success") {
+            const provider_message =
+              (prediction as any)?.error ||
+              (prediction as any)?.message ||
+              "Unknown status";
+            res.status(502).json({
+              success: false,
+              error: `Wan 2.5 creation failed: ${provider_message}`,
+              provider: "Wan25",
+              provider_status: (prediction as any)?.status,
+              provider_message,
+              details: safeJson(prediction),
+            });
+            return;
+          }
+          predictionId = (prediction as any)?.predictionID;
+          if (!predictionId) {
+            res.status(502).json({
+              success: false,
+              error: "Wan 2.5 response missing prediction id",
+              details: safeJson(prediction),
+            });
+            return;
+          }
+        } catch (err) {
+          const wan25Err = err as any;
+          console.error("Wan 2.5 create error:", {
+            error: wan25Err,
+            payload: createPayload,
+            serverResponse: wan25Err?.response?.data,
+          });
+          const provider_message = extractEachlabsErrorMessage(err);
+          res.status(502).json({
+            success: false,
+            error: `Wan 2.5 creation failed: ${provider_message}`,
+            details: serializeError(err),
+          });
+          return;
+        }
+
+        // Poll
+        let wanVideoUrl: string | undefined;
+        for (let i = 0; i < 300; i++) {
+          // up to ~5 min
+          await new Promise((r) => setTimeout(r, 1000));
+          try {
+            const pollResp = await axios.get(
+              `https://api.eachlabs.ai/v1/prediction/${predictionId}`,
+              { headers: { "X-API-Key": eachLabsKey }, timeout: 20000 }
+            );
+            const result = pollResp.data || {};
+            const lower = String(result.status || "").toLowerCase();
+            if (lower === "success" || lower === "completed") {
+              const rawOut = result.output;
+              if (typeof rawOut === "string") wanVideoUrl = rawOut;
+              else if (rawOut) {
+                const out: any = rawOut;
+                wanVideoUrl =
+                  out.video_url ||
+                  out.video ||
+                  (Array.isArray(out) ? out[0]?.video_url || out[0] : null) ||
+                  result.video_url ||
+                  result.video ||
+                  out.url ||
+                  result.url ||
+                  null;
+              } else {
+                wanVideoUrl =
+                  result.video_url || result.video || result.url || null;
+              }
+              break;
+            } else if (
+              ["error", "failed", "canceled", "cancelled"].includes(lower)
+            ) {
+              const provider_message =
+                (result as any)?.error ||
+                (result as any)?.message ||
+                (result as any)?.status;
+              res.status(500).json({
+                success: false,
+                error: provider_message
+                  ? `Wan 2.5 prediction failed: ${provider_message}`
+                  : "Wan 2.5 prediction failed",
+                provider: "Wan25",
+                provider_status: (result as any)?.status,
+                provider_message,
+                details: safeJson(result),
+              });
+              return;
+            }
+          } catch (e) {
+            console.warn(
+              "Wan 2.5 poll error (continuing)",
+              (e as any)?.message || e
+            );
+            continue;
+          }
+        }
+        if (!wanVideoUrl) {
+          res.status(504).json({
+            success: false,
+            error: "Wan 2.5 prediction timeout",
+            provider: "Wan25",
+            provider_status: "timeout",
+            provider_message: "Prediction did not complete in allotted time",
+          });
+          return;
+        }
+        // Download & upload to S3
+        let wanStream;
+        try {
+          wanStream = await axios.get(wanVideoUrl, {
+            responseType: "stream",
+            timeout: 600000,
+          });
+        } catch (e) {
+          res.status(500).json({
+            success: false,
+            error: "Failed to download Wan 2.5 video",
+            details: serializeError(e),
+          });
+          return;
+        }
+        let uploadedWan25;
+        try {
+          uploadedWan25 = await uploadGeneratedVideo(
+            feature,
+            "wan25",
+            wanStream.data as Readable,
+            videoType
+          );
+        } catch (e) {
+          res.status(500).json({
+            success: false,
+            error: "Failed to upload Wan 2.5 video to S3",
+            details: serializeError(e),
+          });
+          return;
+        }
+
+        await logAppApiCall(
+          appId,
+          `generate-video/${feature}`,
+          videoType,
+          "wan-2.5-image-to-video",
+          "success",
+          undefined,
+          Date.now() - startTime
+        );
+
+        res.status(200).json({
+          success: true,
+          video: {
+            url: uploadedWan25.signedUrl,
+            signedUrl: uploadedWan25.signedUrl,
+            key: uploadedWan25.key,
+          },
+          s3Key: uploadedWan25.key,
+        });
+        return;
+      }
+
       // Eachlabs Vidu Q1 Image to Video branch
       const isViduQ1Image2Video = /vidu-q1-image-to-video/i.test(rawModel);
       if (isViduQ1Image2Video) {

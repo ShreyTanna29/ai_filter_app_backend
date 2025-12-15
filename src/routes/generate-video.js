@@ -857,7 +857,7 @@ const textToVideoHandler = (req, res) => __awaiter(void 0, void 0, void 0, funct
 router.post("/text-to-video", apiKey_1.requireApiKey, textToVideoHandler);
 // Generate video from feature endpoint
 router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _0, _1, _2, _3, _4, _5, _6, _7, _8, _9, _10, _11, _12, _13, _14, _15, _16, _17, _18, _19, _20, _21, _22, _23, _24, _25, _26, _27, _28, _29, _30, _31, _32, _33, _34, _35, _36, _37, _38, _39, _40, _41, _42, _43, _44, _45, _46, _47, _48, _49, _50, _51, _52, _53, _54, _55, _56, _57, _58, _59, _60, _61, _62, _63, _64, _65, _66, _67, _68, _69, _70, _71, _72, _73, _74, _75, _76, _77, _78, _79, _80, _81, _82, _83, _84, _85, _86, _87, _88, _89, _90, _91, _92, _93, _94, _95, _96, _97, _98, _99, _100, _101, _102, _103, _104, _105, _106, _107, _108, _109, _110, _111, _112, _113;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _0, _1, _2, _3, _4, _5, _6, _7, _8, _9, _10, _11, _12, _13, _14, _15, _16, _17, _18, _19, _20, _21, _22, _23, _24, _25, _26, _27, _28, _29, _30, _31, _32, _33, _34, _35, _36, _37, _38, _39, _40, _41, _42, _43, _44, _45, _46, _47, _48, _49, _50, _51, _52, _53, _54, _55, _56, _57, _58, _59, _60, _61, _62, _63, _64, _65, _66, _67, _68, _69, _70, _71, _72, _73, _74, _75, _76, _77, _78, _79, _80, _81, _82, _83, _84, _85, _86, _87, _88, _89, _90, _91, _92, _93, _94, _95, _96, _97, _98, _99, _100, _101, _102, _103, _104, _105, _106, _107, _108, _109, _110, _111, _112, _113, _114, _115;
     const startTime = Date.now();
     const { feature } = req.params;
     const apiKeyOwner = req.apiKeyOwner;
@@ -2714,7 +2714,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                                 try {
                                     parsedBody = JSON.parse(body);
                                 }
-                                catch (_114) {
+                                catch (_116) {
                                     parsedBody = undefined;
                                 }
                             }
@@ -4893,6 +4893,196 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
             });
             return;
         }
+        // Eachlabs Wan 2.5 Image to Video branch
+        const isWan25Image2Video = /wan-2\.5-image-to-video/i.test(rawModel);
+        if (isWan25Image2Video) {
+            const eachLabsKey = process.env.EACHLABS_API_KEY;
+            if (!eachLabsKey) {
+                res.status(500).json({
+                    success: false,
+                    error: "EACHLABS API key not set",
+                });
+                return;
+            }
+            const wanVersion = "0.0.1";
+            // Validate and get duration from request body (only 5 or 10 allowed)
+            let duration = req.body.duration ? Number(req.body.duration) : 5;
+            if (![5, 10].includes(duration)) {
+                duration = 5; // Default to 5 if invalid
+            }
+            // Validate and get resolution from request body (only 480p, 720p, 1080p allowed)
+            let resolution = req.body.resolution
+                ? String(req.body.resolution)
+                : "720p";
+            if (!["480p", "720p", "1080p"].includes(resolution)) {
+                resolution = "720p"; // Default to 720p if invalid
+            }
+            const input = {
+                image: imageCloudUrl, // EachLabs API expects 'image' not 'image_url'
+                prompt: prompt,
+                duration: duration,
+                resolution: resolution,
+            };
+            const createPayload = {
+                model: "wan-2-5-image-to-video",
+                version: wanVersion,
+                input,
+            };
+            let createResp;
+            let predictionId;
+            try {
+                createResp = yield axios_1.default.post("https://api.eachlabs.ai/v1/prediction/", createPayload, {
+                    headers: {
+                        "X-API-Key": eachLabsKey,
+                        "Content-Type": "application/json",
+                    },
+                    timeout: 30000,
+                });
+                const prediction = createResp.data || {};
+                console.log("Wan 2.5 create response:", prediction);
+                const statusStr = String(prediction.status || "").toLowerCase();
+                if (statusStr !== "success") {
+                    const provider_message = (prediction === null || prediction === void 0 ? void 0 : prediction.error) ||
+                        (prediction === null || prediction === void 0 ? void 0 : prediction.message) ||
+                        "Unknown status";
+                    res.status(502).json({
+                        success: false,
+                        error: `Wan 2.5 creation failed: ${provider_message}`,
+                        provider: "Wan25",
+                        provider_status: prediction === null || prediction === void 0 ? void 0 : prediction.status,
+                        provider_message,
+                        details: safeJson(prediction),
+                    });
+                    return;
+                }
+                predictionId = prediction === null || prediction === void 0 ? void 0 : prediction.predictionID;
+                if (!predictionId) {
+                    res.status(502).json({
+                        success: false,
+                        error: "Wan 2.5 response missing prediction id",
+                        details: safeJson(prediction),
+                    });
+                    return;
+                }
+            }
+            catch (err) {
+                const wan25Err = err;
+                console.error("Wan 2.5 create error:", {
+                    error: wan25Err,
+                    payload: createPayload,
+                    serverResponse: (_66 = wan25Err === null || wan25Err === void 0 ? void 0 : wan25Err.response) === null || _66 === void 0 ? void 0 : _66.data,
+                });
+                const provider_message = extractEachlabsErrorMessage(err);
+                res.status(502).json({
+                    success: false,
+                    error: `Wan 2.5 creation failed: ${provider_message}`,
+                    details: serializeError(err),
+                });
+                return;
+            }
+            // Poll
+            let wanVideoUrl;
+            for (let i = 0; i < 300; i++) {
+                // up to ~5 min
+                yield new Promise((r) => setTimeout(r, 1000));
+                try {
+                    const pollResp = yield axios_1.default.get(`https://api.eachlabs.ai/v1/prediction/${predictionId}`, { headers: { "X-API-Key": eachLabsKey }, timeout: 20000 });
+                    const result = pollResp.data || {};
+                    const lower = String(result.status || "").toLowerCase();
+                    if (lower === "success" || lower === "completed") {
+                        const rawOut = result.output;
+                        if (typeof rawOut === "string")
+                            wanVideoUrl = rawOut;
+                        else if (rawOut) {
+                            const out = rawOut;
+                            wanVideoUrl =
+                                out.video_url ||
+                                    out.video ||
+                                    (Array.isArray(out) ? ((_67 = out[0]) === null || _67 === void 0 ? void 0 : _67.video_url) || out[0] : null) ||
+                                    result.video_url ||
+                                    result.video ||
+                                    out.url ||
+                                    result.url ||
+                                    null;
+                        }
+                        else {
+                            wanVideoUrl =
+                                result.video_url || result.video || result.url || null;
+                        }
+                        break;
+                    }
+                    else if (["error", "failed", "canceled", "cancelled"].includes(lower)) {
+                        const provider_message = (result === null || result === void 0 ? void 0 : result.error) ||
+                            (result === null || result === void 0 ? void 0 : result.message) ||
+                            (result === null || result === void 0 ? void 0 : result.status);
+                        res.status(500).json({
+                            success: false,
+                            error: provider_message
+                                ? `Wan 2.5 prediction failed: ${provider_message}`
+                                : "Wan 2.5 prediction failed",
+                            provider: "Wan25",
+                            provider_status: result === null || result === void 0 ? void 0 : result.status,
+                            provider_message,
+                            details: safeJson(result),
+                        });
+                        return;
+                    }
+                }
+                catch (e) {
+                    console.warn("Wan 2.5 poll error (continuing)", (e === null || e === void 0 ? void 0 : e.message) || e);
+                    continue;
+                }
+            }
+            if (!wanVideoUrl) {
+                res.status(504).json({
+                    success: false,
+                    error: "Wan 2.5 prediction timeout",
+                    provider: "Wan25",
+                    provider_status: "timeout",
+                    provider_message: "Prediction did not complete in allotted time",
+                });
+                return;
+            }
+            // Download & upload to S3
+            let wanStream;
+            try {
+                wanStream = yield axios_1.default.get(wanVideoUrl, {
+                    responseType: "stream",
+                    timeout: 600000,
+                });
+            }
+            catch (e) {
+                res.status(500).json({
+                    success: false,
+                    error: "Failed to download Wan 2.5 video",
+                    details: serializeError(e),
+                });
+                return;
+            }
+            let uploadedWan25;
+            try {
+                uploadedWan25 = yield uploadGeneratedVideo(feature, "wan25", wanStream.data, videoType);
+            }
+            catch (e) {
+                res.status(500).json({
+                    success: false,
+                    error: "Failed to upload Wan 2.5 video to S3",
+                    details: serializeError(e),
+                });
+                return;
+            }
+            yield logAppApiCall(appId, `generate-video/${feature}`, videoType, "wan-2.5-image-to-video", "success", undefined, Date.now() - startTime);
+            res.status(200).json({
+                success: true,
+                video: {
+                    url: uploadedWan25.signedUrl,
+                    signedUrl: uploadedWan25.signedUrl,
+                    key: uploadedWan25.key,
+                },
+                s3Key: uploadedWan25.key,
+            });
+            return;
+        }
         // Eachlabs Vidu Q1 Image to Video branch
         const isViduQ1Image2Video = /vidu-q1-image-to-video/i.test(rawModel);
         if (isViduQ1Image2Video) {
@@ -4963,7 +5153,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                 console.error("Vidu Q1 I2V create error:", {
                     error: viduQ1I2VErr,
                     payload: createPayload,
-                    serverResponse: (_66 = viduQ1I2VErr === null || viduQ1I2VErr === void 0 ? void 0 : viduQ1I2VErr.response) === null || _66 === void 0 ? void 0 : _66.data,
+                    serverResponse: (_68 = viduQ1I2VErr === null || viduQ1I2VErr === void 0 ? void 0 : viduQ1I2VErr.response) === null || _68 === void 0 ? void 0 : _68.data,
                 });
                 const provider_message = extractEachlabsErrorMessage(err);
                 res.status(502).json({
@@ -4993,7 +5183,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                             viduVideoUrl =
                                 out.video_url ||
                                     out.video ||
-                                    (Array.isArray(out) ? ((_67 = out[0]) === null || _67 === void 0 ? void 0 : _67.video_url) || out[0] : null) ||
+                                    (Array.isArray(out) ? ((_69 = out[0]) === null || _69 === void 0 ? void 0 : _69.video_url) || out[0] : null) ||
                                     out.url ||
                                     result.data.url ||
                                     null;
@@ -5015,7 +5205,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                                 ? `Vidu Q1 I2V prediction failed: ${provider_message}`
                                 : "Vidu Q1 I2V prediction failed",
                             provider: "ViduQ1I2V",
-                            provider_status: (_68 = result.data) === null || _68 === void 0 ? void 0 : _68.status,
+                            provider_status: (_70 = result.data) === null || _70 === void 0 ? void 0 : _70.status,
                             provider_message,
                             details: safeJson(result.data),
                         });
@@ -5145,7 +5335,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                 console.error("Vidu 2.0 create error:", {
                     error: vidu20Err,
                     payload: createPayload,
-                    serverResponse: (_69 = vidu20Err === null || vidu20Err === void 0 ? void 0 : vidu20Err.response) === null || _69 === void 0 ? void 0 : _69.data,
+                    serverResponse: (_71 = vidu20Err === null || vidu20Err === void 0 ? void 0 : vidu20Err.response) === null || _71 === void 0 ? void 0 : _71.data,
                 });
                 const provider_message = extractEachlabsErrorMessage(err);
                 res.status(502).json({
@@ -5177,7 +5367,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                             viduVideoUrl =
                                 out.video_url ||
                                     out.video ||
-                                    (Array.isArray(out) ? ((_70 = out[0]) === null || _70 === void 0 ? void 0 : _70.video_url) || out[0] : null) ||
+                                    (Array.isArray(out) ? ((_72 = out[0]) === null || _72 === void 0 ? void 0 : _72.video_url) || out[0] : null) ||
                                     result.video_url ||
                                     result.video ||
                                     out.url ||
@@ -5332,7 +5522,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                 console.error("Veo 2 Image to Video create error:", {
                     error: veo2Err,
                     payload: createPayload,
-                    serverResponse: (_71 = veo2Err === null || veo2Err === void 0 ? void 0 : veo2Err.response) === null || _71 === void 0 ? void 0 : _71.data,
+                    serverResponse: (_73 = veo2Err === null || veo2Err === void 0 ? void 0 : veo2Err.response) === null || _73 === void 0 ? void 0 : _73.data,
                 });
                 const provider_message = extractEachlabsErrorMessage(err);
                 res.status(502).json({
@@ -5364,7 +5554,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                             veoVideoUrl =
                                 out.video_url ||
                                     out.video ||
-                                    (Array.isArray(out) ? ((_72 = out[0]) === null || _72 === void 0 ? void 0 : _72.video_url) || out[0] : null) ||
+                                    (Array.isArray(out) ? ((_74 = out[0]) === null || _74 === void 0 ? void 0 : _74.video_url) || out[0] : null) ||
                                     result.video_url ||
                                     result.video ||
                                     out.url ||
@@ -5517,7 +5707,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                 console.error("Veo 3 Image to Video create error:", {
                     error: veo3Err,
                     payload: createPayload,
-                    serverResponse: (_73 = veo3Err === null || veo3Err === void 0 ? void 0 : veo3Err.response) === null || _73 === void 0 ? void 0 : _73.data,
+                    serverResponse: (_75 = veo3Err === null || veo3Err === void 0 ? void 0 : veo3Err.response) === null || _75 === void 0 ? void 0 : _75.data,
                 });
                 const provider_message = extractEachlabsErrorMessage(err);
                 res.status(502).json({
@@ -5549,7 +5739,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                             veoVideoUrl =
                                 out.video_url ||
                                     out.video ||
-                                    (Array.isArray(out) ? ((_74 = out[0]) === null || _74 === void 0 ? void 0 : _74.video_url) || out[0] : null) ||
+                                    (Array.isArray(out) ? ((_76 = out[0]) === null || _76 === void 0 ? void 0 : _76.video_url) || out[0] : null) ||
                                     result.video_url ||
                                     result.video ||
                                     out.url ||
@@ -5672,7 +5862,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                     try {
                         audioUrl = yield (0, signedUrl_1.signKey)(audioKey);
                     }
-                    catch (_115) {
+                    catch (_117) {
                         audioUrl = (0, s3_1.publicUrlFor)(audioKey); // fallback (may be private)
                     }
                 }
@@ -5924,7 +6114,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
             }
             catch (e) {
                 // already using e as any here, so no change needed
-                const respData = (_75 = e === null || e === void 0 ? void 0 : e.response) === null || _75 === void 0 ? void 0 : _75.data;
+                const respData = (_77 = e === null || e === void 0 ? void 0 : e.response) === null || _77 === void 0 ? void 0 : _77.data;
                 const base = (respData === null || respData === void 0 ? void 0 : respData.base_resp) || {};
                 const provider_code = base === null || base === void 0 ? void 0 : base.status_code;
                 const provider_message = (base === null || base === void 0 ? void 0 : base.status_msg) || (respData === null || respData === void 0 ? void 0 : respData.message) || (e === null || e === void 0 ? void 0 : e.message);
@@ -5952,26 +6142,26 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                         params: { task_id: taskId },
                         timeout: 20000,
                     });
-                    const status = (_76 = pollResp.data) === null || _76 === void 0 ? void 0 : _76.status;
+                    const status = (_78 = pollResp.data) === null || _78 === void 0 ? void 0 : _78.status;
                     if (status === "Success" || status === "success") {
                         // Assume file_id -> downloadable endpoint
-                        const fileId = (_77 = pollResp.data) === null || _77 === void 0 ? void 0 : _77.file_id;
+                        const fileId = (_79 = pollResp.data) === null || _79 === void 0 ? void 0 : _79.file_id;
                         console.log("MiniMax generation success payload:", safeJson(pollResp.data));
                         mmFileId = fileId || null;
                         // If API already provides a direct downloadable URL use it, else will fetch below
                         mmVideoUrl =
-                            ((_78 = pollResp.data) === null || _78 === void 0 ? void 0 : _78.video_url) || ((_79 = pollResp.data) === null || _79 === void 0 ? void 0 : _79.file_url) || null;
+                            ((_80 = pollResp.data) === null || _80 === void 0 ? void 0 : _80.video_url) || ((_81 = pollResp.data) === null || _81 === void 0 ? void 0 : _81.file_url) || null;
                         break; // exit loop, will handle retrieval next
                     }
                     if (status === "Fail" ||
                         status === "failed" ||
                         status === "error") {
-                        const base = ((_80 = pollResp.data) === null || _80 === void 0 ? void 0 : _80.base_resp) || {};
+                        const base = ((_82 = pollResp.data) === null || _82 === void 0 ? void 0 : _82.base_resp) || {};
                         const provider_code = base === null || base === void 0 ? void 0 : base.status_code;
                         const provider_message = (base === null || base === void 0 ? void 0 : base.status_msg) ||
-                            ((_81 = pollResp.data) === null || _81 === void 0 ? void 0 : _81.status_reason) ||
-                            ((_82 = pollResp.data) === null || _82 === void 0 ? void 0 : _82.message) ||
-                            ((_83 = pollResp.data) === null || _83 === void 0 ? void 0 : _83.status);
+                            ((_83 = pollResp.data) === null || _83 === void 0 ? void 0 : _83.status_reason) ||
+                            ((_84 = pollResp.data) === null || _84 === void 0 ? void 0 : _84.message) ||
+                            ((_85 = pollResp.data) === null || _85 === void 0 ? void 0 : _85.status);
                         res.status(500).json({
                             success: false,
                             error: provider_message
@@ -5980,7 +6170,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                             provider: "MiniMax",
                             provider_code,
                             provider_message,
-                            provider_status: (_84 = pollResp.data) === null || _84 === void 0 ? void 0 : _84.status,
+                            provider_status: (_86 = pollResp.data) === null || _86 === void 0 ? void 0 : _86.status,
                             details: safeJson(pollResp.data),
                         });
                         return;
@@ -6013,8 +6203,8 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                         timeout: 30000,
                     });
                     mmVideoUrl =
-                        ((_86 = (_85 = retrieveResp.data) === null || _85 === void 0 ? void 0 : _85.file) === null || _86 === void 0 ? void 0 : _86.download_url) ||
-                            ((_87 = retrieveResp.data) === null || _87 === void 0 ? void 0 : _87.download_url) ||
+                        ((_88 = (_87 = retrieveResp.data) === null || _87 === void 0 ? void 0 : _87.file) === null || _88 === void 0 ? void 0 : _88.download_url) ||
+                            ((_89 = retrieveResp.data) === null || _89 === void 0 ? void 0 : _89.download_url) ||
                             null;
                     if (!mmVideoUrl) {
                         console.error("MiniMax retrieve missing download_url", safeJson(retrieveResp.data));
@@ -6030,7 +6220,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                 }
                 catch (e) {
                     console.error("MiniMax retrieve error:", serializeError(e));
-                    const respData = (_88 = e === null || e === void 0 ? void 0 : e.response) === null || _88 === void 0 ? void 0 : _88.data;
+                    const respData = (_90 = e === null || e === void 0 ? void 0 : e.response) === null || _90 === void 0 ? void 0 : _90.data;
                     const base = (respData === null || respData === void 0 ? void 0 : respData.base_resp) || {};
                     const provider_code = base === null || base === void 0 ? void 0 : base.status_code;
                     const provider_message = (base === null || base === void 0 ? void 0 : base.status_msg) || (respData === null || respData === void 0 ? void 0 : respData.message) || (e === null || e === void 0 ? void 0 : e.message);
@@ -6065,7 +6255,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                 });
             }
             catch (e) {
-                const respData = (_89 = e === null || e === void 0 ? void 0 : e.response) === null || _89 === void 0 ? void 0 : _89.data;
+                const respData = (_91 = e === null || e === void 0 ? void 0 : e.response) === null || _91 === void 0 ? void 0 : _91.data;
                 const base = (respData === null || respData === void 0 ? void 0 : respData.base_resp) || {};
                 const provider_code = base === null || base === void 0 ? void 0 : base.status_code;
                 const provider_message = (base === null || base === void 0 ? void 0 : base.status_msg) || (respData === null || respData === void 0 ? void 0 : respData.message) || (e === null || e === void 0 ? void 0 : e.message);
@@ -6184,9 +6374,9 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                 console.error("Luma create generation error:", {
                     error: serializeError(e),
                     payload: lumaPayload,
-                    serverResponse: (_90 = e === null || e === void 0 ? void 0 : e.response) === null || _90 === void 0 ? void 0 : _90.data,
+                    serverResponse: (_92 = e === null || e === void 0 ? void 0 : e.response) === null || _92 === void 0 ? void 0 : _92.data,
                 });
-                const respData = (_91 = e === null || e === void 0 ? void 0 : e.response) === null || _91 === void 0 ? void 0 : _91.data;
+                const respData = (_93 = e === null || e === void 0 ? void 0 : e.response) === null || _93 === void 0 ? void 0 : _93.data;
                 // Prefer detail/message/error from server response for user-facing error
                 const userMessage = (respData === null || respData === void 0 ? void 0 : respData.detail) ||
                     (respData === null || respData === void 0 ? void 0 : respData.message) ||
@@ -6212,7 +6402,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
             });
             return;
         }
-        const generationId = ((_92 = createGenRes.data) === null || _92 === void 0 ? void 0 : _92.id) || ((_94 = (_93 = createGenRes.data) === null || _93 === void 0 ? void 0 : _93.data) === null || _94 === void 0 ? void 0 : _94.id);
+        const generationId = ((_94 = createGenRes.data) === null || _94 === void 0 ? void 0 : _94.id) || ((_96 = (_95 = createGenRes.data) === null || _95 === void 0 ? void 0 : _95.data) === null || _96 === void 0 ? void 0 : _96.id);
         if (!generationId) {
             res.status(500).json({
                 success: false,
@@ -6257,33 +6447,33 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
             }
             // Try to read state/status and the video URL in a robust way
             state =
-                ((_95 = pollRes.data) === null || _95 === void 0 ? void 0 : _95.state) ||
-                    ((_96 = pollRes.data) === null || _96 === void 0 ? void 0 : _96.status) ||
-                    ((_98 = (_97 = pollRes.data) === null || _97 === void 0 ? void 0 : _97.data) === null || _98 === void 0 ? void 0 : _98.state) ||
+                ((_97 = pollRes.data) === null || _97 === void 0 ? void 0 : _97.state) ||
+                    ((_98 = pollRes.data) === null || _98 === void 0 ? void 0 : _98.status) ||
+                    ((_100 = (_99 = pollRes.data) === null || _99 === void 0 ? void 0 : _99.data) === null || _100 === void 0 ? void 0 : _100.state) ||
                     "";
             if (state === "completed") {
                 videoUrl =
-                    ((_100 = (_99 = pollRes.data) === null || _99 === void 0 ? void 0 : _99.assets) === null || _100 === void 0 ? void 0 : _100.video) ||
-                        ((_101 = pollRes.data) === null || _101 === void 0 ? void 0 : _101.video) ||
-                        ((_103 = (_102 = pollRes.data) === null || _102 === void 0 ? void 0 : _102.data) === null || _103 === void 0 ? void 0 : _103.video_url) ||
-                        ((_107 = (_106 = (_105 = (_104 = pollRes.data) === null || _104 === void 0 ? void 0 : _104.assets) === null || _105 === void 0 ? void 0 : _105.mp4) === null || _106 === void 0 ? void 0 : _106[0]) === null || _107 === void 0 ? void 0 : _107.url) ||
+                    ((_102 = (_101 = pollRes.data) === null || _101 === void 0 ? void 0 : _101.assets) === null || _102 === void 0 ? void 0 : _102.video) ||
+                        ((_103 = pollRes.data) === null || _103 === void 0 ? void 0 : _103.video) ||
+                        ((_105 = (_104 = pollRes.data) === null || _104 === void 0 ? void 0 : _104.data) === null || _105 === void 0 ? void 0 : _105.video_url) ||
+                        ((_109 = (_108 = (_107 = (_106 = pollRes.data) === null || _106 === void 0 ? void 0 : _106.assets) === null || _107 === void 0 ? void 0 : _107.mp4) === null || _108 === void 0 ? void 0 : _108[0]) === null || _109 === void 0 ? void 0 : _109.url) ||
                         null;
                 console.log("Luma poll response:", pollRes.data);
                 break;
             }
             if (state === "failed") {
                 console.error("Luma generation failed:", pollRes.data);
-                const provider_message = ((_108 = pollRes.data) === null || _108 === void 0 ? void 0 : _108.failure_reason) ||
-                    ((_109 = pollRes.data) === null || _109 === void 0 ? void 0 : _109.error) ||
-                    ((_110 = pollRes.data) === null || _110 === void 0 ? void 0 : _110.message) ||
-                    ((_111 = pollRes.data) === null || _111 === void 0 ? void 0 : _111.state);
+                const provider_message = ((_110 = pollRes.data) === null || _110 === void 0 ? void 0 : _110.failure_reason) ||
+                    ((_111 = pollRes.data) === null || _111 === void 0 ? void 0 : _111.error) ||
+                    ((_112 = pollRes.data) === null || _112 === void 0 ? void 0 : _112.message) ||
+                    ((_113 = pollRes.data) === null || _113 === void 0 ? void 0 : _113.state);
                 res.status(500).json({
                     success: false,
                     error: provider_message
                         ? `Luma generation failed: ${provider_message}`
                         : "Luma generation failed",
                     provider: "Luma",
-                    provider_status: (_112 = pollRes.data) === null || _112 === void 0 ? void 0 : _112.state,
+                    provider_status: (_114 = pollRes.data) === null || _114 === void 0 ? void 0 : _114.state,
                     provider_message,
                     details: safeJson(pollRes.data),
                 });
@@ -6311,7 +6501,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
         }
         catch (err) {
             const e = err;
-            console.error("Error downloading Luma video:", ((_113 = e === null || e === void 0 ? void 0 : e.response) === null || _113 === void 0 ? void 0 : _113.data) || e);
+            console.error("Error downloading Luma video:", ((_115 = e === null || e === void 0 ? void 0 : e.response) === null || _115 === void 0 ? void 0 : _115.data) || e);
             res.status(500).json({
                 success: false,
                 error: "Failed to download Luma video",

@@ -3260,6 +3260,54 @@ function showFeatureDetailPage(endpoint, sourceTab = "filters") {
           if (field) field.style.display = "none";
         });
 
+        // Reset dropdowns to default options (will be overridden for specific models like Wan 2.5)
+        const durationSelect = document.getElementById("modelDurationSelect");
+        const resolutionSelect = document.getElementById(
+          "modelResolutionSelect"
+        );
+
+        // Only reset if not Wan 2.5 (Wan 2.5 has custom options)
+        const isWan25 = /wan-2\.5-image-to-video/i.test(selectedModel);
+
+        if (!isWan25) {
+          if (durationSelect && durationSelect.children.length !== 7) {
+            const currentValue = durationSelect.value;
+            durationSelect.innerHTML = `
+              <option value="">Default</option>
+              <option value="4">4s</option>
+              <option value="5">5s</option>
+              <option value="6">6s</option>
+              <option value="8">8s</option>
+              <option value="10">10s</option>
+              <option value="12">12s</option>
+            `;
+            if (
+              currentValue &&
+              durationSelect.querySelector(`option[value="${currentValue}"]`)
+            ) {
+              durationSelect.value = currentValue;
+            }
+          }
+
+          if (resolutionSelect && resolutionSelect.children.length !== 6) {
+            const currentValue = resolutionSelect.value;
+            resolutionSelect.innerHTML = `
+              <option value="">Default</option>
+              <option value="280p">280p</option>
+              <option value="360p">360p (640x360)</option>
+              <option value="540p">540p (960x540)</option>
+              <option value="720p">720p (1280x720)</option>
+              <option value="1080p">1080p (1920x1080)</option>
+            `;
+            if (
+              currentValue &&
+              resolutionSelect.querySelector(`option[value="${currentValue}"]`)
+            ) {
+              resolutionSelect.value = currentValue;
+            }
+          }
+        }
+
         let showPanel = false;
 
         // PixVerse V5 (Text-to-Video via Runware)
@@ -3392,6 +3440,45 @@ function showFeatureDetailPage(endpoint, sourceTab = "filters") {
           if (heightField) heightField.style.display = "flex";
           if (cfgScaleField) cfgScaleField.style.display = "flex";
           if (stepsField) stepsField.style.display = "flex";
+        }
+        // Wan 2.5 Image-to-Video (EachLabs)
+        else if (/wan-2\.5-image-to-video/i.test(selectedModel)) {
+          showPanel = true;
+          if (durationField) durationField.style.display = "flex";
+          if (resolutionField) resolutionField.style.display = "flex";
+
+          // Populate duration dropdown with only 5s and 10s for Wan 2.5
+          const durationSelect = document.getElementById("modelDurationSelect");
+          if (durationSelect) {
+            const currentValue = durationSelect.value;
+            durationSelect.innerHTML = `
+              <option value="">Default</option>
+              <option value="5">5s</option>
+              <option value="10">10s</option>
+            `;
+            // Restore previous value if it was valid
+            if (currentValue === "5" || currentValue === "10") {
+              durationSelect.value = currentValue;
+            }
+          }
+
+          // Populate resolution dropdown with only 480p, 720p, 1080p for Wan 2.5
+          const resolutionSelect = document.getElementById(
+            "modelResolutionSelect"
+          );
+          if (resolutionSelect) {
+            const currentValue = resolutionSelect.value;
+            resolutionSelect.innerHTML = `
+              <option value="">Default</option>
+              <option value="480p">480p</option>
+              <option value="720p">720p</option>
+              <option value="1080p">1080p</option>
+            `;
+            // Restore previous value if it was valid
+            if (["480p", "720p", "1080p"].includes(currentValue)) {
+              resolutionSelect.value = currentValue;
+            }
+          }
         }
         // PixVerse v4/v4.5 Transition and Image-to-Video models (via EachLabs API)
         else if (
