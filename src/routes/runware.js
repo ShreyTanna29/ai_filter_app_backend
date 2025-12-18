@@ -789,7 +789,7 @@ router.post("/runware/upload-image", apiKey_1.requireApiKey, upload.single("imag
 // POST /api/runware/generate-photo
 // JSON body: { feature?: string, prompt: string, model?: string, width?: number, height?: number, seedImage?: string }
 router.post("/runware/generate-photo", apiKey_1.requireApiKey, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    var _a, _b, _c, _d, _e, _f;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l;
     try {
         const { feature, prompt, model, width, height, seedImage, negativePrompt, steps, cfgScale, numberResults, ideogramSettings, referenceImages, referenceImage, referenceImageUUID, } = req.body || {};
         // Basic validation
@@ -999,14 +999,130 @@ router.post("/runware/generate-photo", apiKey_1.requireApiKey, (req, res) => __a
         if (clientModel === FLUX1_PRO_MODEL_ID) {
             chosenModel = FLUX1_PRO_MODEL_ID;
         }
-        // Hunyuan Image V3 uses EachLabs API - redirect to dedicated endpoint
+        // Hunyuan Image V3 uses EachLabs API - handle inline
         const isHunyuanImageV3 = chosenModel === HUNYUAN_IMAGE_V3_MODEL_ID;
         if (isHunyuanImageV3) {
-            // Forward to the dedicated Hunyuan endpoint
-            res.status(400).json({
-                success: false,
-                error: "Hunyuan Image V3 should use the /api/runware/hunyuan/generate endpoint instead.",
-                redirectTo: "/api/runware/hunyuan/generate",
+            // Handle Hunyuan generation via EachLabs API
+            let resolvedImageSize = HUNYUAN_IMAGE_V3_DEFAULT_SIZE;
+            const w = parseInt(String(width || ""), 10);
+            const h = parseInt(String(height || ""), 10);
+            if (w && h) {
+                const ratio = w / h;
+                if (Math.abs(ratio - 1) < 0.1) {
+                    resolvedImageSize = w >= 1024 ? "square_hd" : "square";
+                }
+                else if (ratio > 1.5) {
+                    resolvedImageSize = "landscape_16_9";
+                }
+                else if (ratio > 1.2) {
+                    resolvedImageSize = "landscape_4_3";
+                }
+                else if (ratio < 0.67) {
+                    resolvedImageSize = "portrait_16_9";
+                }
+                else if (ratio < 0.85) {
+                    resolvedImageSize = "portrait_4_3";
+                }
+                else {
+                    resolvedImageSize = "square_hd";
+                }
+            }
+            const input = {
+                prompt: promptText,
+                image_size: resolvedImageSize,
+            };
+            if (negativePrompt && typeof negativePrompt === "string") {
+                input.negative_prompt = negativePrompt.trim();
+            }
+            if (numberResults) {
+                const num = parseInt(String(numberResults), 10);
+                if (!Number.isNaN(num)) {
+                    input.num_images = Math.max(1, Math.min(4, num));
+                }
+            }
+            if (steps) {
+                const stepsNum = parseInt(String(steps), 10);
+                if (!Number.isNaN(stepsNum)) {
+                    input.num_inference_steps = Math.max(1, Math.min(100, stepsNum));
+                }
+            }
+            if (cfgScale) {
+                const scale = parseFloat(String(cfgScale));
+                if (!Number.isNaN(scale)) {
+                    input.guidance_scale = Math.max(0, Math.min(20, scale));
+                }
+            }
+            const predictionPayload = {
+                model: "hunyuan-image-v3-text-to-image",
+                version: "0.0.1",
+                input,
+            };
+            const headers = getEachLabsHeaders();
+            let createResponse;
+            try {
+                createResponse = yield axios_1.default.post(`${EACHLABS_API_URL}/prediction/`, predictionPayload, { headers, timeout: 30000 });
+            }
+            catch (apiErr) {
+                const errorData = ((_a = apiErr === null || apiErr === void 0 ? void 0 : apiErr.response) === null || _a === void 0 ? void 0 : _a.data) || {};
+                const errorDetails = errorData.details ||
+                    errorData.error ||
+                    (apiErr === null || apiErr === void 0 ? void 0 : apiErr.message) ||
+                    "Unknown error";
+                console.error("EachLabs API error:", errorData);
+                res.status(((_b = apiErr === null || apiErr === void 0 ? void 0 : apiErr.response) === null || _b === void 0 ? void 0 : _b.status) || 500).json({
+                    success: false,
+                    error: errorDetails,
+                    details: errorData,
+                });
+                return;
+            }
+            const predictionId = ((_c = createResponse.data) === null || _c === void 0 ? void 0 : _c.id) || ((_d = createResponse.data) === null || _d === void 0 ? void 0 : _d.prediction_id);
+            if (!predictionId) {
+                res.status(502).json({
+                    success: false,
+                    error: "EachLabs did not return a prediction ID",
+                    details: createResponse.data,
+                });
+                return;
+            }
+            const result = yield pollEachLabsPrediction(predictionId);
+            const output = (result === null || result === void 0 ? void 0 : result.output) || (result === null || result === void 0 ? void 0 : result.result) || result;
+            let imageURL;
+            if (Array.isArray(output === null || output === void 0 ? void 0 : output.images) && output.images.length > 0) {
+                imageURL = output.images[0];
+            }
+            else if (typeof (output === null || output === void 0 ? void 0 : output.image) === "string") {
+                imageURL = output.image;
+            }
+            else if (typeof output === "string") {
+                imageURL = output;
+            }
+            else if (Array.isArray(output) && output.length > 0) {
+                imageURL = typeof output[0] === "string" ? output[0] : (_e = output[0]) === null || _e === void 0 ? void 0 : _e.url;
+            }
+            if (!imageURL) {
+                res.status(502).json({
+                    success: false,
+                    error: "EachLabs did not return an image URL",
+                    details: result,
+                });
+                return;
+            }
+            try {
+                yield prisma_1.default.generated_Photo.create({
+                    data: {
+                        feature: String(feature || "hunyuan-image-v3"),
+                        url: imageURL,
+                    },
+                });
+            }
+            catch (e) {
+                console.warn("Failed to persist Hunyuan Generated_Photo:", (e === null || e === void 0 ? void 0 : e.message) || e);
+            }
+            res.json({
+                success: true,
+                image: { url: imageURL },
+                predictionId,
             });
             return;
         }
@@ -1208,7 +1324,7 @@ router.post("/runware/generate-photo", apiKey_1.requireApiKey, (req, res) => __a
             if (styleCode)
                 providerPayload.styleCode = styleCode;
             if (isIdeogramRemix) {
-                const remixStrengthRaw = Number.parseInt(String((_a = ideogramConfig.remixStrength) !== null && _a !== void 0 ? _a : ""), 10);
+                const remixStrengthRaw = Number.parseInt(String((_f = ideogramConfig.remixStrength) !== null && _f !== void 0 ? _f : ""), 10);
                 if (!Number.isNaN(remixStrengthRaw)) {
                     providerPayload.remixStrength = Math.min(Math.max(remixStrengthRaw, 0), 100);
                 }
@@ -1283,7 +1399,7 @@ router.post("/runware/generate-photo", apiKey_1.requireApiKey, (req, res) => __a
         }
         catch (primaryErr) {
             // Adaptive fallback on upstream timeout (e.g., 524 from Cloudflare)
-            const code = (primaryErr === null || primaryErr === void 0 ? void 0 : primaryErr.code) || ((_b = primaryErr === null || primaryErr === void 0 ? void 0 : primaryErr.response) === null || _b === void 0 ? void 0 : _b.status);
+            const code = (primaryErr === null || primaryErr === void 0 ? void 0 : primaryErr.code) || ((_g = primaryErr === null || primaryErr === void 0 ? void 0 : primaryErr.response) === null || _g === void 0 ? void 0 : _g.status);
             const isTimeoutLike = code === 524 ||
                 code === 504 ||
                 code === 408 ||
@@ -1357,7 +1473,7 @@ router.post("/runware/generate-photo", apiKey_1.requireApiKey, (req, res) => __a
         return;
     }
     catch (err) {
-        const msg = ((_f = (_e = (_d = (_c = err === null || err === void 0 ? void 0 : err.response) === null || _c === void 0 ? void 0 : _c.data) === null || _d === void 0 ? void 0 : _d.errors) === null || _e === void 0 ? void 0 : _e[0]) === null || _f === void 0 ? void 0 : _f.message) ||
+        const msg = ((_l = (_k = (_j = (_h = err === null || err === void 0 ? void 0 : err.response) === null || _h === void 0 ? void 0 : _h.data) === null || _j === void 0 ? void 0 : _j.errors) === null || _k === void 0 ? void 0 : _k[0]) === null || _l === void 0 ? void 0 : _l.message) ||
             (err === null || err === void 0 ? void 0 : err.message) ||
             "Unknown error";
         console.error("Runware generate-photo error:", msg);

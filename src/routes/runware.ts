@@ -1164,15 +1164,141 @@ router.post(
         chosenModel = FLUX1_PRO_MODEL_ID;
       }
 
-      // Hunyuan Image V3 uses EachLabs API - redirect to dedicated endpoint
+      // Hunyuan Image V3 uses EachLabs API - handle inline
       const isHunyuanImageV3 = chosenModel === HUNYUAN_IMAGE_V3_MODEL_ID;
       if (isHunyuanImageV3) {
-        // Forward to the dedicated Hunyuan endpoint
-        res.status(400).json({
-          success: false,
-          error:
-            "Hunyuan Image V3 should use the /api/runware/hunyuan/generate endpoint instead.",
-          redirectTo: "/api/runware/hunyuan/generate",
+        // Handle Hunyuan generation via EachLabs API
+        let resolvedImageSize = HUNYUAN_IMAGE_V3_DEFAULT_SIZE;
+        const w = parseInt(String(width || ""), 10);
+        const h = parseInt(String(height || ""), 10);
+        if (w && h) {
+          const ratio = w / h;
+          if (Math.abs(ratio - 1) < 0.1) {
+            resolvedImageSize = w >= 1024 ? "square_hd" : "square";
+          } else if (ratio > 1.5) {
+            resolvedImageSize = "landscape_16_9";
+          } else if (ratio > 1.2) {
+            resolvedImageSize = "landscape_4_3";
+          } else if (ratio < 0.67) {
+            resolvedImageSize = "portrait_16_9";
+          } else if (ratio < 0.85) {
+            resolvedImageSize = "portrait_4_3";
+          } else {
+            resolvedImageSize = "square_hd";
+          }
+        }
+
+        const input: Record<string, any> = {
+          prompt: promptText,
+          image_size: resolvedImageSize,
+        };
+
+        if (negativePrompt && typeof negativePrompt === "string") {
+          input.negative_prompt = negativePrompt.trim();
+        }
+
+        if (numberResults) {
+          const num = parseInt(String(numberResults), 10);
+          if (!Number.isNaN(num)) {
+            input.num_images = Math.max(1, Math.min(4, num));
+          }
+        }
+
+        if (steps) {
+          const stepsNum = parseInt(String(steps), 10);
+          if (!Number.isNaN(stepsNum)) {
+            input.num_inference_steps = Math.max(1, Math.min(100, stepsNum));
+          }
+        }
+
+        if (cfgScale) {
+          const scale = parseFloat(String(cfgScale));
+          if (!Number.isNaN(scale)) {
+            input.guidance_scale = Math.max(0, Math.min(20, scale));
+          }
+        }
+
+        const predictionPayload: Record<string, any> = {
+          model: "hunyuan-image-v3-text-to-image",
+          version: "0.0.1",
+          input,
+        };
+
+        const headers = getEachLabsHeaders();
+        let createResponse;
+        try {
+          createResponse = await axios.post(
+            `${EACHLABS_API_URL}/prediction/`,
+            predictionPayload,
+            { headers, timeout: 30_000 }
+          );
+        } catch (apiErr: any) {
+          const errorData = apiErr?.response?.data || {};
+          const errorDetails =
+            errorData.details ||
+            errorData.error ||
+            apiErr?.message ||
+            "Unknown error";
+          console.error("EachLabs API error:", errorData);
+          res.status(apiErr?.response?.status || 500).json({
+            success: false,
+            error: errorDetails,
+            details: errorData,
+          });
+          return;
+        }
+
+        const predictionId =
+          createResponse.data?.id || createResponse.data?.prediction_id;
+        if (!predictionId) {
+          res.status(502).json({
+            success: false,
+            error: "EachLabs did not return a prediction ID",
+            details: createResponse.data,
+          });
+          return;
+        }
+
+        const result = await pollEachLabsPrediction(predictionId);
+        const output = result?.output || result?.result || result;
+        let imageURL: string | undefined;
+        if (Array.isArray(output?.images) && output.images.length > 0) {
+          imageURL = output.images[0];
+        } else if (typeof output?.image === "string") {
+          imageURL = output.image;
+        } else if (typeof output === "string") {
+          imageURL = output;
+        } else if (Array.isArray(output) && output.length > 0) {
+          imageURL = typeof output[0] === "string" ? output[0] : output[0]?.url;
+        }
+
+        if (!imageURL) {
+          res.status(502).json({
+            success: false,
+            error: "EachLabs did not return an image URL",
+            details: result,
+          });
+          return;
+        }
+
+        try {
+          await prisma.generated_Photo.create({
+            data: {
+              feature: String(feature || "hunyuan-image-v3"),
+              url: imageURL,
+            },
+          });
+        } catch (e) {
+          console.warn(
+            "Failed to persist Hunyuan Generated_Photo:",
+            (e as any)?.message || e
+          );
+        }
+
+        res.json({
+          success: true,
+          image: { url: imageURL },
+          predictionId,
         });
         return;
       }
