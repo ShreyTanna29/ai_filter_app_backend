@@ -3636,6 +3636,9 @@ function showFeatureDetailPage(endpoint, sourceTab = "filters") {
         fd.append("image", file);
         const res = await fetch("/api/runware/upload-image", {
           method: "POST",
+          headers: {
+            "X-API-Key": "supersecretadminkey12345",
+          },
           body: fd,
         });
         const data = await res.json();
@@ -3712,7 +3715,10 @@ function showFeatureDetailPage(endpoint, sourceTab = "filters") {
               }
               response = await fetch("/api/runware/riverflow/edit", {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: {
+                  "Content-Type": "application/json",
+                  "X-API-Key": "supersecretadminkey12345",
+                },
                 body: JSON.stringify({
                   prompt: promptText,
                   feature: feature.endpoint,
@@ -3831,7 +3837,10 @@ function showFeatureDetailPage(endpoint, sourceTab = "filters") {
 
               response = await fetch("/api/runware/generate-photo", {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: {
+                  "Content-Type": "application/json",
+                  "X-API-Key": "supersecretadminkey12345",
+                },
                 body: JSON.stringify(requestPayload),
               });
             }
