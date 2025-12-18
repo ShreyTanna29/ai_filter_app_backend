@@ -1438,9 +1438,30 @@ router.post(
         task.seedImage = seedImage; // UUID, URL, base64, or data URI supported by Runware
       }
       // Only add steps for models that support it (FLUX/SD based models)
-      // Google (Imagen, Nano Banana), OpenAI (GPT Image), and Ideogram models do NOT support steps
+      // Google (Imagen, Nano Banana), OpenAI (GPT Image), Ideogram, Riverflow, HiDream, Qwen, Midjourney, and Seeddream models do NOT support steps
+      const isRiverflowFamily =
+        chosenModel === RIVERFLOW_MODEL_ID ||
+        chosenModel === RIVERFLOW_MINI_MODEL_ID ||
+        chosenModel === RIVERFLOW_PRO_MODEL_ID;
+      const isHiDreamFamily =
+        chosenModel === HIDREAM_FAST_MODEL_ID ||
+        chosenModel === HIDREAM_DEV_MODEL_ID ||
+        chosenModel === HIDREAM_FULL_MODEL_ID;
+      const isQwenFamily =
+        chosenModel === QWEN_IMAGE_MODEL_ID ||
+        chosenModel === QWEN_IMAGE_EDIT_PLUS_MODEL_ID;
+      const isMidjourney = chosenModel === MIDJOURNEY_V7_MODEL_ID;
+      const isSeedEdit = chosenModel === SEEDEDIT_MODEL_ID;
       const supportsSteps =
-        !isGoogleFamily && !isOpenAIFamily && !isIdeogramFamily;
+        !isGoogleFamily &&
+        !isOpenAIFamily &&
+        !isIdeogramFamily &&
+        !isRiverflowFamily &&
+        !isHiDreamFamily &&
+        !isQwenFamily &&
+        !isMidjourney &&
+        !isSeedEdit &&
+        !isSeeddream;
       if (supportsSteps) {
         if (steps)
           task.steps = Math.min(Math.max(parseInt(steps) || 15, 1), 100);
