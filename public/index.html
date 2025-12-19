@@ -527,6 +527,68 @@
               </form>
             </div>
           </div>
+
+          <!-- Photo Filter Modal -->
+          <div
+            id="photoFeatureCrudModal"
+            class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40 hidden"
+          >
+            <div
+              class="bg-white rounded-lg shadow-lg w-full max-w-md p-6 relative"
+            >
+              <button
+                onclick="closePhotoFeatureCrudModal()"
+                class="absolute top-2 right-2 text-gray-400 hover:text-gray-700"
+              >
+                <i class="fa fa-times"></i>
+              </button>
+              <h2 id="photoFeatureCrudModalTitle" class="text-xl font-bold mb-4">
+                Create Photo Filter
+              </h2>
+              <form id="photoFeatureCrudForm" class="space-y-4">
+                <div>
+                  <label class="block text-gray-700 font-semibold mb-1"
+                    >Endpoint</label
+                  >
+                  <input
+                    id="photoFeatureCrudEndpoint"
+                    type="text"
+                    class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400"
+                    placeholder="e.g., /filter/photo-beauty"
+                    required
+                  />
+                </div>
+                <div>
+                  <label class="block text-gray-700 font-semibold mb-1"
+                    >Prompt</label
+                  >
+                  <textarea
+                    id="photoFeatureCrudPrompt"
+                    class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400"
+                    rows="3"
+                    placeholder="Describe the photo filter..."
+                    required
+                  ></textarea>
+                </div>
+                <div class="flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onclick="closePhotoFeatureCrudModal()"
+                    class="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    id="photoFeatureCrudSaveBtn"
+                    type="submit"
+                    class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                  >
+                    Save
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
         </div>
         <div id="tab-photo-filters" class="tab-content w-full px-10 py-6 hidden">
           <div class="flex items-center justify-between mb-4">

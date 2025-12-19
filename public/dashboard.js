@@ -854,10 +854,10 @@ window.addEventListener("DOMContentLoaded", function () {
   if (addFeatureBtn) {
     addFeatureBtn.addEventListener("click", openFeatureCrudModal);
   }
-  // Wire up Add Photo Filter button to reuse same modal
+  // Wire up Add Photo Filter button to open photo filter modal
   const addPhotoFeatureBtn = document.getElementById("addPhotoFeatureBtn");
   if (addPhotoFeatureBtn) {
-    addPhotoFeatureBtn.addEventListener("click", openFeatureCrudModal);
+    addPhotoFeatureBtn.addEventListener("click", openPhotoFeatureCrudModal);
   }
 
   // Wire up Add Cartoon Character button to open the modal
@@ -873,6 +873,9 @@ window.addEventListener("DOMContentLoaded", function () {
 
   var modal = document.getElementById("featureCrudModal");
   if (modal) modal.classList.add("hidden");
+
+  var photoModal = document.getElementById("photoFeatureCrudModal");
+  if (photoModal) photoModal.classList.add("hidden");
 
   var cartoonModal = document.getElementById("cartoonCharacterCrudModal");
   if (cartoonModal) cartoonModal.classList.add("hidden");
@@ -3679,12 +3682,17 @@ function showFeatureDetailPage(endpoint, sourceTab = "filters") {
               genStatus.textContent = "Select a model before generating.";
             return;
           }
+          const modelMeta = PHOTO_MODEL_META.get(selectedModel);
+          const requiresReferences = modelMeta?.requiresReferences || false;
           const isIdeogramRemixModel =
             selectedModel === IDEOGRAM_REMIX_MODEL_ID;
           const isIdeogramModel =
             selectedModel === IDEOGRAM_MODEL_ID || isIdeogramRemixModel;
+
+          // Check if model requires an image upload
           if (
             !isIdeogramModel &&
+            !requiresReferences &&
             !featureUploadedImageFile &&
             !uploadedImageUrl
           ) {
@@ -3692,6 +3700,21 @@ function showFeatureDetailPage(endpoint, sourceTab = "filters") {
               genStatus.textContent = "Please upload an image first.";
             return;
           }
+
+          // Check if model specifically requires reference images
+          if (
+            requiresReferences &&
+            !featureUploadedImageFile &&
+            !uploadedImageUrl
+          ) {
+            if (genStatus) {
+              genStatus.textContent =
+                "This model requires a reference image. Please upload an image first.";
+              genStatus.style.color = "red";
+            }
+            return;
+          }
+
           const featurePromptEl = document.getElementById(
             "featureDetailPrompt"
           );
@@ -3704,30 +3727,102 @@ function showFeatureDetailPage(endpoint, sourceTab = "filters") {
           }
           try {
             let response;
-            if (selectedModel === "sourceful:1@1") {
+            const modelMeta = PHOTO_MODEL_META.get(selectedModel);
+            const requiresReferences = modelMeta?.requiresReferences || false;
+
+            // Check if model requires reference images (Riverflow, SeedEdit, Qwen Image Edit Plus)
+            if (requiresReferences) {
               if (!featureRunwareImageUUID && featureUploadedImageFile) {
                 await uploadRunwareReference(featureUploadedImageFile);
               }
               if (!featureRunwareImageUUID) {
                 throw new Error(
-                  "Runware reference missing. Please re-upload the image."
+                  "This model requires a reference image. Please upload an image first."
                 );
               }
-              response = await fetch("/api/runware/riverflow/edit", {
-                method: "POST",
-                headers: {
-                  "Content-Type": "application/json",
-                  "X-API-Key": "supersecretadminkey12345",
-                },
-                body: JSON.stringify({
-                  prompt: promptText,
-                  feature: feature.endpoint,
-                  references: [featureRunwareImageUUID],
-                  width: 1024,
-                  height: 1024,
-                  numberResults: 1,
-                }),
-              });
+
+              // Use specific endpoint for Riverflow 1.1 base model
+              if (selectedModel === "sourceful:1@1") {
+                response = await fetch("/api/runware/riverflow/edit", {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                    "X-API-Key": "supersecretadminkey12345",
+                  },
+                  body: JSON.stringify({
+                    prompt: promptText,
+                    feature: feature.endpoint,
+                    references: [featureRunwareImageUUID],
+                    width: 1024,
+                    height: 1024,
+                    numberResults: 1,
+                  }),
+                });
+              } else if (selectedModel === "sourceful:1@0") {
+                // Riverflow Mini
+                response = await fetch("/api/runware/riverflow-mini/edit", {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                    "X-API-Key": "supersecretadminkey12345",
+                  },
+                  body: JSON.stringify({
+                    prompt: promptText,
+                    feature: feature.endpoint,
+                    references: [featureRunwareImageUUID],
+                    width: 1024,
+                    height: 1024,
+                    numberResults: 1,
+                  }),
+                });
+              } else if (selectedModel === "sourceful:1@2") {
+                // Riverflow Pro
+                response = await fetch("/api/runware/riverflow-pro/edit", {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                    "X-API-Key": "supersecretadminkey12345",
+                  },
+                  body: JSON.stringify({
+                    prompt: promptText,
+                    feature: feature.endpoint,
+                    references: [featureRunwareImageUUID],
+                    width: 1024,
+                    height: 1024,
+                    numberResults: 1,
+                  }),
+                });
+              } else if (selectedModel === "bytedance:4@1") {
+                // SeedEdit 3.0
+                response = await fetch("/api/runware/seededit/edit", {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                    "X-API-Key": "supersecretadminkey12345",
+                  },
+                  body: JSON.stringify({
+                    prompt: promptText,
+                    feature: feature.endpoint,
+                    referenceImage: featureRunwareImageUUID,
+                  }),
+                });
+              } else {
+                // Generic handling for other models requiring references
+                response = await fetch("/api/runware/generate-photo", {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                    "X-API-Key": "supersecretadminkey12345",
+                  },
+                  body: JSON.stringify({
+                    feature: feature.endpoint,
+                    prompt: promptText,
+                    model: selectedModel,
+                    referenceImages: [featureRunwareImageUUID],
+                    numberResults: 1,
+                  }),
+                });
+              }
             } else {
               const requestPayload = {
                 feature: feature.endpoint,
@@ -6877,9 +6972,104 @@ function closeFeatureCrudModal() {
   }
 }
 
+// Photo Filter Modal Functions
+function openPhotoFeatureCrudModal() {
+  console.log("Opening photo filter CRUD modal");
+
+  // Ensure we're on the photo filters tab
+  const photoFiltersTab = document.getElementById("tab-photo-filters");
+  if (photoFiltersTab && photoFiltersTab.classList.contains("hidden")) {
+    // Switch to photo filters tab first
+    window.switchTab("photo-filters");
+  }
+
+  const modal = document.getElementById("photoFeatureCrudModal");
+  if (modal) {
+    modal.classList.remove("hidden");
+    modal.style.display = "flex";
+
+    // Reset form
+    const form = document.getElementById("photoFeatureCrudForm");
+    if (form) form.reset();
+
+    // Set title to "Create Photo Filter"
+    const title = document.getElementById("photoFeatureCrudModalTitle");
+    if (title) title.textContent = "Create Photo Filter";
+
+    // Add form submission handler
+    const formHandler = async function (e) {
+      e.preventDefault();
+
+      const endpoint = document
+        .getElementById("photoFeatureCrudEndpoint")
+        .value.trim();
+      const prompt = document
+        .getElementById("photoFeatureCrudPrompt")
+        .value.trim();
+
+      if (!endpoint || !prompt) {
+        alert("Please fill in all fields");
+        return;
+      }
+
+      try {
+        const response = await fetch("/api/photo-features", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ endpoint, prompt }),
+        });
+
+        if (response.ok) {
+          const result = await response.json();
+          closePhotoFeatureCrudModal();
+          // Reload photo filters
+          await loadAllPhotoFeatures();
+          alert("Photo filter created successfully!");
+        } else {
+          const contentType = response.headers.get("content-type");
+          if (contentType && contentType.includes("application/json")) {
+            const error = await response.json();
+            alert(error.message || "Failed to create photo filter");
+          } else {
+            alert(
+              "Photo filter creation failed. Please check the API endpoint."
+            );
+          }
+        }
+      } catch (error) {
+        console.error("Error creating photo filter:", error);
+        alert("An error occurred while creating the photo filter");
+      }
+    };
+
+    // Remove any existing listeners and add new one
+    const formElement = document.getElementById("photoFeatureCrudForm");
+    if (formElement) {
+      const newForm = formElement.cloneNode(true);
+      formElement.parentNode.replaceChild(newForm, formElement);
+      newForm.addEventListener("submit", formHandler);
+    }
+  }
+}
+
+function closePhotoFeatureCrudModal() {
+  console.log("Closing photo filter CRUD modal");
+  const modal = document.getElementById("photoFeatureCrudModal");
+  if (modal) {
+    modal.classList.add("hidden");
+    modal.style.display = "none";
+
+    // Reset form
+    const form = document.getElementById("photoFeatureCrudForm");
+    if (form) form.reset();
+  }
+}
+
 // Make functions globally available
 window.openFeatureCrudModal = openFeatureCrudModal;
 window.closeFeatureCrudModal = closeFeatureCrudModal;
+window.openPhotoFeatureCrudModal = openPhotoFeatureCrudModal;
+window.closePhotoFeatureCrudModal = closePhotoFeatureCrudModal;
 
 // Add debugging functions for testing
 window.debugVideoData = function () {

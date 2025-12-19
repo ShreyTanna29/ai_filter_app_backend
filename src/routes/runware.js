@@ -789,9 +789,9 @@ router.post("/runware/upload-image", apiKey_1.requireApiKey, upload.single("imag
 // POST /api/runware/generate-photo
 // JSON body: { feature?: string, prompt: string, model?: string, width?: number, height?: number, seedImage?: string }
 router.post("/runware/generate-photo", apiKey_1.requireApiKey, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k;
     try {
-        const { feature, prompt, model, width, height, seedImage, negativePrompt, steps, cfgScale, numberResults, ideogramSettings, referenceImages, referenceImage, referenceImageUUID, } = req.body || {};
+        const { feature, prompt, model, width, height, seedImage, maskImage, negativePrompt, steps, cfgScale, numberResults, ideogramSettings, referenceImages, referenceImage, referenceImageUUID, } = req.body || {};
         // Basic validation
         const rawPrompt = typeof prompt === "string" ? prompt : "";
         const promptText = rawPrompt.trim();
@@ -1139,7 +1139,9 @@ router.post("/runware/generate-photo", apiKey_1.requireApiKey, (req, res) => __a
         const isOpenAIFamily = isGptImage1;
         const isIdeogram = chosenModel === IDEOGRAM_MODEL_ID;
         const isIdeogramRemix = chosenModel === IDEOGRAM_REMIX_MODEL_ID;
-        const isIdeogramFamily = isIdeogram || isIdeogramRemix;
+        const isIdeogramEdit = chosenModel === IDEOGRAM_EDIT_MODEL_ID;
+        const isIdeogramReframe = chosenModel === IDEOGRAM_REFRAME_MODEL_ID;
+        const isIdeogramFamily = isIdeogram || isIdeogramRemix || isIdeogramEdit || isIdeogramReframe;
         const referenceImageInputs = [];
         if (Array.isArray(referenceImages))
             referenceImageInputs.push(...referenceImages);
@@ -1195,23 +1197,54 @@ router.post("/runware/generate-photo", apiKey_1.requireApiKey, (req, res) => __a
             });
             return;
         }
+        // Validate Ideogram Edit requirements
+        if (isIdeogramEdit) {
+            if (!seedImage || typeof seedImage !== "string") {
+                res.status(400).json({
+                    success: false,
+                    error: "Ideogram Edit (inpainting) requires a seed image. Please provide a seedImage parameter.",
+                });
+                return;
+            }
+            if (!maskImage || typeof maskImage !== "string") {
+                res.status(400).json({
+                    success: false,
+                    error: "Ideogram Edit (inpainting) requires a mask image. Please provide a maskImage parameter to indicate areas to edit.",
+                });
+                return;
+            }
+        }
+        // Validate Ideogram Reframe requirements
+        if (isIdeogramReframe) {
+            if (!seedImage || typeof seedImage !== "string") {
+                res.status(400).json({
+                    success: false,
+                    error: "Ideogram Reframe (outpainting) requires a seed image. Please provide a seedImage parameter.",
+                });
+                return;
+            }
+        }
         const defaultDimension = isIdeogramRemix
             ? IDEOGRAM_REMIX_DEFAULT_DIMENSION
-            : isIdeogram
-                ? IDEOGRAM_DEFAULT_DIMENSION
-                : isImagen4
-                    ? IMAGEN4_DEFAULT_DIMENSION
-                    : isImagen4Ultra
-                        ? IMAGEN4_ULTRA_DEFAULT_DIMENSION
-                        : isImagen4Fast
-                            ? IMAGEN4_FAST_DEFAULT_DIMENSION
-                            : isNanoBanana
-                                ? NANO_BANANA_DEFAULT_DIMENSION
-                                : isNanoBananaPro
-                                    ? NANO_BANANA_PRO_DEFAULT_DIMENSION
-                                    : isGptImage1
-                                        ? GPT_IMAGE_1_DEFAULT_DIMENSION
-                                        : { width: 768, height: 768 };
+            : isIdeogramEdit
+                ? IDEOGRAM_EDIT_DEFAULT_DIMENSION
+                : isIdeogramReframe
+                    ? IDEOGRAM_REFRAME_DEFAULT_DIMENSION
+                    : isIdeogram
+                        ? IDEOGRAM_DEFAULT_DIMENSION
+                        : isImagen4
+                            ? IMAGEN4_DEFAULT_DIMENSION
+                            : isImagen4Ultra
+                                ? IMAGEN4_ULTRA_DEFAULT_DIMENSION
+                                : isImagen4Fast
+                                    ? IMAGEN4_FAST_DEFAULT_DIMENSION
+                                    : isNanoBanana
+                                        ? NANO_BANANA_DEFAULT_DIMENSION
+                                        : isNanoBananaPro
+                                            ? NANO_BANANA_PRO_DEFAULT_DIMENSION
+                                            : isGptImage1
+                                                ? GPT_IMAGE_1_DEFAULT_DIMENSION
+                                                : { width: 768, height: 768 };
         const defaultSize = defaultDimension.width;
         const defaultHeight = defaultDimension.height;
         const parseDimension = (value) => Number.parseInt(String(value !== null && value !== void 0 ? value : ""), 10);
@@ -1266,6 +1299,16 @@ router.post("/runware/generate-photo", apiKey_1.requireApiKey, (req, res) => __a
             resolvedWidth = dims.width;
             resolvedHeight = dims.height;
         }
+        else if (isIdeogramEdit) {
+            const dims = resolveIdeogramEditSize(width, height);
+            resolvedWidth = dims.width;
+            resolvedHeight = dims.height;
+        }
+        else if (isIdeogramReframe) {
+            const dims = resolveIdeogramReframeSize(width, height);
+            resolvedWidth = dims.width;
+            resolvedHeight = dims.height;
+        }
         const maxResultsPerRequest = isSeeddream
             ? 15
             : isIdeogramFamily
@@ -1280,8 +1323,11 @@ router.post("/runware/generate-photo", apiKey_1.requireApiKey, (req, res) => __a
             ? requestedResults
             : undefined;
         const providerSettings = {};
-        // Seed image is not supported by Ideogram, Google (Imagen/Nano Banana), or OpenAI models
-        const allowsSeedImage = !isIdeogramFamily && !isGoogleFamily && !isOpenAIFamily;
+        // Seed image is not supported by base Ideogram/Remix, Google (Imagen/Nano Banana), or OpenAI models
+        // But IS required for Ideogram Edit and Reframe
+        const allowsSeedImage = isIdeogramEdit ||
+            isIdeogramReframe ||
+            (!isIdeogramFamily && !isGoogleFamily && !isOpenAIFamily);
         if (isSeeddream && seeddreamSequentialResults) {
             providerSettings.bytedance = {
                 maxSequentialImages: seeddreamSequentialResults,
@@ -1323,13 +1369,10 @@ router.post("/runware/generate-photo", apiKey_1.requireApiKey, (req, res) => __a
                 providerPayload.stylePreset = stylePreset;
             if (styleCode)
                 providerPayload.styleCode = styleCode;
-            if (isIdeogramRemix) {
-                const remixStrengthRaw = Number.parseInt(String((_f = ideogramConfig.remixStrength) !== null && _f !== void 0 ? _f : ""), 10);
-                if (!Number.isNaN(remixStrengthRaw)) {
-                    providerPayload.remixStrength = Math.min(Math.max(remixStrengthRaw, 0), 100);
-                }
-            }
-            if (Array.isArray(ideogramConfig.styleReferenceImages) &&
+            // Note: remixStrength and styleReferenceImages are not supported by Runware API for Ideogram Remix
+            // Only add styleReferenceImages for base Ideogram, Edit, and Reframe models
+            if (!isIdeogramRemix &&
+                Array.isArray(ideogramConfig.styleReferenceImages) &&
                 ideogramConfig.styleReferenceImages.length) {
                 providerPayload.styleReferenceImages =
                     ideogramConfig.styleReferenceImages
@@ -1343,14 +1386,31 @@ router.post("/runware/generate-photo", apiKey_1.requireApiKey, (req, res) => __a
             taskType: "imageInference",
             taskUUID: (0, crypto_1.randomUUID)(),
             outputType: "URL",
-            positivePrompt: promptText,
             model: chosenModel,
             numberResults: isSeeddream ? 1 : requestedResults,
-            width: resolvedWidth,
-            height: resolvedHeight,
         };
+        // Ideogram Reframe uses 'prompt' instead of 'positivePrompt'
+        if (isIdeogramReframe) {
+            task.prompt = promptText;
+        }
+        else {
+            task.positivePrompt = promptText;
+        }
+        // Only add width/height for models that support them
+        // All models except Ideogram Edit use width/height
+        // Ideogram Edit doesn't support width/height (dimensions inherited from seed image)
+        if (!isIdeogramEdit) {
+            task.width = resolvedWidth;
+            task.height = resolvedHeight;
+        }
         if (isIdeogramRemix && trimmedReferenceImages.length) {
             task.referenceImages = trimmedReferenceImages;
+            // Ideogram Remix also requires seedImage parameter (first reference image)
+            task.seedImage = trimmedReferenceImages[0];
+        }
+        if (chosenModel === SEEDEDIT_MODEL_ID && trimmedReferenceImages.length) {
+            // SeedEdit requires exactly 1 reference image
+            task.referenceImages = [trimmedReferenceImages[0]];
         }
         if (Object.keys(providerSettings).length > 0) {
             task.providerSettings = providerSettings;
@@ -1360,6 +1420,10 @@ router.post("/runware/generate-photo", apiKey_1.requireApiKey, (req, res) => __a
         }
         if (allowsSeedImage && seedImage && typeof seedImage === "string") {
             task.seedImage = seedImage; // UUID, URL, base64, or data URI supported by Runware
+        }
+        // Ideogram Edit requires a mask image for inpainting
+        if (isIdeogramEdit && maskImage && typeof maskImage === "string") {
+            task.maskImage = maskImage;
         }
         // Only add steps for models that support it (FLUX/SD based models)
         // Google (Imagen, Nano Banana), OpenAI (GPT Image), Ideogram, Riverflow, HiDream, Qwen, Midjourney, and Seeddream models do NOT support steps
@@ -1373,6 +1437,14 @@ router.post("/runware/generate-photo", apiKey_1.requireApiKey, (req, res) => __a
             chosenModel === QWEN_IMAGE_EDIT_PLUS_MODEL_ID;
         const isMidjourney = chosenModel === MIDJOURNEY_V7_MODEL_ID;
         const isSeedEdit = chosenModel === SEEDEDIT_MODEL_ID;
+        // Validate SeedEdit requirements (must have reference image)
+        if (isSeedEdit && trimmedReferenceImages.length === 0) {
+            res.status(400).json({
+                success: false,
+                error: "SeedEdit 3.0 requires exactly 1 reference image. Upload a reference image first.",
+            });
+            return;
+        }
         const supportsSteps = !isGoogleFamily &&
             !isOpenAIFamily &&
             !isIdeogramFamily &&
@@ -1399,7 +1471,7 @@ router.post("/runware/generate-photo", apiKey_1.requireApiKey, (req, res) => __a
         }
         catch (primaryErr) {
             // Adaptive fallback on upstream timeout (e.g., 524 from Cloudflare)
-            const code = (primaryErr === null || primaryErr === void 0 ? void 0 : primaryErr.code) || ((_g = primaryErr === null || primaryErr === void 0 ? void 0 : primaryErr.response) === null || _g === void 0 ? void 0 : _g.status);
+            const code = (primaryErr === null || primaryErr === void 0 ? void 0 : primaryErr.code) || ((_f = primaryErr === null || primaryErr === void 0 ? void 0 : primaryErr.response) === null || _f === void 0 ? void 0 : _f.status);
             const isTimeoutLike = code === 524 ||
                 code === 504 ||
                 code === 408 ||
@@ -1473,7 +1545,7 @@ router.post("/runware/generate-photo", apiKey_1.requireApiKey, (req, res) => __a
         return;
     }
     catch (err) {
-        const msg = ((_l = (_k = (_j = (_h = err === null || err === void 0 ? void 0 : err.response) === null || _h === void 0 ? void 0 : _h.data) === null || _j === void 0 ? void 0 : _j.errors) === null || _k === void 0 ? void 0 : _k[0]) === null || _l === void 0 ? void 0 : _l.message) ||
+        const msg = ((_k = (_j = (_h = (_g = err === null || err === void 0 ? void 0 : err.response) === null || _g === void 0 ? void 0 : _g.data) === null || _h === void 0 ? void 0 : _h.errors) === null || _j === void 0 ? void 0 : _j[0]) === null || _k === void 0 ? void 0 : _k.message) ||
             (err === null || err === void 0 ? void 0 : err.message) ||
             "Unknown error";
         console.error("Runware generate-photo error:", msg);
@@ -1898,8 +1970,6 @@ router.post("/runware/ideogram/edit", apiKey_1.requireApiKey, (req, res) => __aw
             positivePrompt: promptText,
             seedImage: seedImage.trim(),
             maskImage: maskImage.trim(),
-            width: resolvedWidth,
-            height: resolvedHeight,
             providerSettings: {
                 ideogram: providerPayload,
             },
@@ -2029,7 +2099,7 @@ router.post("/runware/ideogram/reframe", apiKey_1.requireApiKey, (req, res) => _
             taskUUID: (0, crypto_1.randomUUID)(),
             model: IDEOGRAM_REFRAME_MODEL_ID,
             outputType: "URL",
-            positivePrompt: promptText,
+            prompt: promptText, // Ideogram Reframe uses 'prompt' instead of 'positivePrompt'
             seedImage: seedImage.trim(),
             width: resolvedWidth,
             height: resolvedHeight,
