@@ -3893,7 +3893,7 @@ router.post(
             taskType: "videoInference",
             taskUUID: createdTaskUUID,
             model: "openai:3@1",
-            prompt: prompt,
+            positivePrompt: prompt,
             duration,
             frameImages,
             width: taskWidth,
