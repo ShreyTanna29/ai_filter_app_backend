@@ -2911,7 +2911,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                     taskType: "videoInference",
                     taskUUID: createdTaskUUID,
                     model: "openai:3@1",
-                    prompt: prompt,
+                    positivePrompt: prompt,
                     duration,
                     frameImages,
                     width: taskWidth,
