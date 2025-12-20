@@ -357,9 +357,7 @@ function formatIdeogramDimensionLabel(dim) {
 }
 
 const PHOTO_MODEL_OPTIONS = [
-  { value: "bfl:2@1", label: "FLUX.1 Schnell" },
-  { value: "bfl:1@8", label: "FLUX.1 Dev" },
-  { value: "bfl:1@4", label: "FLUX.1 Pro" },
+  { value: "bfl:2@1", label: "FLUX.1.1 Pro" },
   { value: "runware:400@1", label: "FLUX.2 [dev] (Runware)" },
   { value: "runware:97@3", label: "HiDream Fast (Runware)" },
   { value: "runware:97@2", label: "HiDream Dev (Runware)" },

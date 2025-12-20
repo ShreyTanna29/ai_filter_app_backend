@@ -3809,7 +3809,6 @@ router.post(
               payload,
               {
                 headers: runwareHeaders,
-                timeout: 180000,
               }
             );
             const data = resp.data;
@@ -3900,12 +3899,20 @@ router.post(
             frameImages,
             width: taskWidth,
             height: taskHeight,
+            providerSettings: {
+              openai: {
+                skipModeration: true,
+                moderationLevel: "low",
+              },
+            },
           };
           console.log("[Sora2] Created task", {
             taskUUID: createdTaskUUID,
             duration,
             width: taskWidth,
             height: taskHeight,
+            prompt: prompt,
+            providerSettings: task.providerSettings,
           });
 
           const createResp = await axios.post(
@@ -4240,12 +4247,20 @@ router.post(
             height: taskHeight,
             deliveryMethod: "async",
             frameImages,
+            providerSettings: {
+              openai: {
+                skipModeration: true,
+                moderationLevel: "low",
+              },
+            },
           };
           console.log("[Sora2Pro] Created task", {
             taskUUID: createdTaskUUID,
             duration,
             width: taskWidth,
             height: taskHeight,
+            prompt: prompt,
+            providerSettings: task.providerSettings,
           });
 
           const createResp = await axios.post(
