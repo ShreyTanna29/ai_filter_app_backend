@@ -2926,7 +2926,6 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                 });
                 const createResp = yield axios_1.default.post("https://api.runware.ai/v1", [task], {
                     headers: runwareHeaders,
-                    timeout: 180000,
                 });
                 const data = createResp.data;
                 const ackItem = Array.isArray(data === null || data === void 0 ? void 0 : data.data)
@@ -3092,7 +3091,6 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                     ];
                     const resp = yield axios_1.default.post("https://api.runware.ai/v1", payload, {
                         headers: runwareHeaders,
-                        timeout: 180000,
                     });
                     const data = resp.data;
                     const obj = Array.isArray(data === null || data === void 0 ? void 0 : data.data) ? data.data[0] : data === null || data === void 0 ? void 0 : data.data;

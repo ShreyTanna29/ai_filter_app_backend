@@ -3912,7 +3912,6 @@ router.post(
             [task],
             {
               headers: runwareHeaders,
-              timeout: 180000,
             }
           );
           const data = createResp.data;
@@ -4130,7 +4129,6 @@ router.post(
               payload,
               {
                 headers: runwareHeaders,
-                timeout: 180000,
               }
             );
             const data = resp.data;
