@@ -2911,18 +2911,11 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                     taskType: "videoInference",
                     taskUUID: createdTaskUUID,
                     model: "openai:3@1",
-                    positivePrompt: prompt,
+                    prompt: prompt,
                     duration,
-                    deliveryMethod: "async",
                     frameImages,
                     width: taskWidth,
                     height: taskHeight,
-                    providerSettings: {
-                        openai: {
-                            skipModeration: true,
-                            moderationLevel: "low",
-                        },
-                    },
                 };
                 console.log("[Sora2] Created task", {
                     taskUUID: createdTaskUUID,
@@ -2930,7 +2923,6 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                     width: taskWidth,
                     height: taskHeight,
                     prompt: prompt,
-                    providerSettings: task.providerSettings,
                 });
                 const createResp = yield axios_1.default.post("https://api.runware.ai/v1", [task], {
                     headers: runwareHeaders,
@@ -3188,14 +3180,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                     duration,
                     width: taskWidth,
                     height: taskHeight,
-                    deliveryMethod: "async",
                     frameImages,
-                    providerSettings: {
-                        openai: {
-                            skipModeration: true,
-                            moderationLevel: "low",
-                        },
-                    },
                 };
                 console.log("[Sora2Pro] Created task", {
                     taskUUID: createdTaskUUID,
@@ -3203,7 +3188,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                     width: taskWidth,
                     height: taskHeight,
                     prompt: prompt,
-                    providerSettings: task.providerSettings,
+                    note: "OpenAI Sora enforces strict moderation - cannot be bypassed. Rephrase prompts to avoid gender-specific terms like 'girl/boy' and use neutral terms like 'person/character/individual'.",
                 });
                 const createResp = yield axios_1.default.post("https://api.runware.ai/v1", [task], {
                     headers: runwareHeaders,
