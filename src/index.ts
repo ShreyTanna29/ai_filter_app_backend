@@ -18,6 +18,13 @@ import {
   getSoundsFromS3,
 } from "./lib/s3";
 import { signKey, deriveKey } from "./middleware/signedUrl";
+import {
+  initializeFeaturesCache,
+  ensureFeaturesCache,
+  invalidateFeaturesCache,
+  getFeaturesCache,
+  getAppsWithPermissionsCache,
+} from "./lib/cache";
 
 // Load environment variables
 dotenv.config();
@@ -29,56 +36,6 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json({ limit: "10mb" }));
 app.use(express.static("public")); // Serve static files from public directory
-
-// Cache for features and apps with permissions
-let featuresCache: any[] = [];
-let appsWithPermissionsCache: any[] = [];
-let featuresCacheTimestamp = 0;
-const FEATURES_CACHE_TTL = 60 * 60 * 1000; // 1 hour
-
-// Initialize cache on server start
-async function initializeFeaturesCache() {
-  try {
-    console.log("[CACHE] Initializing features cache...");
-    const [features, apps] = await Promise.all([
-      prisma.features.findMany({
-        orderBy: { createdAt: "asc" },
-      }),
-      prisma.app.findMany({
-        where: { isActive: true },
-        include: {
-          allowedFeatures: {
-            include: {
-              feature: true,
-            },
-          },
-        },
-      }),
-    ]);
-
-    featuresCache = features;
-    appsWithPermissionsCache = apps;
-    featuresCacheTimestamp = Date.now();
-    console.log(
-      `[CACHE] Cached ${features.length} features and ${apps.length} apps`
-    );
-  } catch (error) {
-    console.error("[CACHE] Error initializing features cache:", error);
-  }
-}
-
-// Refresh cache if expired
-async function ensureFeaturesCache() {
-  if (Date.now() - featuresCacheTimestamp > FEATURES_CACHE_TTL) {
-    await initializeFeaturesCache();
-  }
-}
-
-// Invalidate cache (call when features or app permissions change)
-function invalidateFeaturesCache() {
-  featuresCacheTimestamp = 0;
-  console.log("[CACHE] Features cache invalidated");
-}
 
 // Feature management routes
 // Get all features without pagination (with optional status filter)
@@ -122,6 +79,7 @@ app.get("/api/features/all", async (req, res): Promise<any> => {
           ? { status }
           : {};
 
+      const featuresCache = getFeaturesCache();
       const list = whereClause.status
         ? featuresCache.filter((f) => f.status === whereClause.status)
         : featuresCache;
@@ -133,6 +91,7 @@ app.get("/api/features/all", async (req, res): Promise<any> => {
     }
 
     // For non-admin, find app in cache
+    const appsWithPermissionsCache = getAppsWithPermissionsCache();
     const app = appsWithPermissionsCache.find(
       (a) => a.apiKey === apiKey && a.isActive
     );

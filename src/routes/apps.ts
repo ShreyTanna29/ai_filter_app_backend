@@ -3,6 +3,7 @@ import prisma from "../lib/prisma";
 import crypto from "crypto";
 import { Prisma } from "@prisma/client";
 import { deriveKey, signKey } from "../middleware/signedUrl";
+import { invalidateFeaturesCache } from "../lib/cache";
 
 const router = Router();
 
@@ -225,6 +226,9 @@ router.put(
         },
       });
 
+      // Invalidate features cache so changes are reflected immediately
+      invalidateFeaturesCache();
+
       res.json({ success: true, app });
     } catch (e: unknown) {
       console.error("Error updating app permissions:", e);
@@ -249,6 +253,10 @@ router.post(
     try {
       const apiKey = generateApiKey();
       const app = await prisma.app.create({ data: { name, apiKey } });
+
+      // Invalidate cache since a new app was created
+      invalidateFeaturesCache();
+
       res.status(201).json({ success: true, app });
     } catch (e: unknown) {
       const err = e as Prisma.PrismaClientKnownRequestError;
@@ -278,6 +286,10 @@ router.post(
         where: { id: idNum },
         data: { apiKey },
       });
+
+      // Invalidate cache since API key changed
+      invalidateFeaturesCache();
+
       res.json({ success: true, app });
     } catch (e: unknown) {
       res.status(404).json({ success: false, message: "App not found" });
@@ -294,6 +306,10 @@ router.delete("/:id", async (req: Request, res: Response): Promise<void> => {
   }
   try {
     await prisma.app.delete({ where: { id: idNum } });
+
+    // Invalidate cache since app was deleted
+    invalidateFeaturesCache();
+
     res.json({ success: true });
   } catch (e: unknown) {
     res.status(404).json({ success: false, message: "App not found" });

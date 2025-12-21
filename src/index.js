@@ -27,6 +27,7 @@ const workflows_1 = __importDefault(require("./routes/workflows"));
 const multer_1 = __importDefault(require("multer"));
 const s3_1 = require("./lib/s3");
 const signedUrl_1 = require("./middleware/signedUrl");
+const cache_1 = require("./lib/cache");
 // Load environment variables
 dotenv_1.default.config();
 const app = (0, express_1.default)();
@@ -35,54 +36,6 @@ const PORT = process.env.PORT || 3000;
 app.use((0, cors_1.default)());
 app.use(express_1.default.json({ limit: "10mb" }));
 app.use(express_1.default.static("public")); // Serve static files from public directory
-// Cache for features and apps with permissions
-let featuresCache = [];
-let appsWithPermissionsCache = [];
-let featuresCacheTimestamp = 0;
-const FEATURES_CACHE_TTL = 60 * 60 * 1000; // 1 hour
-// Initialize cache on server start
-function initializeFeaturesCache() {
-    return __awaiter(this, void 0, void 0, function* () {
-        try {
-            console.log("[CACHE] Initializing features cache...");
-            const [features, apps] = yield Promise.all([
-                prisma_1.default.features.findMany({
-                    orderBy: { createdAt: "asc" },
-                }),
-                prisma_1.default.app.findMany({
-                    where: { isActive: true },
-                    include: {
-                        allowedFeatures: {
-                            include: {
-                                feature: true,
-                            },
-                        },
-                    },
-                }),
-            ]);
-            featuresCache = features;
-            appsWithPermissionsCache = apps;
-            featuresCacheTimestamp = Date.now();
-            console.log(`[CACHE] Cached ${features.length} features and ${apps.length} apps`);
-        }
-        catch (error) {
-            console.error("[CACHE] Error initializing features cache:", error);
-        }
-    });
-}
-// Refresh cache if expired
-function ensureFeaturesCache() {
-    return __awaiter(this, void 0, void 0, function* () {
-        if (Date.now() - featuresCacheTimestamp > FEATURES_CACHE_TTL) {
-            yield initializeFeaturesCache();
-        }
-    });
-}
-// Invalidate cache (call when features or app permissions change)
-function invalidateFeaturesCache() {
-    featuresCacheTimestamp = 0;
-    console.log("[CACHE] Features cache invalidated");
-}
 // Feature management routes
 // Get all features without pagination (with optional status filter)
 // If ADMIN_API_KEY is provided, returns all features
@@ -103,7 +56,7 @@ app.get("/api/features/all", (req, res) => __awaiter(void 0, void 0, void 0, fun
             });
         }
         // Ensure cache is fresh
-        yield ensureFeaturesCache();
+        yield (0, cache_1.ensureFeaturesCache)();
         // Check if it's admin API key
         const adminKeys = [
             process.env.ADMIN_API_KEY,
@@ -116,6 +69,7 @@ app.get("/api/features/all", (req, res) => __awaiter(void 0, void 0, void 0, fun
             const whereClause = status && typeof status === "string" && status !== "all"
                 ? { status }
                 : {};
+            const featuresCache = (0, cache_1.getFeaturesCache)();
             const list = whereClause.status
                 ? featuresCache.filter((f) => f.status === whereClause.status)
                 : featuresCache;
@@ -125,6 +79,7 @@ app.get("/api/features/all", (req, res) => __awaiter(void 0, void 0, void 0, fun
             });
         }
         // For non-admin, find app in cache
+        const appsWithPermissionsCache = (0, cache_1.getAppsWithPermissionsCache)();
         const app = appsWithPermissionsCache.find((a) => a.apiKey === apiKey && a.isActive);
         if (!app) {
             return res.status(401).json({
@@ -211,7 +166,7 @@ app.patch("/api/features/:endpoint/status", (req, res) => __awaiter(void 0, void
             data: { status },
         });
         // Invalidate cache
-        invalidateFeaturesCache();
+        (0, cache_1.invalidateFeaturesCache)();
         res.json({
             success: true,
             message: "Feature status updated successfully",
@@ -248,7 +203,7 @@ app.put("/api/features/:endpoint", (req, res) => __awaiter(void 0, void 0, void 
             data: { prompt },
         });
         // Invalidate cache
-        invalidateFeaturesCache();
+        (0, cache_1.invalidateFeaturesCache)();
         res.json({
             success: true,
             message: "Feature updated successfully",
@@ -287,7 +242,7 @@ app.post("/api/features", (req, res) => __awaiter(void 0, void 0, void 0, functi
             },
         });
         // Invalidate cache
-        invalidateFeaturesCache();
+        (0, cache_1.invalidateFeaturesCache)();
         res.status(201).json({
             success: true,
             message: "Feature created successfully",
@@ -335,7 +290,7 @@ app.put("/api/features/:endpoint/rename", (req, res) => __awaiter(void 0, void 0
             data: { endpoint: newEndpoint },
         });
         // Invalidate cache
-        invalidateFeaturesCache();
+        (0, cache_1.invalidateFeaturesCache)();
         res.json({
             success: true,
             message: "Feature renamed successfully",
@@ -364,7 +319,7 @@ app.delete("/api/features/:endpoint", (req, res) => __awaiter(void 0, void 0, vo
             where: { endpoint },
         });
         // Invalidate cache
-        invalidateFeaturesCache();
+        (0, cache_1.invalidateFeaturesCache)();
         res.json({
             success: true,
             message: "Feature deleted successfully",
@@ -1030,5 +985,5 @@ app.use(function (err, req, res, next) {
 app.listen(PORT, () => __awaiter(void 0, void 0, void 0, function* () {
     console.log(`Server is running on http://localhost:${PORT}`);
     // Initialize cache on server start
-    yield initializeFeaturesCache();
+    yield (0, cache_1.initializeFeaturesCache)();
 }));

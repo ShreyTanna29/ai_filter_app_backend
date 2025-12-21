@@ -16,6 +16,7 @@ const express_1 = require("express");
 const prisma_1 = __importDefault(require("../lib/prisma"));
 const crypto_1 = __importDefault(require("crypto"));
 const signedUrl_1 = require("../middleware/signedUrl");
+const cache_1 = require("../lib/cache");
 const router = (0, express_1.Router)();
 function generateApiKey() {
     return crypto_1.default.randomBytes(32).toString("hex");
@@ -205,6 +206,8 @@ router.put("/:id/permissions", (req, res) => __awaiter(void 0, void 0, void 0, f
                 },
             },
         });
+        // Invalidate features cache so changes are reflected immediately
+        (0, cache_1.invalidateFeaturesCache)();
         res.json({ success: true, app });
     }
     catch (e) {
@@ -225,6 +228,8 @@ router.post("/", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const apiKey = generateApiKey();
         const app = yield prisma_1.default.app.create({ data: { name, apiKey } });
+        // Invalidate cache since a new app was created
+        (0, cache_1.invalidateFeaturesCache)();
         res.status(201).json({ success: true, app });
     }
     catch (e) {
@@ -251,6 +256,8 @@ router.post("/:id/rotate", (req, res) => __awaiter(void 0, void 0, void 0, funct
             where: { id: idNum },
             data: { apiKey },
         });
+        // Invalidate cache since API key changed
+        (0, cache_1.invalidateFeaturesCache)();
         res.json({ success: true, app });
     }
     catch (e) {
@@ -266,6 +273,8 @@ router.delete("/:id", (req, res) => __awaiter(void 0, void 0, void 0, function* 
     }
     try {
         yield prisma_1.default.app.delete({ where: { id: idNum } });
+        // Invalidate cache since app was deleted
+        (0, cache_1.invalidateFeaturesCache)();
         res.json({ success: true });
     }
     catch (e) {
