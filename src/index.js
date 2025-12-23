@@ -341,14 +341,69 @@ app.delete("/api/features/:endpoint", (req, res) => __awaiter(void 0, void 0, vo
 }));
 // Photo Feature management routes
 // Get all photo features without pagination
+// If ADMIN_API_KEY is provided, returns all photo features
+// Otherwise, returns only photo features allowed for the app
 app.get("/api/photo-features/all", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
-        const list = yield prisma_1.default.photo_Features.findMany({
-            orderBy: { createdAt: "asc" },
+        // Extract API key from request
+        const apiKey = req.header("x-api-key") ||
+            req.header("x-apikey") ||
+            (req.header("authorization") || "").replace(/^bearer\s+/i, "").trim() ||
+            req.query.api_key ||
+            req.query.apiKey;
+        if (!apiKey) {
+            return res.status(401).json({
+                success: false,
+                message: "API key is required",
+            });
+        }
+        // Check if it's admin API key
+        const adminKeys = [
+            process.env.ADMIN_API_KEY,
+            process.env["admin_api_key"],
+            process.env.ADMIN_KEY,
+        ].filter(Boolean);
+        const isAdmin = adminKeys.includes(apiKey);
+        if (isAdmin) {
+            // Return all photo features for admin
+            const list = yield prisma_1.default.photo_Features.findMany({
+                orderBy: { createdAt: "asc" },
+            });
+            return res.json({
+                success: true,
+                features: list,
+            });
+        }
+        // For non-admin, find app and return only allowed photo features
+        const app = yield prisma_1.default.app.findUnique({
+            where: { apiKey },
+            include: {
+                allowedPhotoFeatures: {
+                    include: {
+                        photoFeature: true,
+                    },
+                },
+            },
         });
+        if (!app) {
+            return res.status(401).json({
+                success: false,
+                message: "Invalid API key",
+            });
+        }
+        if (!app.isActive) {
+            return res.status(403).json({
+                success: false,
+                message: "App is not active",
+            });
+        }
+        // Extract only the photo features from the allowed list
+        const allowedFeatures = app.allowedPhotoFeatures
+            .map((af) => af.photoFeature)
+            .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
         res.json({
             success: true,
-            features: list,
+            features: allowedFeatures,
         });
     }
     catch (error) {

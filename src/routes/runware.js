@@ -787,33 +787,55 @@ router.post("/runware/upload-image", apiKey_1.requireApiKey, upload.single("imag
     }
 }));
 // POST /api/runware/generate-photo
-// JSON body: { feature?: string, prompt: string, model?: string, width?: number, height?: number, seedImage?: string }
+// JSON body: { feature?: string, prompt?: string, model?: string, width?: number, height?: number, seedImage?: string }
+// If feature is provided, prompt and model are fetched from Photo_Features table
 router.post("/runware/generate-photo", apiKey_1.requireApiKey, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k;
     try {
         const { feature, prompt, model, width, height, seedImage, maskImage, negativePrompt, steps, cfgScale, numberResults, ideogramSettings, referenceImages, referenceImage, referenceImageUUID, } = req.body || {};
-        // Basic validation
-        const rawPrompt = typeof prompt === "string" ? prompt : "";
-        const promptText = rawPrompt.trim();
-        if (!promptText) {
-            res.status(400).json({ success: false, error: "'prompt' is required" });
-            return;
-        }
-        // If model is not provided but feature is, fetch model from Photo_Features table
+        // If feature is provided, fetch prompt and model from Photo_Features table
+        let resolvedPrompt = prompt;
         let resolvedModel = model;
-        if (!resolvedModel && feature && typeof feature === "string") {
+        if (feature && typeof feature === "string") {
             try {
                 const photoFeature = yield prisma_1.default.photo_Features.findUnique({
                     where: { endpoint: feature.trim() },
-                    select: { model: true },
+                    select: { prompt: true, model: true },
                 });
-                if (photoFeature === null || photoFeature === void 0 ? void 0 : photoFeature.model) {
+                if (!photoFeature) {
+                    res.status(404).json({
+                        success: false,
+                        error: `Photo feature '${feature}' not found`,
+                    });
+                    return;
+                }
+                // Use feature's prompt if not explicitly provided
+                if (!resolvedPrompt) {
+                    resolvedPrompt = photoFeature.prompt;
+                }
+                // Use feature's model if not explicitly provided
+                if (!resolvedModel && photoFeature.model) {
                     resolvedModel = photoFeature.model;
                 }
             }
             catch (dbErr) {
-                console.warn("Failed to fetch model from Photo_Features:", (dbErr === null || dbErr === void 0 ? void 0 : dbErr.message) || dbErr);
+                console.error("Failed to fetch prompt/model from Photo_Features:", (dbErr === null || dbErr === void 0 ? void 0 : dbErr.message) || dbErr);
+                res.status(500).json({
+                    success: false,
+                    error: "Failed to fetch photo feature details",
+                });
+                return;
             }
+        }
+        // Validate prompt is available (either from request or database)
+        const rawPrompt = typeof resolvedPrompt === "string" ? resolvedPrompt : "";
+        const promptText = rawPrompt.trim();
+        if (!promptText) {
+            res.status(400).json({
+                success: false,
+                error: "'prompt' is required (either in request or via feature)",
+            });
+            return;
         }
         // Model normalization: map friendly aliases to known model IDs when possible
         const clientModel = (resolvedModel && String(resolvedModel)) || "";

@@ -385,15 +385,80 @@ app.delete("/api/features/:endpoint", async (req, res): Promise<any> => {
 
 // Photo Feature management routes
 // Get all photo features without pagination
-app.get("/api/photo-features/all", async (req, res) => {
+// If ADMIN_API_KEY is provided, returns all photo features
+// Otherwise, returns only photo features allowed for the app
+app.get("/api/photo-features/all", async (req, res): Promise<any> => {
   try {
-    const list = await prisma.photo_Features.findMany({
-      orderBy: { createdAt: "asc" },
+    // Extract API key from request
+    const apiKey =
+      req.header("x-api-key") ||
+      req.header("x-apikey") ||
+      (req.header("authorization") || "").replace(/^bearer\s+/i, "").trim() ||
+      (req.query.api_key as string) ||
+      (req.query.apiKey as string);
+
+    if (!apiKey) {
+      return res.status(401).json({
+        success: false,
+        message: "API key is required",
+      });
+    }
+
+    // Check if it's admin API key
+    const adminKeys = [
+      process.env.ADMIN_API_KEY,
+      (process.env as any)["admin_api_key"],
+      process.env.ADMIN_KEY,
+    ].filter(Boolean) as string[];
+
+    const isAdmin = adminKeys.includes(apiKey);
+
+    if (isAdmin) {
+      // Return all photo features for admin
+      const list = await prisma.photo_Features.findMany({
+        orderBy: { createdAt: "asc" },
+      });
+
+      return res.json({
+        success: true,
+        features: list,
+      });
+    }
+
+    // For non-admin, find app and return only allowed photo features
+    const app = await prisma.app.findUnique({
+      where: { apiKey },
+      include: {
+        allowedPhotoFeatures: {
+          include: {
+            photoFeature: true,
+          },
+        },
+      },
     });
+
+    if (!app) {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid API key",
+      });
+    }
+
+    if (!app.isActive) {
+      return res.status(403).json({
+        success: false,
+        message: "App is not active",
+      });
+    }
+
+    // Extract only the photo features from the allowed list
+    const allowedFeatures = app.allowedPhotoFeatures
+      .map((af) => af.photoFeature)
+      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
 
     res.json({
       success: true,
-      features: list,
+      features: allowedFeatures,
     });
   } catch (error) {
     console.error(error);
