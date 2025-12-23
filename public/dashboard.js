@@ -6974,79 +6974,93 @@ function closeFeatureCrudModal() {
 function openPhotoFeatureCrudModal() {
   console.log("Opening photo filter CRUD modal");
 
-  // Ensure we're on the photo filters tab
-  const photoFiltersTab = document.getElementById("tab-photo-filters");
-  if (photoFiltersTab && photoFiltersTab.classList.contains("hidden")) {
-    // Switch to photo filters tab first
-    window.switchTab("photo-filters");
+  const modal = document.getElementById("photoFeatureCrudModal");
+  console.log("Modal element:", modal);
+
+  if (!modal) {
+    console.error("Photo feature modal not found!");
+    return;
   }
 
-  const modal = document.getElementById("photoFeatureCrudModal");
-  if (modal) {
-    modal.classList.remove("hidden");
-    modal.style.display = "flex";
+  // Show modal - remove hidden class and set display
+  modal.classList.remove("hidden");
+  modal.style.display = "flex";
+  console.log("Modal display set to:", modal.style.display);
+  console.log("Modal classes:", modal.className);
 
-    // Reset form
-    const form = document.getElementById("photoFeatureCrudForm");
-    if (form) form.reset();
+  // Reset form
+  const form = document.getElementById("photoFeatureCrudForm");
+  if (form) {
+    form.reset();
+  }
 
-    // Set title to "Create Photo Filter"
-    const title = document.getElementById("photoFeatureCrudModalTitle");
-    if (title) title.textContent = "Create Photo Filter";
+  // Set title to "Create Photo Filter"
+  const title = document.getElementById("photoFeatureCrudModalTitle");
+  if (title) {
+    title.textContent = "Create Photo Filter";
+  }
 
-    // Add form submission handler
-    const formHandler = async function (e) {
-      e.preventDefault();
+  // Add form submission handler
+  const formHandler = async function (e) {
+    e.preventDefault();
+    console.log("Photo filter form submitted");
 
-      const endpoint = document
-        .getElementById("photoFeatureCrudEndpoint")
-        .value.trim();
-      const prompt = document
-        .getElementById("photoFeatureCrudPrompt")
-        .value.trim();
+    const endpoint = document
+      .getElementById("photoFeatureCrudEndpoint")
+      .value.trim();
+    const prompt = document
+      .getElementById("photoFeatureCrudPrompt")
+      .value.trim();
+    const model = document.getElementById("photoFeatureCrudModel").value.trim();
 
-      if (!endpoint || !prompt) {
-        alert("Please fill in all fields");
-        return;
-      }
+    console.log("Endpoint:", endpoint, "Prompt:", prompt, "Model:", model);
 
-      try {
-        const response = await fetch("/api/photo-features", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ endpoint, prompt }),
-        });
-
-        if (response.ok) {
-          const result = await response.json();
-          closePhotoFeatureCrudModal();
-          // Reload photo filters
-          await loadAllPhotoFeatures();
-          alert("Photo filter created successfully!");
-        } else {
-          const contentType = response.headers.get("content-type");
-          if (contentType && contentType.includes("application/json")) {
-            const error = await response.json();
-            alert(error.message || "Failed to create photo filter");
-          } else {
-            alert(
-              "Photo filter creation failed. Please check the API endpoint."
-            );
-          }
-        }
-      } catch (error) {
-        console.error("Error creating photo filter:", error);
-        alert("An error occurred while creating the photo filter");
-      }
-    };
-
-    // Remove any existing listeners and add new one
-    const formElement = document.getElementById("photoFeatureCrudForm");
-    if (formElement) {
-      const newForm = formElement.cloneNode(true);
-      formElement.parentNode.replaceChild(newForm, formElement);
-      newForm.addEventListener("submit", formHandler);
+    if (!endpoint || !prompt) {
+      alert("Please fill in all fields");
+      return;
     }
+
+    const requestBody = { endpoint, prompt };
+    if (model) {
+      requestBody.model = model;
+    }
+
+    try {
+      const response = await fetch("/api/photo-features", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(requestBody),
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        console.log("Photo filter created:", result);
+        closePhotoFeatureCrudModal();
+        // Reload photo filters
+        await loadAllPhotoFeatures();
+        displayPhotoFeatures();
+        alert("Photo filter created successfully!");
+      } else {
+        const contentType = response.headers.get("content-type");
+        if (contentType && contentType.includes("application/json")) {
+          const error = await response.json();
+          alert(error.message || "Failed to create photo filter");
+        } else {
+          alert("Photo filter creation failed. Please check the API endpoint.");
+        }
+      }
+    } catch (error) {
+      console.error("Error creating photo filter:", error);
+      alert("An error occurred while creating the photo filter");
+    }
+  };
+
+  // Remove any existing listeners and add new one
+  const formElement = document.getElementById("photoFeatureCrudForm");
+  if (formElement) {
+    const newForm = formElement.cloneNode(true);
+    formElement.parentNode.replaceChild(newForm, formElement);
+    newForm.addEventListener("submit", formHandler);
   }
 }
 
