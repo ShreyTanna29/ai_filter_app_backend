@@ -143,11 +143,41 @@ function getLatestVideosFromS3() {
                 if (response.Contents) {
                     for (const obj of response.Contents) {
                         if (obj.Key && obj.Key.endsWith(".mp4") && obj.LastModified) {
-                            // Extract feature from key: "videos/{feature}/{feature}-{timestamp}-{random}.mp4"
-                            // or "generated-videos/{feature}/{feature}-{timestamp}-{random}.mp4"
+                            let feature = null;
+                            // Extract feature from key
                             const parts = obj.Key.split("/");
-                            if (parts.length >= 2) {
-                                const feature = parts[1]; // The folder name is the feature/endpoint
+                            if (prefix === "generated-videos/") {
+                                // For generated-videos/, files can be:
+                                // 1. Directly in folder: "generated-videos/ai-360-turn-minimax-1762142023305.mp4"
+                                // 2. In subfolder: "generated-videos/{feature}/{feature}-{timestamp}-{random}.mp4"
+                                if (parts.length === 2) {
+                                    // Direct file: extract feature from filename
+                                    const filename = parts[1];
+                                    // Extract feature name from filename (everything before the timestamp)
+                                    // Pattern can be: {feature}-{timestamp}.mp4 OR {feature}-{timestamp}-{random}.mp4
+                                    // We need to match everything before the last long numeric timestamp (13 digits for Unix timestamp in ms)
+                                    // Example: ai-360-turn-minimax-1762142023305.mp4 -> ai-360-turn-minimax
+                                    const match = filename.match(/^(.+)-\d{10,}(?:-[a-z0-9]+)?\.mp4$/i);
+                                    if (match) {
+                                        feature = match[1]; // e.g., "ai-360-turn-minimax"
+                                        console.log(`[S3] Extracted feature "${feature}" from filename "${filename}"`);
+                                    }
+                                    else {
+                                        console.log(`[S3] Failed to match pattern for filename: ${filename}`);
+                                    }
+                                }
+                                else if (parts.length >= 3) {
+                                    // Subfolder structure
+                                    feature = parts[1];
+                                }
+                            }
+                            else if (prefix === "videos/") {
+                                // For videos/, structure is: "videos/{feature}/{feature}-{timestamp}-{random}.mp4"
+                                if (parts.length >= 2) {
+                                    feature = parts[1];
+                                }
+                            }
+                            if (feature) {
                                 const existing = videosByFeature.get(feature);
                                 if (!existing || obj.LastModified > existing.lastModified) {
                                     videosByFeature.set(feature, {
@@ -162,6 +192,7 @@ function getLatestVideosFromS3() {
                 continuationToken = response.NextContinuationToken;
             } while (continuationToken);
         }
+        console.log(`[S3] Found ${videosByFeature.size} features with videos`);
         // Convert map to array of results
         const results = [];
         for (const [endpoint, data] of videosByFeature) {
@@ -180,12 +211,12 @@ function getVideosForFeatureFromS3(feature) {
     return __awaiter(this, void 0, void 0, function* () {
         const videos = [];
         const normalizedFeature = feature.replace(/[^a-zA-Z0-9_-]/g, "-");
-        // Fetch from both 'videos/' and 'generated-videos/' prefixes
-        const prefixes = [
+        // 1. Fetch from subfolder structure: videos/{feature}/ and generated-videos/{feature}/
+        const subfolderPrefixes = [
             `videos/${normalizedFeature}/`,
             `generated-videos/${normalizedFeature}/`,
         ];
-        for (const featurePrefix of prefixes) {
+        for (const featurePrefix of subfolderPrefixes) {
             let continuationToken;
             do {
                 const command = new client_s3_1.ListObjectsV2Command({
@@ -208,6 +239,39 @@ function getVideosForFeatureFromS3(feature) {
                 continuationToken = response.NextContinuationToken;
             } while (continuationToken);
         }
+        // 2. Also fetch from generated-videos/ root for files matching the feature name pattern
+        // Pattern: generated-videos/{feature}-{timestamp}-{random}.mp4
+        let continuationToken;
+        do {
+            const command = new client_s3_1.ListObjectsV2Command({
+                Bucket: BUCKET,
+                Prefix: "generated-videos/",
+                ContinuationToken: continuationToken,
+            });
+            const response = yield exports.s3.send(command);
+            if (response.Contents) {
+                for (const obj of response.Contents) {
+                    if (obj.Key && obj.Key.endsWith(".mp4") && obj.LastModified) {
+                        const parts = obj.Key.split("/");
+                        // Check if file is directly in generated-videos/ (not in a subfolder)
+                        if (parts.length === 2) {
+                            const filename = parts[1];
+                            // Check if filename starts with the feature name
+                            // Pattern: {feature}-{timestamp}-{random}.mp4
+                            const pattern = new RegExp(`^${normalizedFeature}-\\d+`, "i");
+                            if (pattern.test(filename)) {
+                                videos.push({
+                                    key: obj.Key,
+                                    url: publicUrlFor(obj.Key),
+                                    lastModified: obj.LastModified,
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+            continuationToken = response.NextContinuationToken;
+        } while (continuationToken);
         // Sort by lastModified descending (newest first)
         videos.sort((a, b) => b.lastModified.getTime() - a.lastModified.getTime());
         return videos;
