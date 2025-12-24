@@ -1345,11 +1345,18 @@ router.post("/runware/generate-photo", apiKey_1.requireApiKey, (req, res) => __a
             ? requestedResults
             : undefined;
         const providerSettings = {};
-        // Seed image is not supported by base Ideogram/Remix, Google (Imagen/Nano Banana), or OpenAI models
+        // Check if this is a Riverflow family model
+        const isRiverflowFamily = chosenModel === RIVERFLOW_MODEL_ID ||
+            chosenModel === RIVERFLOW_MINI_MODEL_ID ||
+            chosenModel === RIVERFLOW_PRO_MODEL_ID;
+        // Seed image is not supported by base Ideogram/Remix, Google (Imagen/Nano Banana), OpenAI, or Riverflow models
         // But IS required for Ideogram Edit and Reframe
         const allowsSeedImage = isIdeogramEdit ||
             isIdeogramReframe ||
-            (!isIdeogramFamily && !isGoogleFamily && !isOpenAIFamily);
+            (!isIdeogramFamily &&
+                !isGoogleFamily &&
+                !isOpenAIFamily &&
+                !isRiverflowFamily);
         if (isSeeddream && seeddreamSequentialResults) {
             providerSettings.bytedance = {
                 maxSequentialImages: seeddreamSequentialResults,
@@ -1440,7 +1447,17 @@ router.post("/runware/generate-photo", apiKey_1.requireApiKey, (req, res) => __a
         if (negativePrompt && typeof negativePrompt === "string") {
             task.negativePrompt = negativePrompt;
         }
-        if (allowsSeedImage && seedImage && typeof seedImage === "string") {
+        // Handle seedImage for Riverflow models - use inputs.references structure
+        if (isRiverflowFamily && seedImage && typeof seedImage === "string") {
+            // Riverflow uses inputs.references, not seedImage or referenceImages
+            const existingRefs = trimmedReferenceImages.length > 0 ? trimmedReferenceImages : [];
+            const allRefs = [seedImage, ...existingRefs].slice(0, 10); // Riverflow supports 1-10 reference images
+            task.inputs = task.inputs || {};
+            task.inputs.references = allRefs;
+        }
+        else if (allowsSeedImage &&
+            seedImage &&
+            typeof seedImage === "string") {
             task.seedImage = seedImage; // UUID, URL, base64, or data URI supported by Runware
         }
         // Ideogram Edit requires a mask image for inpainting
@@ -1449,9 +1466,6 @@ router.post("/runware/generate-photo", apiKey_1.requireApiKey, (req, res) => __a
         }
         // Only add steps for models that support it (FLUX/SD based models)
         // Google (Imagen, Nano Banana), OpenAI (GPT Image), Ideogram, Riverflow, HiDream, Qwen, Midjourney, and Seeddream models do NOT support steps
-        const isRiverflowFamily = chosenModel === RIVERFLOW_MODEL_ID ||
-            chosenModel === RIVERFLOW_MINI_MODEL_ID ||
-            chosenModel === RIVERFLOW_PRO_MODEL_ID;
         const isHiDreamFamily = chosenModel === HIDREAM_FAST_MODEL_ID ||
             chosenModel === HIDREAM_DEV_MODEL_ID ||
             chosenModel === HIDREAM_FULL_MODEL_ID;

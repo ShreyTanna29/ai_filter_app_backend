@@ -3574,7 +3574,7 @@ function showFeatureDetailPage(endpoint, sourceTab = "filters") {
             }
           }
           if (uploadStatus) {
-            uploadStatus.textContent = "Uploading Runware reference...";
+            uploadStatus.textContent = "Uploading image...";
           }
           await uploadRunwareReference(file);
         } catch (err) {
@@ -3647,8 +3647,7 @@ function showFeatureDetailPage(endpoint, sourceTab = "filters") {
           throw new Error(data?.error || "Runware upload failed");
         }
         setFeatureRunwareReference(data.imageUUID);
-        if (uploadStatus)
-          uploadStatus.textContent = "Image ready for Runware edits.";
+        if (uploadStatus) uploadStatus.textContent = "Image uploaded.";
       } catch (err) {
         setFeatureRunwareReference(null);
         if (uploadStatus) {
