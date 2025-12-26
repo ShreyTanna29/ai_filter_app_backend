@@ -878,114 +878,71 @@ window.addEventListener("DOMContentLoaded", function () {
   var cartoonModal = document.getElementById("cartoonCharacterCrudModal");
   if (cartoonModal) cartoonModal.classList.add("hidden");
 
-  // Tab switching logic
-  const sidebarButtons = document.querySelectorAll("aside nav ul li button");
-  const tabIds = [
-    "tab-dashboard",
-    "tab-filters",
-    "tab-photo-filters",
-    "tab-templates",
-    "tab-cartoon-characters",
-    "tab-apps",
-  ];
-  sidebarButtons.forEach((button, idx) => {
-    button.addEventListener("click", function (e) {
-      e.preventDefault();
-      // Remove active class from all buttons
-      sidebarButtons.forEach((b) =>
-        b.classList.remove("bg-blue-50", "text-blue-600", "font-medium")
-      );
-      // Add active class to clicked button
-      button.classList.add("bg-blue-50", "text-blue-600", "font-medium");
-      // Hide all tab contents
-      tabIds.forEach((id) => {
-        const el = document.getElementById(id);
-        if (el) el.classList.add("hidden");
-      });
-      // Show selected tab
-      const showId = tabIds[idx];
-      const showEl = document.getElementById(showId);
-      if (showEl) showEl.classList.remove("hidden");
-      if (showId === "tab-filters") {
-        if (!featuresInitialRequested && !featuresLoading) {
-          loadAllFeatures();
-          featuresInitialRequested = true;
-        } else {
-          displayFeatures();
-        }
-      } else if (showId === "tab-photo-filters") {
-        if (!photoFeaturesInitialRequested && !photoFeaturesLoading) {
-          loadAllPhotoFeatures().then(() => displayPhotoFeatures());
-          photoFeaturesInitialRequested = true;
-        } else {
-          displayPhotoFeatures();
-        }
-      } else if (showId === "tab-cartoon-characters") {
-        if (!cartoonCharactersInitialRequested && !cartoonCharactersLoading) {
-          loadAllCartoonCharacters().then(() => displayCartoonCharacters());
-          cartoonCharactersInitialRequested = true;
-        } else {
-          displayCartoonCharacters();
-        }
-      } else if (showId === "tab-apps") {
-        if (!appsInitialRequested && !appsLoading) {
-          initAppsTab();
-          loadApps();
-          appsInitialRequested = true;
-        } else {
-          renderApps();
-        }
-      }
-    });
-  });
-  // Show dashboard tab by default
-  tabIds.forEach((id, idx) => {
-    const el = document.getElementById(id);
-    if (el) el.classList.toggle("hidden", idx !== 0);
-  });
+  // NOTE: Tab switching is now handled by the switchTab() function called via onclick handlers
+  // in the HTML. The old event listener-based code was removed because it had an outdated
+  // tabIds array that was missing photo-templates and ai-workflows tabs.
 });
 
 // Global function for tab switching (called from HTML onclick)
 window.switchTab = function (tabName) {
+  console.log("[SWITCH TAB] Switching to:", tabName);
+  
+  // IMPORTANT: This array MUST match the order of sidebar buttons in index.html
   const tabIds = [
-    "tab-dashboard",
-    "tab-filters",
-    "tab-photo-filters",
-    "tab-templates",
-    "tab-cartoon-characters",
-    "tab-apps",
-    "tab-ai-workflows",
+    "tab-dashboard",         // 0
+    "tab-filters",           // 1
+    "tab-photo-filters",     // 2
+    "tab-templates",         // 3
+    "tab-photo-templates",   // 4
+    "tab-cartoon-characters",// 5
+    "tab-apps",              // 6
+    "tab-ai-workflows",      // 7
   ];
   const tabIndex = tabIds.findIndex((id) => id === `tab-${tabName}`);
 
-  if (tabIndex === -1) return;
+  console.log("[SWITCH TAB] Tab index:", tabIndex, "for tab:", `tab-${tabName}`);
 
+  if (tabIndex === -1) {
+    console.error("[SWITCH TAB] Tab not found:", tabName);
+    return;
+  }
+
+  // Remove active class from all sidebar buttons
   const sidebarButtons = document.querySelectorAll("aside nav ul li button");
-
-  // Remove active class from all buttons
   sidebarButtons.forEach((b) =>
     b.classList.remove("bg-blue-50", "text-blue-600", "font-medium")
   );
 
-  // Add active class to clicked button
-  if (sidebarButtons[tabIndex]) {
-    sidebarButtons[tabIndex].classList.add(
-      "bg-blue-50",
-      "text-blue-600",
-      "font-medium"
-    );
-  }
+  // Find and highlight the correct button by matching the onclick attribute
+  // This is more reliable than using index
+  const targetOnclick = `switchTab('${tabName}')`;
+  sidebarButtons.forEach((button) => {
+    const onclick = button.getAttribute("onclick");
+    if (onclick && onclick.includes(targetOnclick)) {
+      button.classList.add("bg-blue-50", "text-blue-600", "font-medium");
+      console.log("[SWITCH TAB] Highlighted button with onclick:", onclick);
+    }
+  });
 
   // Hide all tab contents
+  console.log("[SWITCH TAB] Hiding all tabs...");
   tabIds.forEach((id) => {
     const el = document.getElementById(id);
-    if (el) el.classList.add("hidden");
+    if (el) {
+      el.classList.add("hidden");
+      console.log("[SWITCH TAB] Hidden:", id);
+    }
   });
 
   // Show selected tab
   const showId = tabIds[tabIndex];
   const showEl = document.getElementById(showId);
-  if (showEl) showEl.classList.remove("hidden");
+  if (showEl) {
+    showEl.classList.remove("hidden");
+    console.log("[SWITCH TAB] Showing:", showId);
+  } else {
+    console.error("[SWITCH TAB] Could not find element:", showId);
+  }
 
   // Only load features on tab switch if not already loaded
   // Skip re-rendering if we're returning from detail page (scroll restoration handles this)
@@ -1029,7 +986,20 @@ window.switchTab = function (tabName) {
         window.initWorkflowSearch();
       }
     }
+  } else if (showId === "tab-templates") {
+    if (!templatesInitialRequested) {
+      loadTemplates();
+      templatesInitialRequested = true;
+    }
+  } else if (showId === "tab-photo-templates") {
+    console.log("[SWITCH TAB] Loading photo templates...");
+    if (!photoTemplatesInitialRequested) {
+      loadPhotoTemplates();
+      photoTemplatesInitialRequested = true;
+    }
   }
+  
+  console.log("[SWITCH TAB] Switch complete");
 };
 
 // Dashboard initialization function
@@ -1115,6 +1085,8 @@ let isReturningFromDetailPage = false;
 let cartoonCharacters = [];
 let cartoonCharactersLoading = false;
 let cartoonCharactersInitialRequested = false;
+let templatesInitialRequested = false;
+let photoTemplatesInitialRequested = false;
 let cartoonCharacterGraphics = {};
 let cartoonCharacterLatestVideos = {};
 
@@ -2359,6 +2331,7 @@ async function loadAllPhotoFeatures() {
 }
 
 let templates = [];
+let photoTemplates = [];
 let availableEndpoints = [];
 let featureGraphics = {};
 let latestVideos = {};
@@ -7834,10 +7807,29 @@ function closeCartoonCharacterDetailPage() {
   const detailPage = document.getElementById("cartoonCharacterDetailPage");
   if (detailPage) detailPage.classList.add("hidden");
 
-  const tabEl = document.getElementById("tab-cartoon-characters");
-  if (tabEl) tabEl.classList.remove("hidden");
-
-  displayCartoonCharacters();
+  // Only show the cartoon characters tab if it's currently the active tab
+  // Check if any other tab is visible first
+  const allTabs = [
+    "tab-dashboard",
+    "tab-filters",
+    "tab-photo-filters",
+    "tab-templates",
+    "tab-photo-templates",
+    "tab-apps",
+    "tab-ai-workflows"
+  ];
+  
+  const anyOtherTabVisible = allTabs.some(tabId => {
+    const tab = document.getElementById(tabId);
+    return tab && !tab.classList.contains("hidden");
+  });
+  
+  // Only show cartoon characters tab if no other tab is visible
+  if (!anyOtherTabVisible) {
+    const tabEl = document.getElementById("tab-cartoon-characters");
+    if (tabEl) tabEl.classList.remove("hidden");
+    displayCartoonCharacters();
+  }
 }
 
 // Cartoon Character CRUD Modal Functions
@@ -8674,3 +8666,149 @@ window.closeWorkflowDetailModal = closeWorkflowDetailModal;
 window.triggerCurrentWorkflow = triggerCurrentWorkflow;
 window.initWorkflowSearch = initWorkflowSearch;
 window.allWorkflows = allWorkflows;
+
+// ============ PHOTO TEMPLATES FUNCTIONS ============
+
+async function loadPhotoTemplates() {
+  try {
+    console.log("[PHOTO TEMPLATES] Loading photo templates...");
+    const response = await fetch("/api/photo-templates");
+    photoTemplates = await response.json();
+    console.log("[PHOTO TEMPLATES] Loaded", photoTemplates.length, "photo templates");
+    displayPhotoTemplates();
+    updateStats();
+  } catch (error) {
+    console.error("Error loading photo templates:", error);
+  }
+}
+
+function displayPhotoTemplates() {
+  const grid = document.getElementById("photoTemplatesGrid");
+  if (!grid) {
+    console.error("[PHOTO TEMPLATES] Grid element not found!");
+    return;
+  }
+  
+  console.log("[PHOTO TEMPLATES] Displaying", photoTemplates.length, "photo templates");
+  
+  const searchInput = document.getElementById("photoTemplateSearch");
+  const searchTerm = searchInput ? searchInput.value.toLowerCase() : "";
+
+  const filteredTemplates = photoTemplates.filter(
+    (template) =>
+      template.name.toLowerCase().includes(searchTerm) ||
+      (template.description &&
+        template.description.toLowerCase().includes(searchTerm))
+  );
+
+  console.log("[PHOTO TEMPLATES] Filtered to", filteredTemplates.length, "templates");
+
+  if (filteredTemplates.length === 0) {
+    grid.innerHTML = `
+      <div class="col-span-full text-center py-12">
+        <i class="fas fa-images text-gray-300 text-6xl mb-4"></i>
+        <p class="text-gray-500 text-lg">No photo templates found</p>
+        <p class="text-gray-400 text-sm mt-2">Create your first photo template to get started</p>
+      </div>
+    `;
+    return;
+  }
+
+  const adminUser = isAdmin();
+  grid.innerHTML = filteredTemplates
+    .map((template) => {
+      const allSteps = (template.subcategories || []).flatMap(
+        (subcat) => subcat.steps || []
+      );
+      return `
+        <div class="bg-white rounded-xl shadow-md p-6 mb-6 hover:shadow-lg transition-shadow border border-gray-100">
+          <div class="flex items-start justify-between mb-4">
+            <div>
+              <div class="text-lg font-bold text-gray-800 mb-1">${template.name}</div>
+              <div class="text-gray-500 text-sm">${template.description || ""}</div>
+            </div>
+            ${adminUser ? `<div class="flex gap-2">
+              <button class="px-3 py-1 bg-blue-500 hover:bg-blue-600 text-white rounded shadow-sm flex items-center gap-1" onclick="editPhotoTemplate(${template.id})">
+                <i class="fas fa-edit"></i> <span class="hidden sm:inline">Edit</span>
+              </button>
+              <button class="px-3 py-1 bg-red-500 hover:bg-red-600 text-white rounded shadow-sm flex items-center gap-1" onclick="deletePhotoTemplate(${template.id})">
+                <i class="fas fa-trash"></i> <span class="hidden sm:inline">Delete</span>
+              </button>
+            </div>` : ""}
+          </div>
+          <div class="mb-4">
+            <div class="font-semibold text-gray-700 mb-2 flex items-center gap-2">
+              <i class="fas fa-list-ol"></i> ${allSteps.length} ${allSteps.length === 1 ? "step" : "steps"}
+            </div>
+            <div class="space-y-2">
+              ${(template.subcategories || []).map((subcat, scIndex) => `
+                <div class="mb-2">
+                  <div class="font-semibold text-blue-700 mb-1">${subcat.name}</div>
+                  ${(subcat.steps || []).map((step, index) => `
+                    <div class="flex items-start gap-3 bg-gray-50 rounded-lg p-3 border border-gray-200 hover:bg-blue-50 transition">
+                      <div class="flex-shrink-0 w-7 h-7 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-bold">${index + 1}</div>
+                      <div class="flex-1">
+                        <div class="font-medium text-gray-800">${step.endpoint}</div>
+                      </div>
+                    </div>
+                  `).join("")}
+                </div>
+              `).join("")}
+            </div>
+          </div>
+        </div>
+      `;
+    })
+    .join("");
+}
+
+function editPhotoTemplate(templateId) {
+  console.log("Edit photo template:", templateId);
+  alert("Photo template editing coming soon!");
+}
+
+async function deletePhotoTemplate(templateId) {
+  if (!confirm("Are you sure you want to delete this photo template? This action cannot be undone.")) {
+    return;
+  }
+
+  const deleteBtn = document.querySelector(`button[onclick="deletePhotoTemplate(${templateId})"]`);
+  let originalText = null;
+  if (deleteBtn) {
+    originalText = deleteBtn.innerHTML;
+    deleteBtn.disabled = true;
+    deleteBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Deleting...';
+  }
+  try {
+    const response = await fetch(`/api/photo-templates/${templateId}`, {
+      method: "DELETE",
+    });
+    if (!response.ok) {
+      const data = await response.json();
+      throw new Error(data.message || "Failed to delete photo template");
+    }
+    await loadPhotoTemplates();
+  } catch (error) {
+    console.error("Error deleting photo template:", error);
+    alert("Failed to delete photo template: " + error.message);
+  } finally {
+    if (deleteBtn && originalText) {
+      deleteBtn.disabled = false;
+      deleteBtn.innerHTML = originalText;
+    }
+  }
+}
+
+// Photo template search event listener
+const photoTemplateSearchInput = document.getElementById("photoTemplateSearch");
+if (photoTemplateSearchInput) {
+  photoTemplateSearchInput.addEventListener("input", displayPhotoTemplates);
+}
+
+// Photo template add button event listener
+const addPhotoTemplateBtn = document.getElementById("addPhotoTemplateBtn");
+if (addPhotoTemplateBtn) {
+  addPhotoTemplateBtn.addEventListener("click", () => {
+    alert("Photo template creation coming soon!");
+  });
+}

@@ -75,6 +75,15 @@ model Category {
   updatedAt     DateTime      @updatedAt
 }
 
+model Photo_Category {
+  id                 Int                          @id @default(autoincrement())
+  name               String
+  photoTemplates     Photo_Template[]
+  photoSubcategories Photo_Template_Subcategory[]
+  createdAt          DateTime                     @default(now())
+  updatedAt          DateTime                     @updatedAt
+}
+
 model Subcategory {
   id         Int            @id @default(autoincrement())
   name       String
@@ -126,6 +135,60 @@ model TemplateStepVideo {
   createdAt  DateTime @default(now())
 
   template Template @relation(fields: [templateId], references: [id], onDelete: Cascade)
+}
+
+// Photo Template Models (mirroring video template structure)
+model Photo_Template {
+  id            Int                         @id @default(autoincrement())
+  name          String
+  description   String?
+  categoryId    Int?
+  category      Photo_Category?             @relation(fields: [categoryId], references: [id])
+  subcategories Photo_Template_Subcategory[]
+  createdAt     DateTime                    @default(now())
+  updatedAt     DateTime                    @updatedAt
+  stepPhotos    Photo_Template_Step_Photo[]
+
+  @@index([categoryId])
+}
+
+model Photo_Template_Subcategory {
+  id         Int                    @id @default(autoincrement())
+  name       String
+  category   Photo_Category         @relation(fields: [categoryId], references: [id])
+  categoryId Int
+  template   Photo_Template         @relation(fields: [templateId], references: [id])
+  templateId Int
+  steps      Photo_Template_Step[]
+  createdAt  DateTime               @default(now())
+  updatedAt  DateTime               @updatedAt
+
+  @@index([categoryId])
+  @@index([templateId])
+}
+
+model Photo_Template_Step {
+  id            Int                        @id @default(autoincrement())
+  subcategory   Photo_Template_Subcategory @relation(fields: [subcategoryId], references: [id], onDelete: Cascade)
+  subcategoryId Int
+  endpoint      String // The photo filter API endpoint to call
+  prompt        String // Custom prompt for this step
+  order         Int // Order of execution
+  createdAt     DateTime                   @default(now())
+  updatedAt     DateTime                   @updatedAt
+
+  @@index([subcategoryId, order])
+}
+
+model Photo_Template_Step_Photo {
+  id         Int            @id @default(autoincrement())
+  templateId Int
+  stepIndex  Int
+  endpoint   String
+  photoUrl   String
+  createdAt  DateTime       @default(now())
+
+  template Photo_Template @relation(fields: [templateId], references: [id], onDelete: Cascade)
 }
 
 model Features {

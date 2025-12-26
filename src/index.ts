@@ -4,6 +4,7 @@ import dotenv from "dotenv";
 import prisma from "./lib/prisma";
 import facetrixfiltersRouter from "./routes/filter_endpoints";
 import templatesRouter from "./routes/templates";
+import photoTemplatesRouter from "./routes/photo-templates";
 import videoGenerationRouter from "./routes/generate-video";
 import runwareRouter from "./routes/runware";
 import simpleAuthRouter from "./routes/simple-auth";
@@ -914,6 +915,7 @@ app.get("/api/cartoon-character-graphic", async (req, res) => {
 });
 
 app.use("/api", facetrixfiltersRouter);
+app.use("/api", photoTemplatesRouter);
 app.use("/api", templatesRouter);
 app.use("/api/generate-video", videoGenerationRouter);
 app.use("/api", runwareRouter);

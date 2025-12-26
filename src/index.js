@@ -18,6 +18,7 @@ const dotenv_1 = __importDefault(require("dotenv"));
 const prisma_1 = __importDefault(require("./lib/prisma"));
 const filter_endpoints_1 = __importDefault(require("./routes/filter_endpoints"));
 const templates_1 = __importDefault(require("./routes/templates"));
+const photo_templates_1 = __importDefault(require("./routes/photo-templates"));
 const generate_video_1 = __importDefault(require("./routes/generate-video"));
 const runware_1 = __importDefault(require("./routes/runware"));
 const simple_auth_1 = __importDefault(require("./routes/simple-auth"));
@@ -817,6 +818,7 @@ app.get("/api/cartoon-character-graphic", (req, res) => __awaiter(void 0, void 0
     }
 }));
 app.use("/api", filter_endpoints_1.default);
+app.use("/api", photo_templates_1.default);
 app.use("/api", templates_1.default);
 app.use("/api/generate-video", generate_video_1.default);
 app.use("/api", runware_1.default);
