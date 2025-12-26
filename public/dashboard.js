@@ -886,21 +886,26 @@ window.addEventListener("DOMContentLoaded", function () {
 // Global function for tab switching (called from HTML onclick)
 window.switchTab = function (tabName) {
   console.log("[SWITCH TAB] Switching to:", tabName);
-  
+
   // IMPORTANT: This array MUST match the order of sidebar buttons in index.html
   const tabIds = [
-    "tab-dashboard",         // 0
-    "tab-filters",           // 1
-    "tab-photo-filters",     // 2
-    "tab-templates",         // 3
-    "tab-photo-templates",   // 4
-    "tab-cartoon-characters",// 5
-    "tab-apps",              // 6
-    "tab-ai-workflows",      // 7
+    "tab-dashboard", // 0
+    "tab-filters", // 1
+    "tab-photo-filters", // 2
+    "tab-templates", // 3
+    "tab-photo-templates", // 4
+    "tab-cartoon-characters", // 5
+    "tab-apps", // 6
+    "tab-ai-workflows", // 7
   ];
   const tabIndex = tabIds.findIndex((id) => id === `tab-${tabName}`);
 
-  console.log("[SWITCH TAB] Tab index:", tabIndex, "for tab:", `tab-${tabName}`);
+  console.log(
+    "[SWITCH TAB] Tab index:",
+    tabIndex,
+    "for tab:",
+    `tab-${tabName}`
+  );
 
   if (tabIndex === -1) {
     console.error("[SWITCH TAB] Tab not found:", tabName);
@@ -998,7 +1003,7 @@ window.switchTab = function (tabName) {
       photoTemplatesInitialRequested = true;
     }
   }
-  
+
   console.log("[SWITCH TAB] Switch complete");
 };
 
@@ -7816,14 +7821,14 @@ function closeCartoonCharacterDetailPage() {
     "tab-templates",
     "tab-photo-templates",
     "tab-apps",
-    "tab-ai-workflows"
+    "tab-ai-workflows",
   ];
-  
-  const anyOtherTabVisible = allTabs.some(tabId => {
+
+  const anyOtherTabVisible = allTabs.some((tabId) => {
     const tab = document.getElementById(tabId);
     return tab && !tab.classList.contains("hidden");
   });
-  
+
   // Only show cartoon characters tab if no other tab is visible
   if (!anyOtherTabVisible) {
     const tabEl = document.getElementById("tab-cartoon-characters");
@@ -8674,7 +8679,11 @@ async function loadPhotoTemplates() {
     console.log("[PHOTO TEMPLATES] Loading photo templates...");
     const response = await fetch("/api/photo-templates");
     photoTemplates = await response.json();
-    console.log("[PHOTO TEMPLATES] Loaded", photoTemplates.length, "photo templates");
+    console.log(
+      "[PHOTO TEMPLATES] Loaded",
+      photoTemplates.length,
+      "photo templates"
+    );
     displayPhotoTemplates();
     updateStats();
   } catch (error) {
@@ -8688,9 +8697,13 @@ function displayPhotoTemplates() {
     console.error("[PHOTO TEMPLATES] Grid element not found!");
     return;
   }
-  
-  console.log("[PHOTO TEMPLATES] Displaying", photoTemplates.length, "photo templates");
-  
+
+  console.log(
+    "[PHOTO TEMPLATES] Displaying",
+    photoTemplates.length,
+    "photo templates"
+  );
+
   const searchInput = document.getElementById("photoTemplateSearch");
   const searchTerm = searchInput ? searchInput.value.toLowerCase() : "";
 
@@ -8701,7 +8714,11 @@ function displayPhotoTemplates() {
         template.description.toLowerCase().includes(searchTerm))
   );
 
-  console.log("[PHOTO TEMPLATES] Filtered to", filteredTemplates.length, "templates");
+  console.log(
+    "[PHOTO TEMPLATES] Filtered to",
+    filteredTemplates.length,
+    "templates"
+  );
 
   if (filteredTemplates.length === 0) {
     grid.innerHTML = `
@@ -8724,36 +8741,60 @@ function displayPhotoTemplates() {
         <div class="bg-white rounded-xl shadow-md p-6 mb-6 hover:shadow-lg transition-shadow border border-gray-100">
           <div class="flex items-start justify-between mb-4">
             <div>
-              <div class="text-lg font-bold text-gray-800 mb-1">${template.name}</div>
-              <div class="text-gray-500 text-sm">${template.description || ""}</div>
+              <div class="text-lg font-bold text-gray-800 mb-1">${
+                template.name
+              }</div>
+              <div class="text-gray-500 text-sm">${
+                template.description || ""
+              }</div>
             </div>
-            ${adminUser ? `<div class="flex gap-2">
+            ${
+              adminUser
+                ? `<div class="flex gap-2">
               <button class="px-3 py-1 bg-blue-500 hover:bg-blue-600 text-white rounded shadow-sm flex items-center gap-1" onclick="editPhotoTemplate(${template.id})">
                 <i class="fas fa-edit"></i> <span class="hidden sm:inline">Edit</span>
               </button>
               <button class="px-3 py-1 bg-red-500 hover:bg-red-600 text-white rounded shadow-sm flex items-center gap-1" onclick="deletePhotoTemplate(${template.id})">
                 <i class="fas fa-trash"></i> <span class="hidden sm:inline">Delete</span>
               </button>
-            </div>` : ""}
+            </div>`
+                : ""
+            }
           </div>
           <div class="mb-4">
             <div class="font-semibold text-gray-700 mb-2 flex items-center gap-2">
-              <i class="fas fa-list-ol"></i> ${allSteps.length} ${allSteps.length === 1 ? "step" : "steps"}
+              <i class="fas fa-list-ol"></i> ${allSteps.length} ${
+        allSteps.length === 1 ? "step" : "steps"
+      }
             </div>
             <div class="space-y-2">
-              ${(template.subcategories || []).map((subcat, scIndex) => `
+              ${(template.subcategories || [])
+                .map(
+                  (subcat, scIndex) => `
                 <div class="mb-2">
-                  <div class="font-semibold text-blue-700 mb-1">${subcat.name}</div>
-                  ${(subcat.steps || []).map((step, index) => `
+                  <div class="font-semibold text-blue-700 mb-1">${
+                    subcat.name
+                  }</div>
+                  ${(subcat.steps || [])
+                    .map(
+                      (step, index) => `
                     <div class="flex items-start gap-3 bg-gray-50 rounded-lg p-3 border border-gray-200 hover:bg-blue-50 transition">
-                      <div class="flex-shrink-0 w-7 h-7 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-bold">${index + 1}</div>
+                      <div class="flex-shrink-0 w-7 h-7 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-bold">${
+                        index + 1
+                      }</div>
                       <div class="flex-1">
-                        <div class="font-medium text-gray-800">${step.endpoint}</div>
+                        <div class="font-medium text-gray-800">${
+                          step.endpoint
+                        }</div>
                       </div>
                     </div>
-                  `).join("")}
+                  `
+                    )
+                    .join("")}
                 </div>
-              `).join("")}
+              `
+                )
+                .join("")}
             </div>
           </div>
         </div>
@@ -8762,17 +8803,20 @@ function displayPhotoTemplates() {
     .join("");
 }
 
-function editPhotoTemplate(templateId) {
-  console.log("Edit photo template:", templateId);
-  alert("Photo template editing coming soon!");
-}
+// editPhotoTemplate is now defined below in the PHOTO TEMPLATE MODAL FUNCTIONS section
 
 async function deletePhotoTemplate(templateId) {
-  if (!confirm("Are you sure you want to delete this photo template? This action cannot be undone.")) {
+  if (
+    !confirm(
+      "Are you sure you want to delete this photo template? This action cannot be undone."
+    )
+  ) {
     return;
   }
 
-  const deleteBtn = document.querySelector(`button[onclick="deletePhotoTemplate(${templateId})"]`);
+  const deleteBtn = document.querySelector(
+    `button[onclick="deletePhotoTemplate(${templateId})"]`
+  );
   let originalText = null;
   if (deleteBtn) {
     originalText = deleteBtn.innerHTML;
@@ -8809,6 +8853,434 @@ if (photoTemplateSearchInput) {
 const addPhotoTemplateBtn = document.getElementById("addPhotoTemplateBtn");
 if (addPhotoTemplateBtn) {
   addPhotoTemplateBtn.addEventListener("click", () => {
-    alert("Photo template creation coming soon!");
+    openPhotoTemplateModal();
   });
 }
+
+// ============ PHOTO TEMPLATE MODAL FUNCTIONS ============
+
+let editingPhotoTemplateId = null;
+let photoFeatureEndpoints = [];
+
+// Load available photo feature endpoints
+async function loadPhotoFeatureEndpoints() {
+  try {
+    const response = await fetch("/api/photo-features/all", {
+      headers: apiKeyHeaders(),
+    });
+    const data = await response.json();
+    photoFeatureEndpoints = (data.features || data || []).map(
+      (f) => f.endpoint || f
+    );
+    window.photoFeatureEndpoints = photoFeatureEndpoints;
+  } catch (error) {
+    console.error("Error loading photo feature endpoints:", error);
+    photoFeatureEndpoints = [];
+  }
+}
+
+// Open create photo template modal
+function openPhotoTemplateModal() {
+  console.log("[PHOTO TEMPLATE MODAL] openPhotoTemplateModal called");
+  editingPhotoTemplateId = null;
+  const modal = document.getElementById("createPhotoTemplateModal");
+  console.log("[PHOTO TEMPLATE MODAL] Modal element:", modal);
+  if (!modal) {
+    console.error("Photo template modal not found");
+    alert("Error: Photo template modal not found. Please check the HTML.");
+    return;
+  }
+
+  console.log("[PHOTO TEMPLATE MODAL] Setting display to block");
+  // Remove hidden class first, then set display with !important to override any CSS
+  modal.classList.remove("hidden");
+  modal.style.setProperty("display", "flex", "important");
+  modal.style.setProperty("visibility", "visible", "important");
+  modal.style.setProperty("opacity", "1", "important");
+
+  // Reset form
+  document.getElementById("photoTemplateName").value = "";
+  document.getElementById("photoTemplateDescription").value = "";
+
+  // Clear subcategories container
+  const subcatsContainer = document.getElementById(
+    "photoSubcategoriesContainer"
+  );
+  if (subcatsContainer) subcatsContainer.innerHTML = "";
+
+  // Reset input and error
+  const subcatInput = document.getElementById("newPhotoSubcategoryInput");
+  if (subcatInput) subcatInput.value = "";
+  const subcatError = document.getElementById("photoSubcategoryError");
+  if (subcatError) subcatError.textContent = "";
+
+  // Update title
+  const title = document.getElementById("photoTemplateModalTitle");
+  if (title) title.textContent = "Create New Photo Template";
+
+  // Update button text
+  const saveBtn = document.getElementById("savePhotoTemplateBtn");
+  if (saveBtn) saveBtn.textContent = "Save Photo Template";
+
+  // Load endpoints
+  loadPhotoFeatureEndpoints();
+}
+
+// Close photo template modal
+function closePhotoTemplateModal() {
+  const modal = document.getElementById("createPhotoTemplateModal");
+  if (modal) {
+    modal.style.setProperty("display", "none", "important");
+    modal.style.removeProperty("visibility");
+    modal.style.removeProperty("opacity");
+    modal.classList.add("hidden");
+  }
+  editingPhotoTemplateId = null;
+}
+
+// Add subcategory from modal
+function addPhotoSubcategoryFromModal() {
+  const name = document.getElementById("newPhotoSubcategoryInput").value.trim();
+  const subcatError = document.getElementById("photoSubcategoryError");
+
+  if (!name) {
+    subcatError.textContent = "Subcategory name required";
+    return;
+  }
+  subcatError.textContent = "";
+
+  const subcatsContainer = document.getElementById(
+    "photoSubcategoriesContainer"
+  );
+
+  // Create subcategory section
+  const subcatDiv = document.createElement("div");
+  subcatDiv.className = "border rounded-lg p-4 mb-2 bg-gray-50";
+
+  // Subcategory name
+  const nameLabel = document.createElement("div");
+  nameLabel.className = "font-semibold mb-2 text-blue-700";
+  nameLabel.textContent = name;
+  subcatDiv.appendChild(nameLabel);
+
+  // Steps container
+  const stepsDiv = document.createElement("div");
+  stepsDiv.className = "space-y-2 mb-2";
+  subcatDiv.appendChild(stepsDiv);
+
+  // Add Step button
+  const addStepBtn = document.createElement("button");
+  addStepBtn.type = "button";
+  addStepBtn.className =
+    "px-3 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 text-xs";
+  addStepBtn.textContent = "+ Add Step";
+  addStepBtn.onclick = function () {
+    addPhotoTemplateStep(stepsDiv);
+  };
+  subcatDiv.appendChild(addStepBtn);
+
+  // Remove subcategory button
+  const removeBtn = document.createElement("button");
+  removeBtn.type = "button";
+  removeBtn.className = "ml-4 text-red-500 hover:text-red-700 text-xs";
+  removeBtn.textContent = "Remove Subcategory";
+  removeBtn.onclick = () => {
+    if (
+      confirm(
+        "Are you sure you want to remove this subcategory and all its steps?"
+      )
+    ) {
+      subcatDiv.remove();
+    }
+  };
+  subcatDiv.appendChild(removeBtn);
+
+  subcatsContainer.appendChild(subcatDiv);
+  document.getElementById("newPhotoSubcategoryInput").value = "";
+}
+
+// Add a step to a subcategory
+function addPhotoTemplateStep(stepsDiv, initialValue = "") {
+  const stepDiv = document.createElement("div");
+  stepDiv.className = "flex gap-2 items-center";
+
+  // Create autocomplete input wrapper
+  const wrapper = document.createElement("div");
+  wrapper.className = "relative flex-1";
+
+  const input = document.createElement("input");
+  input.type = "text";
+  input.className = "w-full border border-gray-300 rounded px-2 py-1 pr-8";
+  input.placeholder = "Type to search photo endpoints...";
+  input.value = initialValue;
+  input.required = true;
+  input.autocomplete = "off";
+
+  const hiddenInput = document.createElement("input");
+  hiddenInput.type = "hidden";
+  hiddenInput.className = "photo-endpoint-value";
+  hiddenInput.value = initialValue;
+
+  const dropdown = document.createElement("div");
+  dropdown.className =
+    "absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded shadow-lg max-h-60 overflow-y-auto hidden photo-endpoint-dropdown";
+  dropdown.style.top = "100%";
+  dropdown.style.left = "0";
+
+  const clearBtn = document.createElement("button");
+  clearBtn.type = "button";
+  clearBtn.className =
+    "absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600";
+  clearBtn.innerHTML = '<i class="fas fa-times text-xs"></i>';
+  clearBtn.style.display = initialValue ? "block" : "none";
+  clearBtn.onclick = () => {
+    input.value = "";
+    hiddenInput.value = "";
+    clearBtn.style.display = "none";
+    dropdown.classList.add("hidden");
+    input.focus();
+  };
+
+  const updateDropdown = (searchTerm = "") => {
+    const filtered = photoFeatureEndpoints.filter((e) =>
+      e.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+    if (searchTerm === "" || filtered.length === 0) {
+      dropdown.classList.add("hidden");
+      return;
+    }
+    dropdown.innerHTML = filtered
+      .map(
+        (e) =>
+          `<div class="px-3 py-2 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0" data-endpoint="${e}"><div class="text-sm">${e}</div></div>`
+      )
+      .join("");
+    dropdown.classList.remove("hidden");
+    dropdown.querySelectorAll("div[data-endpoint]").forEach((option) => {
+      option.onclick = () => {
+        const endpoint = option.getAttribute("data-endpoint");
+        input.value = endpoint;
+        hiddenInput.value = endpoint;
+        clearBtn.style.display = "block";
+        dropdown.classList.add("hidden");
+      };
+    });
+  };
+
+  input.addEventListener("input", (e) => {
+    hiddenInput.value = "";
+    updateDropdown(e.target.value);
+    clearBtn.style.display = e.target.value ? "block" : "none";
+  });
+
+  input.addEventListener("focus", () => updateDropdown(input.value));
+
+  document.addEventListener("click", (e) => {
+    if (!wrapper.contains(e.target)) dropdown.classList.add("hidden");
+  });
+
+  wrapper.appendChild(input);
+  wrapper.appendChild(hiddenInput);
+  wrapper.appendChild(clearBtn);
+  wrapper.appendChild(dropdown);
+
+  // Remove button
+  const removeBtn = document.createElement("button");
+  removeBtn.type = "button";
+  removeBtn.className = "text-red-500 hover:text-red-700 text-xs removeStepBtn";
+  removeBtn.textContent = "Remove";
+  removeBtn.onclick = () => {
+    if (confirm("Are you sure you want to remove this step?")) {
+      stepDiv.remove();
+    }
+  };
+
+  stepDiv.appendChild(wrapper);
+  stepDiv.appendChild(removeBtn);
+  stepsDiv.appendChild(stepDiv);
+}
+
+// Edit existing photo template
+async function editPhotoTemplate(templateId) {
+  const template = photoTemplates.find((t) => t.id === templateId);
+  if (!template) return;
+
+  // Load endpoints if not already loaded
+  if (!photoFeatureEndpoints.length) {
+    await loadPhotoFeatureEndpoints();
+  }
+
+  editingPhotoTemplateId = templateId;
+  const modal = document.getElementById("createPhotoTemplateModal");
+  if (!modal) return;
+
+  modal.style.display = "block";
+  modal.classList.remove("hidden");
+
+  // Fill form
+  document.getElementById("photoTemplateName").value = template.name;
+  document.getElementById("photoTemplateDescription").value =
+    template.description || "";
+
+  // Clear and rebuild subcategories
+  const subcatsContainer = document.getElementById(
+    "photoSubcategoriesContainer"
+  );
+  if (subcatsContainer) subcatsContainer.innerHTML = "";
+
+  (template.subcategories || []).forEach((subcat) => {
+    const subcatDiv = document.createElement("div");
+    subcatDiv.className = "border rounded-lg p-4 mb-2 bg-gray-50";
+
+    const nameLabel = document.createElement("div");
+    nameLabel.className = "font-semibold mb-2 text-blue-700";
+    nameLabel.textContent = subcat.name;
+    subcatDiv.appendChild(nameLabel);
+
+    const stepsDiv = document.createElement("div");
+    stepsDiv.className = "space-y-2 mb-2";
+    subcatDiv.appendChild(stepsDiv);
+
+    // Add existing steps
+    (subcat.steps || []).forEach((step) => {
+      addPhotoTemplateStep(stepsDiv, step.endpoint);
+    });
+
+    const addStepBtn = document.createElement("button");
+    addStepBtn.type = "button";
+    addStepBtn.className =
+      "px-3 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 text-xs";
+    addStepBtn.textContent = "+ Add Step";
+    addStepBtn.onclick = function () {
+      addPhotoTemplateStep(stepsDiv);
+    };
+    subcatDiv.appendChild(addStepBtn);
+
+    const removeBtn = document.createElement("button");
+    removeBtn.type = "button";
+    removeBtn.className = "ml-4 text-red-500 hover:text-red-700 text-xs";
+    removeBtn.textContent = "Remove Subcategory";
+    removeBtn.onclick = () => {
+      if (confirm("Remove this subcategory?")) {
+        subcatDiv.remove();
+      }
+    };
+    subcatDiv.appendChild(removeBtn);
+
+    subcatsContainer.appendChild(subcatDiv);
+  });
+
+  // Update title and button
+  const title = document.getElementById("photoTemplateModalTitle");
+  if (title) title.textContent = "Edit Photo Template";
+
+  const saveBtn = document.getElementById("savePhotoTemplateBtn");
+  if (saveBtn) saveBtn.textContent = "Update Photo Template";
+}
+
+// Save photo template (create or update)
+async function savePhotoTemplate(event) {
+  event.preventDefault();
+
+  const name = document.getElementById("photoTemplateName").value.trim();
+  const description = document
+    .getElementById("photoTemplateDescription")
+    .value.trim();
+
+  if (!name) {
+    alert("Template name is required");
+    return;
+  }
+
+  // Gather subcategories and steps
+  const subcategoriesContainer = document.getElementById(
+    "photoSubcategoriesContainer"
+  );
+  const subcatDivs = subcategoriesContainer.querySelectorAll(":scope > div");
+
+  const subcategories = [];
+  subcatDivs.forEach((subcatDiv) => {
+    const subcatName =
+      subcatDiv.querySelector(".font-semibold.text-blue-700")?.textContent ||
+      "";
+    const stepsDiv = subcatDiv.querySelector(".space-y-2");
+    const steps = [];
+
+    if (stepsDiv) {
+      stepsDiv.querySelectorAll(":scope > div").forEach((stepDiv) => {
+        const input = stepDiv.querySelector("input[type='text']");
+        const hiddenInput = stepDiv.querySelector(".photo-endpoint-value");
+        const endpoint = (hiddenInput?.value || input?.value || "").trim();
+        if (endpoint) {
+          steps.push({ endpoint });
+        }
+      });
+    }
+
+    if (subcatName) {
+      subcategories.push({ name: subcatName, steps });
+    }
+  });
+
+  if (subcategories.length === 0) {
+    alert("Please add at least one subcategory");
+    return;
+  }
+
+  const saveBtn = document.getElementById("savePhotoTemplateBtn");
+  const originalText = saveBtn ? saveBtn.textContent : "Save";
+  if (saveBtn) {
+    saveBtn.disabled = true;
+    saveBtn.textContent = "Saving...";
+  }
+
+  try {
+    const url = editingPhotoTemplateId
+      ? `/api/photo-templates/${editingPhotoTemplateId}`
+      : "/api/photo-templates";
+    const method = editingPhotoTemplateId ? "PUT" : "POST";
+
+    const response = await fetch(url, {
+      method,
+      headers: {
+        "Content-Type": "application/json",
+        ...apiKeyHeaders(),
+      },
+      body: JSON.stringify({ name, description, subcategories }),
+    });
+
+    if (!response.ok) {
+      const data = await response.json();
+      throw new Error(data.error || "Failed to save photo template");
+    }
+
+    closePhotoTemplateModal();
+    await loadPhotoTemplates();
+    alert(
+      editingPhotoTemplateId
+        ? "Photo template updated successfully!"
+        : "Photo template created successfully!"
+    );
+  } catch (error) {
+    console.error("Error saving photo template:", error);
+    alert("Failed to save photo template: " + error.message);
+  } finally {
+    if (saveBtn) {
+      saveBtn.disabled = false;
+      saveBtn.textContent = originalText;
+    }
+  }
+}
+
+// Attach form submit handler
+const photoTemplateForm = document.getElementById("createPhotoTemplateForm");
+if (photoTemplateForm) {
+  photoTemplateForm.addEventListener("submit", savePhotoTemplate);
+}
+
+// Make functions globally available
+window.openPhotoTemplateModal = openPhotoTemplateModal;
+window.closePhotoTemplateModal = closePhotoTemplateModal;
+window.addPhotoSubcategoryFromModal = addPhotoSubcategoryFromModal;
+window.editPhotoTemplate = editPhotoTemplate;
+window.savePhotoTemplate = savePhotoTemplate;
