@@ -508,6 +508,16 @@ const IDEOGRAM_DEFAULT_DIMENSION = IDEOGRAM_DIMENSIONS.find((d) => d.width === 1
 const IDEOGRAM_REMIX_DEFAULT_DIMENSION = IDEOGRAM_REMIX_DIMENSIONS.find((d) => d.width === 1024 && d.height === 1024) || { width: 1024, height: 1024 };
 const IDEOGRAM_EDIT_DEFAULT_DIMENSION = IDEOGRAM_EDIT_DIMENSIONS.find((d) => d.width === 1024 && d.height === 1024) || { width: 1024, height: 1024 };
 const IDEOGRAM_REFRAME_DEFAULT_DIMENSION = IDEOGRAM_REFRAME_DIMENSIONS.find((d) => d.width === 1024 && d.height === 1024) || { width: 1024, height: 1024 };
+// Logging helper function with timestamps
+function logWithTimestamp(message, data) {
+    const timestamp = new Date().toISOString();
+    if (data) {
+        console.log(`[${timestamp}] ${message}`, JSON.stringify(data, null, 2));
+    }
+    else {
+        console.log(`[${timestamp}] ${message}`);
+    }
+}
 // Reuse a keep-alive agent to improve large POST stability
 const httpsAgent = new https_1.default.Agent({ keepAlive: true });
 function postRunware(payload_1) {
@@ -703,7 +713,8 @@ function getRunwareHeaders() {
 // POST /api/runware/upload-image
 // Accepts multipart/form-data (field: image) OR JSON body { imageUrl }
 router.post("/runware/upload-image", apiKey_1.requireApiKey, upload.single("image"), (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    var _a, _b, _c, _d, _e;
+    var _a, _b, _c, _d, _e, _f, _g;
+    const requestStartTime = Date.now();
     try {
         let imageParam;
         const urlFromBody = (_a = req.body) === null || _a === void 0 ? void 0 : _a.imageUrl;
@@ -751,6 +762,11 @@ router.post("/runware/upload-image", apiKey_1.requireApiKey, upload.single("imag
             });
             return;
         }
+        logWithTimestamp("[UPLOAD-IMAGE] Request received", {
+            hasFile: !!req.file,
+            hasUrl: !!urlFromBody,
+            fileSize: (_b = req.file) === null || _b === void 0 ? void 0 : _b.size,
+        });
         const payload = [
             {
                 taskType: "imageUpload",
@@ -771,15 +787,23 @@ router.post("/runware/upload-image", apiKey_1.requireApiKey, upload.single("imag
             });
             return;
         }
+        logWithTimestamp("[UPLOAD-IMAGE] Success", {
+            imageUUID,
+            processingTimeMs: Date.now() - requestStartTime,
+        });
         res.json({ success: true, imageUUID });
         return;
     }
     catch (err) {
         // Avoid logging full axios config (may include secrets); surface concise message
-        const msg = ((_e = (_d = (_c = (_b = err === null || err === void 0 ? void 0 : err.response) === null || _b === void 0 ? void 0 : _b.data) === null || _c === void 0 ? void 0 : _c.errors) === null || _d === void 0 ? void 0 : _d[0]) === null || _e === void 0 ? void 0 : _e.message) ||
+        const msg = ((_f = (_e = (_d = (_c = err === null || err === void 0 ? void 0 : err.response) === null || _c === void 0 ? void 0 : _c.data) === null || _d === void 0 ? void 0 : _d.errors) === null || _e === void 0 ? void 0 : _e[0]) === null || _f === void 0 ? void 0 : _f.message) ||
             (err === null || err === void 0 ? void 0 : err.message) ||
             "Unknown error";
-        console.error("Runware upload-image error:", msg);
+        logWithTimestamp("[UPLOAD-IMAGE] Error", {
+            error: msg,
+            status: (_g = err === null || err === void 0 ? void 0 : err.response) === null || _g === void 0 ? void 0 : _g.status,
+            processingTimeMs: Date.now() - requestStartTime,
+        });
         res.status(500).json({
             success: false,
             error: msg || "Upload failed",
@@ -791,9 +815,22 @@ router.post("/runware/upload-image", apiKey_1.requireApiKey, upload.single("imag
 // JSON body: { feature?: string, prompt?: string, model?: string, width?: number, height?: number, seedImage?: string }
 // If feature is provided, prompt and model are fetched from Photo_Features table
 router.post("/runware/generate-photo", apiKey_1.requireApiKey, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r;
+    const requestStartTime = Date.now();
     try {
         const { feature, prompt, model, width, height, seedImage, maskImage, negativePrompt, steps, cfgScale, numberResults, ideogramSettings, referenceImages, referenceImage, referenceImageUUID, } = req.body || {};
+        logWithTimestamp("[GENERATE-PHOTO] Request received", {
+            feature,
+            model,
+            prompt: prompt === null || prompt === void 0 ? void 0 : prompt.substring(0, 100),
+            width,
+            height,
+            numberResults,
+            hasSeedImage: !!seedImage,
+            hasReferenceImages: !!(referenceImages ||
+                referenceImage ||
+                referenceImageUUID),
+        });
         // If feature is provided, fetch prompt and model from Photo_Features table
         let resolvedPrompt = prompt;
         let resolvedModel = model;
@@ -1165,6 +1202,7 @@ router.post("/runware/generate-photo", apiKey_1.requireApiKey, (req, res) => __a
         const isIdeogramEdit = chosenModel === IDEOGRAM_EDIT_MODEL_ID;
         const isIdeogramReframe = chosenModel === IDEOGRAM_REFRAME_MODEL_ID;
         const isIdeogramFamily = isIdeogram || isIdeogramRemix || isIdeogramEdit || isIdeogramReframe;
+        const isMidjourneyV7 = chosenModel === MIDJOURNEY_V7_MODEL_ID;
         const referenceImageInputs = [];
         if (Array.isArray(referenceImages))
             referenceImageInputs.push(...referenceImages);
@@ -1340,8 +1378,17 @@ router.post("/runware/generate-photo", apiKey_1.requireApiKey, (req, res) => __a
                     ? 4
                     : isOpenAIFamily
                         ? 1
-                        : 4;
-        const requestedResults = Math.min(Math.max(parseInt(numberResults) || 1, 1), maxResultsPerRequest);
+                        : isMidjourneyV7
+                            ? 20
+                            : 4;
+        let requestedResults = Math.min(Math.max(parseInt(numberResults) || 1, 1), maxResultsPerRequest);
+        // Midjourney V7 requires numberResults to be a multiple of 4 (4, 8, 12, 16, 20)
+        if (isMidjourneyV7) {
+            // Round to nearest multiple of 4
+            const rounded = Math.round(requestedResults / 4) * 4;
+            // Ensure it's at least 4 and at most 20
+            requestedResults = Math.max(4, Math.min(20, rounded));
+        }
         const seeddreamSequentialResults = isSeeddream
             ? requestedResults
             : undefined;
@@ -1350,14 +1397,16 @@ router.post("/runware/generate-photo", apiKey_1.requireApiKey, (req, res) => __a
         const isRiverflowFamily = chosenModel === RIVERFLOW_MODEL_ID ||
             chosenModel === RIVERFLOW_MINI_MODEL_ID ||
             chosenModel === RIVERFLOW_PRO_MODEL_ID;
-        // Seed image is not supported by base Ideogram/Remix, Google (Imagen/Nano Banana), OpenAI, or Riverflow models
+        // Seed image is not supported by base Ideogram/Remix, Google (Imagen/Nano Banana), OpenAI, Riverflow, Midjourney, or Seeddream models
         // But IS required for Ideogram Edit and Reframe
         const allowsSeedImage = isIdeogramEdit ||
             isIdeogramReframe ||
             (!isIdeogramFamily &&
                 !isGoogleFamily &&
                 !isOpenAIFamily &&
-                !isRiverflowFamily);
+                !isRiverflowFamily &&
+                !isMidjourneyV7 &&
+                !isSeeddream);
         if (isSeeddream && seeddreamSequentialResults) {
             providerSettings.bytedance = {
                 maxSequentialImages: seeddreamSequentialResults,
@@ -1455,6 +1504,12 @@ router.post("/runware/generate-photo", apiKey_1.requireApiKey, (req, res) => __a
             const allRefs = [seedImage, ...existingRefs].slice(0, 10); // Riverflow supports 1-10 reference images
             task.inputs = task.inputs || {};
             task.inputs.references = allRefs;
+        }
+        else if (isMidjourneyV7 && seedImage && typeof seedImage === "string") {
+            // Midjourney V7 uses inputs.referenceImages, not seedImage parameter
+            // Supports 1 reference image for image-to-image generation
+            task.inputs = task.inputs || {};
+            task.inputs.referenceImages = [seedImage];
         }
         else if (allowsSeedImage &&
             seedImage &&
@@ -1578,6 +1633,12 @@ router.post("/runware/generate-photo", apiKey_1.requireApiKey, (req, res) => __a
             // Non-fatal
             console.warn("Failed to persist Generated_Photo:", (e === null || e === void 0 ? void 0 : e.message) || e);
         }
+        logWithTimestamp("[GENERATE-PHOTO] Success", {
+            model: chosenModel,
+            imageURL,
+            imageUUID,
+            processingTimeMs: Date.now() - requestStartTime,
+        });
         res.json({ success: true, image: { url: imageURL, imageUUID } });
         return;
     }
@@ -1585,11 +1646,23 @@ router.post("/runware/generate-photo", apiKey_1.requireApiKey, (req, res) => __a
         const msg = ((_k = (_j = (_h = (_g = err === null || err === void 0 ? void 0 : err.response) === null || _g === void 0 ? void 0 : _g.data) === null || _h === void 0 ? void 0 : _h.errors) === null || _j === void 0 ? void 0 : _j[0]) === null || _k === void 0 ? void 0 : _k.message) ||
             (err === null || err === void 0 ? void 0 : err.message) ||
             "Unknown error";
-        console.error("Runware generate-photo error:", msg);
-        res.status(500).json({
+        // Extract responseContent for more detailed error information (e.g., content moderation)
+        const responseContent = (_p = (_o = (_m = (_l = err === null || err === void 0 ? void 0 : err.response) === null || _l === void 0 ? void 0 : _l.data) === null || _m === void 0 ? void 0 : _m.errors) === null || _o === void 0 ? void 0 : _o[0]) === null || _p === void 0 ? void 0 : _p.responseContent;
+        logWithTimestamp("[GENERATE-PHOTO] Error", {
+            error: msg + (responseContent ? `: ${responseContent}` : ""),
+            status: (_q = err === null || err === void 0 ? void 0 : err.response) === null || _q === void 0 ? void 0 : _q.status,
+            details: (_r = err === null || err === void 0 ? void 0 : err.response) === null || _r === void 0 ? void 0 : _r.data,
+            processingTimeMs: Date.now() - requestStartTime,
+        });
+        const errorResponse = {
             success: false,
             error: msg || "Generation failed",
-        });
+        };
+        // Include responseContent in the response if available
+        if (responseContent) {
+            errorResponse.responseContent = responseContent;
+        }
+        res.status(500).json(errorResponse);
         return;
     }
 }));
