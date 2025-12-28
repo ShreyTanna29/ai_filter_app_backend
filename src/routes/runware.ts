@@ -12,6 +12,7 @@ try {
 } catch (e) {
   sharp = null;
 }
+import { downloadAndUploadImage } from "../lib/s3";
 import dotenv from "dotenv";
 import prisma from "../lib/prisma";
 import { randomUUID } from "crypto";
@@ -2085,11 +2086,15 @@ router.post(
 
       // Persist to Generated_Photo
       try {
+        const s3Url = await downloadAndUploadImage(
+          imageURL,
+          typeof feature === "string" ? feature : "riverflow-pro-edit"
+        );
         await prisma.generated_Photo.create({
           data: {
             feature:
               typeof feature === "string" ? feature : "riverflow-pro-edit",
-            url: imageURL,
+            url: s3Url,
           },
         });
       } catch (e) {
@@ -2191,10 +2196,14 @@ router.post(
 
       // Persist to Generated_Photo
       try {
+        const s3Url = await downloadAndUploadImage(
+          imageURL,
+          typeof feature === "string" ? feature : "seededit-edit"
+        );
         await prisma.generated_Photo.create({
           data: {
             feature: typeof feature === "string" ? feature : "seededit-edit",
-            url: imageURL,
+            url: s3Url,
           },
         });
       } catch (e) {
@@ -2371,10 +2380,14 @@ router.post(
 
       // Persist generated image for history
       try {
+        const s3Url = await downloadAndUploadImage(
+          imageURL,
+          String(feature || "ideogram-edit")
+        );
         await prisma.generated_Photo.create({
           data: {
             feature: String(feature || "ideogram-edit"),
-            url: imageURL,
+            url: s3Url,
           },
         });
       } catch (e) {
@@ -2536,10 +2549,14 @@ router.post(
 
       // Persist generated image for history
       try {
+        const s3Url = await downloadAndUploadImage(
+          imageURL,
+          String(feature || "ideogram-reframe")
+        );
         await prisma.generated_Photo.create({
           data: {
             feature: String(feature || "ideogram-reframe"),
-            url: imageURL,
+            url: s3Url,
           },
         });
       } catch (e) {
@@ -2782,10 +2799,14 @@ router.post(
 
       // Persist generated image for history
       try {
+        const s3Url = await downloadAndUploadImage(
+          imageURL,
+          String(feature || "hunyuan-image-v3")
+        );
         await prisma.generated_Photo.create({
           data: {
             feature: String(feature || "hunyuan-image-v3"),
-            url: imageURL,
+            url: s3Url,
           },
         });
       } catch (e) {

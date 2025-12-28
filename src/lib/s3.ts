@@ -131,6 +131,28 @@ export async function ensureImageSizeFromUrl(
   return { buffer: resized, contentType: "image/png" };
 }
 
+export async function downloadAndUploadImage(
+  url: string,
+  feature: string
+): Promise<string> {
+  try {
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error(`Failed to fetch image: ${resp.status}`);
+    const arrayBuf = await resp.arrayBuffer();
+    const buffer = Buffer.from(arrayBuf);
+    const contentType = resp.headers.get("content-type") || "image/png";
+    const ext = contentType.split("/")[1] || "png";
+
+    const key = makeKey({ type: "image", feature, ext });
+    const { url: s3Url } = await uploadBuffer(key, buffer, contentType);
+    return s3Url;
+  } catch (error) {
+    console.error("Error in downloadAndUploadImage:", error);
+    // Fallback to original URL if upload fails
+    return url;
+  }
+}
+
 export interface LatestVideoResult {
   endpoint: string;
   key: string;

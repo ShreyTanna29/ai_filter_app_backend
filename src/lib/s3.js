@@ -21,6 +21,7 @@ exports.resizeTo512 = resizeTo512;
 exports.makeKey = makeKey;
 exports.ensure512SquareImageFromUrl = ensure512SquareImageFromUrl;
 exports.ensureImageSizeFromUrl = ensureImageSizeFromUrl;
+exports.downloadAndUploadImage = downloadAndUploadImage;
 exports.getLatestVideosFromS3 = getLatestVideosFromS3;
 exports.getVideosForFeatureFromS3 = getVideosForFeatureFromS3;
 exports.getSoundsFromS3 = getSoundsFromS3;
@@ -123,6 +124,27 @@ function ensureImageSizeFromUrl(url, width, height) {
             .toFormat("png")
             .toBuffer();
         return { buffer: resized, contentType: "image/png" };
+    });
+}
+function downloadAndUploadImage(url, feature) {
+    return __awaiter(this, void 0, void 0, function* () {
+        try {
+            const resp = yield fetch(url);
+            if (!resp.ok)
+                throw new Error(`Failed to fetch image: ${resp.status}`);
+            const arrayBuf = yield resp.arrayBuffer();
+            const buffer = Buffer.from(arrayBuf);
+            const contentType = resp.headers.get("content-type") || "image/png";
+            const ext = contentType.split("/")[1] || "png";
+            const key = makeKey({ type: "image", feature, ext });
+            const { url: s3Url } = yield uploadBuffer(key, buffer, contentType);
+            return s3Url;
+        }
+        catch (error) {
+            console.error("Error in downloadAndUploadImage:", error);
+            // Fallback to original URL if upload fails
+            return url;
+        }
     });
 }
 // Get the latest video for each feature directly from S3 (from both videos/ and generated-videos/)

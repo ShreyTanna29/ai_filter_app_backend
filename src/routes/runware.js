@@ -27,6 +27,7 @@ try {
 catch (e) {
     sharp = null;
 }
+const s3_1 = require("../lib/s3");
 const dotenv_1 = __importDefault(require("dotenv"));
 const prisma_1 = __importDefault(require("../lib/prisma"));
 const crypto_1 = require("crypto");
@@ -1798,10 +1799,11 @@ router.post("/runware/riverflow-pro/edit", apiKey_1.requireApiKey, (req, res) =>
         }
         // Persist to Generated_Photo
         try {
+            const s3Url = yield (0, s3_1.downloadAndUploadImage)(imageURL, typeof feature === "string" ? feature : "riverflow-pro-edit");
             yield prisma_1.default.generated_Photo.create({
                 data: {
                     feature: typeof feature === "string" ? feature : "riverflow-pro-edit",
-                    url: imageURL,
+                    url: s3Url,
                 },
             });
         }
@@ -1889,10 +1891,11 @@ router.post("/runware/seededit/edit", apiKey_1.requireApiKey, (req, res) => __aw
         }
         // Persist to Generated_Photo
         try {
+            const s3Url = yield (0, s3_1.downloadAndUploadImage)(imageURL, typeof feature === "string" ? feature : "seededit-edit");
             yield prisma_1.default.generated_Photo.create({
                 data: {
                     feature: typeof feature === "string" ? feature : "seededit-edit",
-                    url: imageURL,
+                    url: s3Url,
                 },
             });
         }
@@ -2029,10 +2032,11 @@ router.post("/runware/ideogram/edit", apiKey_1.requireApiKey, (req, res) => __aw
         }
         // Persist generated image for history
         try {
+            const s3Url = yield (0, s3_1.downloadAndUploadImage)(imageURL, String(feature || "ideogram-edit"));
             yield prisma_1.default.generated_Photo.create({
                 data: {
                     feature: String(feature || "ideogram-edit"),
-                    url: imageURL,
+                    url: s3Url,
                 },
             });
         }
@@ -2162,10 +2166,11 @@ router.post("/runware/ideogram/reframe", apiKey_1.requireApiKey, (req, res) => _
         }
         // Persist generated image for history
         try {
+            const s3Url = yield (0, s3_1.downloadAndUploadImage)(imageURL, String(feature || "ideogram-reframe"));
             yield prisma_1.default.generated_Photo.create({
                 data: {
                     feature: String(feature || "ideogram-reframe"),
-                    url: imageURL,
+                    url: s3Url,
                 },
             });
         }
@@ -2358,10 +2363,11 @@ router.post("/runware/hunyuan/generate", apiKey_1.requireApiKey, (req, res) => _
         }
         // Persist generated image for history
         try {
+            const s3Url = yield (0, s3_1.downloadAndUploadImage)(imageURL, String(feature || "hunyuan-image-v3"));
             yield prisma_1.default.generated_Photo.create({
                 data: {
                     feature: String(feature || "hunyuan-image-v3"),
-                    url: imageURL,
+                    url: s3Url,
                 },
             });
         }

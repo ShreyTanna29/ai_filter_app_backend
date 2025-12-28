@@ -8778,7 +8778,9 @@ function displayPhotoTemplates() {
                   ${(subcat.steps || [])
                     .map(
                       (step, index) => `
-                    <div class="flex items-start gap-3 bg-gray-50 rounded-lg p-3 border border-gray-200 hover:bg-blue-50 transition">
+                    <div onclick="showPhotoStepDetails('${
+                      step.endpoint
+                    }')" class="cursor-pointer flex items-start gap-3 bg-gray-50 rounded-lg p-3 border border-gray-200 hover:bg-blue-50 transition">
                       <div class="flex-shrink-0 w-7 h-7 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-bold">${
                         index + 1
                       }</div>
@@ -8873,6 +8875,7 @@ async function loadPhotoFeatureEndpoints() {
       (f) => f.endpoint || f
     );
     window.photoFeatureEndpoints = photoFeatureEndpoints;
+    window.photoFeatureDetails = data.features || data || [];
   } catch (error) {
     console.error("Error loading photo feature endpoints:", error);
     photoFeatureEndpoints = [];
@@ -9284,3 +9287,129 @@ window.closePhotoTemplateModal = closePhotoTemplateModal;
 window.addPhotoSubcategoryFromModal = addPhotoSubcategoryFromModal;
 window.editPhotoTemplate = editPhotoTemplate;
 window.savePhotoTemplate = savePhotoTemplate;
+window.showPhotoStepDetails = showPhotoStepDetails;
+
+// Show photo step details modal
+async function showPhotoStepDetails(endpoint) {
+  // Ensure details are loaded
+  if (!window.photoFeatureDetails || window.photoFeatureDetails.length === 0) {
+    await loadPhotoFeatureEndpoints();
+  }
+
+  // Find details
+  const details = (window.photoFeatureDetails || []).find(
+    (f) => f.endpoint === endpoint
+  ) || { endpoint };
+
+  // Create modal if not exists
+  let modal = document.getElementById("photo-step-details-modal");
+  if (!modal) {
+    modal = document.createElement("div");
+    modal.id = "photo-step-details-modal";
+    modal.style.position = "fixed";
+    modal.style.top = "0";
+    modal.style.left = "0";
+    modal.style.width = "100vw";
+    modal.style.height = "100vh";
+    modal.style.background = "rgba(0,0,0,0.7)";
+    modal.style.display = "none";
+    modal.style.justifyContent = "center";
+    modal.style.alignItems = "center";
+    modal.style.zIndex = "10000";
+    document.body.appendChild(modal);
+
+    // Close on background click
+    modal.onclick = (e) => {
+      if (e.target === modal) modal.style.display = "none";
+    };
+  }
+
+  // Show loading state
+  modal.style.display = "flex";
+  modal.innerHTML = `
+    <div class="bg-white rounded-xl p-8 shadow-2xl flex flex-col items-center">
+      <i class="fas fa-spinner fa-spin text-blue-500 text-3xl mb-4"></i>
+      <p class="text-gray-600">Loading details...</p>
+    </div>
+  `;
+
+  try {
+    // Fetch images
+    const res = await fetch(`/api/photo-graphic/${endpoint}`);
+    const images = await res.json();
+
+    // Render content
+    modal.innerHTML = `
+      <div class="bg-white rounded-xl max-w-5xl w-full shadow-2xl flex flex-col overflow-hidden relative" style="max-height: 85vh; display: flex; flex-direction: column;">
+        <!-- Fixed Header -->
+        <div class="p-6 border-b border-gray-100 flex justify-between items-start bg-white z-10 flex-shrink-0">
+          <div>
+            <h2 class="text-2xl font-bold text-gray-800">${
+              details.endpoint
+            }</h2>
+            ${
+              details.prompt
+                ? `<p class="text-gray-600 mt-2 text-sm bg-gray-50 p-3 rounded border border-gray-100 max-h-24 overflow-y-auto">${details.prompt}</p>`
+                : ""
+            }
+          </div>
+          <button onclick="document.getElementById('photo-step-details-modal').style.display='none'" class="text-gray-400 hover:text-gray-600 p-2 ml-4">
+            <i class="fas fa-times text-xl"></i>
+          </button>
+        </div>
+        
+        <!-- Scrollable Content -->
+        <div class="p-6 overflow-y-auto flex-grow custom-scrollbar" style="overflow-y: auto; flex-grow: 1; min-height: 0;">
+          <h3 class="font-semibold text-gray-700 mb-4 flex items-center gap-2 sticky top-0 bg-white py-2 z-0">
+            <i class="fas fa-images text-blue-500"></i> Generated Images (${
+              images.length
+            })
+          </h3>
+          
+          <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+            ${images
+              .map(
+                (img) => `
+              <div class="group relative aspect-square rounded-lg overflow-hidden bg-gray-100 border border-gray-200">
+                <img src="${img.url}" class="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105" loading="lazy" alt="${img.feature}" />
+                <div class="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 transition-all duration-300"></div>
+                <a href="${img.url}" target="_blank" class="absolute bottom-2 right-2 bg-white text-gray-800 p-2 rounded-full shadow-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 hover:bg-blue-50" title="View Full Size">
+                  <i class="fas fa-external-link-alt text-xs"></i>
+                </a>
+              </div>
+            `
+              )
+              .join("")}
+            ${
+              images.length === 0
+                ? `
+              <div class="col-span-full text-center py-12 bg-gray-50 rounded-lg border border-dashed border-gray-300">
+                <i class="fas fa-image text-gray-300 text-4xl mb-3"></i>
+                <p class="text-gray-500">No generated images found for this filter.</p>
+              </div>
+            `
+                : ""
+            }
+          </div>
+        </div>
+      </div>
+    `;
+  } catch (e) {
+    console.error("Error loading photo step details:", e);
+    modal.innerHTML = `
+      <div class="bg-white rounded-xl p-8 shadow-2xl max-w-md w-full text-center relative">
+        <button onclick="document.getElementById('photo-step-details-modal').style.display='none'" class="absolute top-4 right-4 text-gray-400 hover:text-gray-600">
+          <i class="fas fa-times"></i>
+        </button>
+        <div class="w-16 h-16 bg-red-100 text-red-500 rounded-full flex items-center justify-center mx-auto mb-4">
+          <i class="fas fa-exclamation-triangle text-2xl"></i>
+        </div>
+        <h3 class="text-xl font-bold text-gray-800 mb-2">Error Loading Details</h3>
+        <p class="text-gray-600 mb-6">Failed to load images for this filter. Please try again later.</p>
+        <button onclick="document.getElementById('photo-step-details-modal').style.display='none'" class="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-lg font-medium transition">
+          Close
+        </button>
+      </div>
+    `;
+  }
+}
