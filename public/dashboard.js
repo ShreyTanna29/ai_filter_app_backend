@@ -3011,6 +3011,125 @@ function showFeatureDetailPage(endpoint, sourceTab = "filters") {
     if (input) {
       input.onchange = handleFeatureImageUpload;
     }
+
+    // Mask image upload handling for Ideogram Edit (Inpainting)
+    // Moved outside if(input) block to ensure global scope
+    const maskImageInput = document.getElementById("featureMaskImageInput");
+    const maskImagePreview = document.getElementById("featureMaskImagePreview");
+    const maskUploadStatus = document.getElementById("featureMaskUploadStatus");
+    const maskImageUploadSection = document.getElementById(
+      "featureMaskImageUploadSection"
+    );
+
+    let featureMaskImageFile = null;
+    let featureMaskImageDataUri = null;
+    let featureMaskRunwareImageUUID = null;
+
+    async function handleFeatureMaskImageUpload() {
+      const file = maskImageInput.files && maskImageInput.files[0];
+      if (!file) return;
+
+      featureMaskImageFile = file;
+      featureMaskImageDataUri = null;
+      featureMaskRunwareImageUUID = null;
+
+      try {
+        if (maskUploadStatus) {
+          maskUploadStatus.textContent = "Processing mask image...";
+          maskUploadStatus.className = "upload-status text-sm mt-2 text-center";
+        }
+
+        // Show preview
+        const dataUri = await fileToDataUrl(file);
+        if (typeof dataUri === "string") {
+          featureMaskImageDataUri = dataUri;
+          if (maskImagePreview) {
+            maskImagePreview.src = dataUri;
+            maskImagePreview.style.display = "block";
+            maskImagePreview.classList.add("image-preview");
+          }
+        }
+
+        // Upload to Runware
+        if (maskUploadStatus) {
+          maskUploadStatus.textContent = "Uploading mask to Runware...";
+        }
+
+        const fd = new FormData();
+        fd.append("image", file);
+        const res = await fetch("/api/runware/upload-image", {
+          method: "POST",
+          headers: {
+            "X-API-Key": "supersecretadminkey12345",
+          },
+          body: fd,
+        });
+        const data = await res.json();
+
+        if (!res.ok || !data?.imageUUID) {
+          throw new Error(data?.error || "Runware mask upload failed");
+        }
+
+        featureMaskRunwareImageUUID = data.imageUUID;
+        if (maskUploadStatus) {
+          maskUploadStatus.textContent = "Mask image uploaded!";
+          maskUploadStatus.className =
+            "upload-status success text-sm mt-2 text-center";
+        }
+      } catch (err) {
+        featureMaskImageDataUri = null;
+        featureMaskRunwareImageUUID = null;
+        if (maskUploadStatus) {
+          maskUploadStatus.textContent =
+            err?.message || "Failed to upload mask image.";
+          maskUploadStatus.className =
+            "upload-status error text-sm mt-2 text-center";
+        }
+      } finally {
+        maskImageInput.value = "";
+      }
+    }
+
+    if (maskImageInput) {
+      maskImageInput.onchange = handleFeatureMaskImageUpload;
+    }
+
+    // Function to show/hide mask image section based on model selection
+    // Defined early so it can be called during initialization
+    function updateMaskImageVisibility(retryCount = 0) {
+      const modelSelect = document.getElementById("featureModelSelect");
+      const selectedModel = modelSelect ? modelSelect.value : "";
+      // Check for both the model ID (ideogram:4@3) and template ID (idt:393)
+      const isIdeogramEdit =
+        selectedModel === IDEOGRAM_EDIT_MODEL_ID || selectedModel === "idt:393";
+
+      // Query the element each time instead of using cached reference
+      const maskSection = document.getElementById(
+        "featureMaskImageUploadSection"
+      );
+      const maskPreview = document.getElementById("featureMaskImagePreview");
+      const maskStatus = document.getElementById("featureMaskUploadStatus");
+
+      // If element doesn't exist yet and we haven't retried too many times, try again
+      if (!maskSection && retryCount < 20) {
+        setTimeout(() => updateMaskImageVisibility(retryCount + 1), 50);
+        return;
+      }
+
+      if (maskSection) {
+        const newDisplay = isIdeogramEdit ? "block" : "none";
+        maskSection.style.display = newDisplay;
+      }
+
+      // Reset mask image state when switching away from Ideogram Edit
+      if (!isIdeogramEdit) {
+        featureMaskImageFile = null;
+        featureMaskImageDataUri = null;
+        featureMaskRunwareImageUUID = null;
+        if (maskPreview) maskPreview.style.display = "none";
+        if (maskStatus) maskStatus.textContent = "";
+      }
+    }
     // Pixverse last frame upload
     if (featureLastFrameInput) {
       featureLastFrameInput.onchange = () => {
@@ -3117,6 +3236,11 @@ function showFeatureDetailPage(endpoint, sourceTab = "filters") {
           (opt) => `<option value="${opt.value}">${opt.label}</option>`
         ).join("");
         featureModelSelect.value = PHOTO_MODEL_OPTIONS[0]?.value || "";
+        // Initialize mask image visibility after populating options
+        // Use setTimeout to ensure DOM is fully rendered
+        if (typeof updateMaskImageVisibility === "function") {
+          setTimeout(updateMaskImageVisibility, 100);
+        }
       } else if (featureModelSelectVideoOptionsHtml) {
         featureModelSelect.innerHTML = featureModelSelectVideoOptionsHtml;
       }
@@ -3129,8 +3253,15 @@ function showFeatureDetailPage(endpoint, sourceTab = "filters") {
     if (isPhotoFeature) {
       if (featureModelSelect) {
         featureModelSelect.addEventListener("change", toggleIdeogramOptions);
+        // Add listener for mask image visibility when model changes
+        featureModelSelect.addEventListener(
+          "change",
+          updateMaskImageVisibility
+        );
       }
       toggleIdeogramOptions();
+      // Initialize mask visibility for the currently selected model
+      setTimeout(updateMaskImageVisibility, 100);
     } else if (ideogramOptionsPanel) {
       ideogramOptionsPanel.style.display = "none";
     }
@@ -3476,7 +3607,12 @@ function showFeatureDetailPage(endpoint, sourceTab = "filters") {
 
       if (featureModelSelect) {
         featureModelSelect.addEventListener("change", updateModelConfigPanel);
+        featureModelSelect.addEventListener(
+          "change",
+          updateMaskImageVisibility
+        );
         setTimeout(updateModelConfigPanel, 0);
+        setTimeout(updateMaskImageVisibility, 100);
       }
 
       if (featureAudioInput && featureAudioStatus && featureAudioPreview) {
@@ -3661,8 +3797,33 @@ function showFeatureDetailPage(endpoint, sourceTab = "filters") {
           const requiresReferences = modelMeta?.requiresReferences || false;
           const isIdeogramRemixModel =
             selectedModel === IDEOGRAM_REMIX_MODEL_ID;
+          const isIdeogramEditModel =
+            selectedModel === IDEOGRAM_EDIT_MODEL_ID ||
+            selectedModel === "idt:393";
           const isIdeogramModel =
-            selectedModel === IDEOGRAM_MODEL_ID || isIdeogramRemixModel;
+            selectedModel === IDEOGRAM_MODEL_ID ||
+            isIdeogramRemixModel ||
+            isIdeogramEditModel;
+
+          // Check if Ideogram Edit model requires both seed and mask images
+          if (isIdeogramEditModel) {
+            if (!featureUploadedImageFile && !uploadedImageUrl) {
+              if (genStatus) {
+                genStatus.textContent =
+                  "Ideogram Edit requires a seed image. Please upload an image first.";
+                genStatus.style.color = "red";
+              }
+              return;
+            }
+            if (!featureMaskRunwareImageUUID) {
+              if (genStatus) {
+                genStatus.textContent =
+                  "Ideogram Edit requires a mask image. Please upload a mask image.";
+                genStatus.style.color = "red";
+              }
+              return;
+            }
+          }
 
           // Check if model requires an image upload
           if (
@@ -3883,6 +4044,28 @@ function showFeatureDetailPage(endpoint, sourceTab = "filters") {
                     remixStrengthValue = 70;
                   }
                   ideogramSettings.remixStrength = remixStrengthValue;
+                }
+
+                // Add mask image for Ideogram Edit (Inpainting)
+                if (isIdeogramEditModel) {
+                  if (featureMaskRunwareImageUUID) {
+                    requestPayload.maskImage = featureMaskRunwareImageUUID;
+                  }
+
+                  // Add seed image for Ideogram Edit
+                  let seedImage = uploadedImageUrl;
+                  if (featureUploadedImageFile) {
+                    const dataUri =
+                      featureImageDataUri ||
+                      (await fileToDataUrl(featureUploadedImageFile));
+                    if (typeof dataUri === "string") {
+                      featureImageDataUri = dataUri;
+                      seedImage = dataUri;
+                    }
+                  }
+                  if (seedImage) {
+                    requestPayload.seedImage = seedImage;
+                  }
                 }
 
                 requestPayload.ideogramSettings = ideogramSettings;

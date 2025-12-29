@@ -1229,6 +1229,37 @@
                     ></div>
                   </div>
                 </div>
+                
+                <!-- Mask Image Upload Section (for Ideogram Edit Inpainting) -->
+                <div id="featureMaskImageUploadSection" style="display:none; margin-top: 24px;">
+                  <h4 class="text-md font-semibold text-gray-800 mb-3 flex items-center gap-2">
+                    <i class="fas fa-mask text-purple-600"></i>
+                    Upload Mask Image <span class="text-red-500">*</span>
+                    <span class="text-xs font-normal text-gray-500">(Indicates areas to edit)</span>
+                  </h4>
+                  <label for="featureMaskImageInput" class="upload-label cursor-pointer group">
+                    <div class="upload-area border-2 border-dashed border-purple-300 rounded-xl p-6 text-center transition-all duration-300 hover:border-purple-400 hover:bg-purple-50 group-hover:scale-[1.02]">
+                      <div class="upload-icon mb-3">
+                        <div class="w-12 h-12 mx-auto bg-purple-100 rounded-full flex items-center justify-center group-hover:bg-purple-200 transition-colors duration-300">
+                          <i class="fas fa-cloud-upload-alt text-xl text-purple-600"></i>
+                        </div>
+                      </div>
+                      <div class="upload-text">
+                        <p class="text-sm font-medium text-gray-700 mb-1">Drop mask image here</p>
+                        <p class="text-xs text-gray-500 mb-3">or click to browse files</p>
+                        <div class="inline-flex items-center gap-2 px-3 py-1.5 bg-purple-600 text-white rounded-lg text-xs font-medium group-hover:bg-purple-700 transition-colors duration-300">
+                          <i class="fas fa-plus"></i>
+                          Choose Mask Image
+                        </div>
+                      </div>
+                      <input type="file" id="featureMaskImageInput" accept="image/*" style="display:none;" />
+                    </div>
+                  </label>
+                  <div class="mt-3">
+                    <img id="featureMaskImagePreview" style="display:none; max-width:100%; max-height:200px; margin:0 auto;" class="rounded-xl shadow-lg border border-gray-200" />
+                    <div id="featureMaskUploadStatus" class="upload-status text-sm mt-2 text-center"></div>
+                  </div>
+                </div>
               </div>
               <div class="flex items-center gap-2 mt-3 max-h-[10vh] overflow-y-auto">
                 <select id="featureModelSelect" class="border rounded px-2 py-2">

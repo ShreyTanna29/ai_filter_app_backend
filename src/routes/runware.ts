@@ -2488,10 +2488,13 @@ router.post(
         err?.response?.data?.errors?.[0]?.message ||
         err?.message ||
         "Unknown error";
+      const responseContent = err?.response?.data?.errors?.[0]?.responseContent;
       console.error("Runware ideogram-edit error:", msg);
       res.status(500).json({
         success: false,
-        error: msg || "Ideogram Edit failed",
+        error:
+          msg + (responseContent ? `: ${responseContent}` : "") ||
+          "Ideogram Edit failed",
       });
       return;
     }
