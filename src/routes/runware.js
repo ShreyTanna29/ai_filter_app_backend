@@ -1994,7 +1994,7 @@ router.post("/runware/seededit/edit", apiKey_1.requireApiKey, (req, res) => __aw
 // Ideogram 3.0 Edit (Inpainting) - surgically edit or replace parts of an image
 // JSON body: { prompt: string, seedImage: string, maskImage: string, width?: number, height?: number, ideogramSettings?: object, feature?: string }
 router.post("/runware/ideogram/edit", apiKey_1.requireApiKey, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    var _a, _b, _c, _d;
+    var _a, _b, _c, _d, _e, _f, _g, _h;
     try {
         const { prompt, seedImage, maskImage, width, height, ideogramSettings, feature, } = req.body || {};
         // Validate prompt (1-2000 characters required)
@@ -2123,10 +2123,12 @@ router.post("/runware/ideogram/edit", apiKey_1.requireApiKey, (req, res) => __aw
         const msg = ((_d = (_c = (_b = (_a = err === null || err === void 0 ? void 0 : err.response) === null || _a === void 0 ? void 0 : _a.data) === null || _b === void 0 ? void 0 : _b.errors) === null || _c === void 0 ? void 0 : _c[0]) === null || _d === void 0 ? void 0 : _d.message) ||
             (err === null || err === void 0 ? void 0 : err.message) ||
             "Unknown error";
+        const responseContent = (_h = (_g = (_f = (_e = err === null || err === void 0 ? void 0 : err.response) === null || _e === void 0 ? void 0 : _e.data) === null || _f === void 0 ? void 0 : _f.errors) === null || _g === void 0 ? void 0 : _g[0]) === null || _h === void 0 ? void 0 : _h.responseContent;
         console.error("Runware ideogram-edit error:", msg);
         res.status(500).json({
             success: false,
-            error: msg || "Ideogram Edit failed",
+            error: msg + (responseContent ? `: ${responseContent}` : "") ||
+                "Ideogram Edit failed",
         });
         return;
     }

@@ -4968,7 +4968,9 @@ function showStepDetailPage(templateId, stepIndex, subcatIndex) {
                         <input type="checkbox" 
                           class="video-app-checkbox w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500" 
                           data-video-id="${v.id}" 
-                          data-app-id="${app.id}" 
+                          data-app-id="${app.id}"
+                          data-video-url="${v.url || ""}"
+                          data-video-feature="${step.endpoint || ""}"
                           ${allowedAppIds.has(app.id) ? "checked" : ""}>
                         <span class="truncate font-medium text-gray-700" title="${
                           app.name
@@ -5109,6 +5111,8 @@ function showStepDetailPage(templateId, stepIndex, subcatIndex) {
             checkbox.addEventListener("change", async (e) => {
               const videoId = parseInt(checkbox.dataset.videoId);
               const appId = parseInt(checkbox.dataset.appId);
+              const url = checkbox.dataset.videoUrl || "";
+              const feature = checkbox.dataset.videoFeature || "";
               const isChecked = checkbox.checked;
 
               try {
@@ -5122,6 +5126,8 @@ function showStepDetailPage(templateId, stepIndex, subcatIndex) {
                     videoId,
                     appId,
                     allowed: isChecked,
+                    url,
+                    feature,
                   }),
                 });
 

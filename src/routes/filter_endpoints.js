@@ -171,6 +171,79 @@ function alibabaImageToVideo(req, res, prompt) {
         }
     });
 }
+// Update app permission for a generated video
+// NOTE: This route MUST be defined BEFORE the dynamic /:endpoint route
+// to avoid being caught by the catch-all parameter
+router.post("/videos/app-permission", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const { videoId, appId, allowed, url, feature, key } = req.body;
+        if (!appId || typeof allowed !== "boolean") {
+            res.status(400).json({
+                error: "Missing or invalid parameters: appId and allowed are required",
+            });
+            return;
+        }
+        // Verify the app exists
+        const app = yield prisma_1.default.app.findUnique({ where: { id: appId } });
+        if (!app) {
+            res.status(404).json({ error: "App not found" });
+            return;
+        }
+        // Try to find the video by ID first
+        let video = videoId
+            ? yield prisma_1.default.generatedVideo.findUnique({ where: { id: videoId } })
+            : null;
+        // If not found by ID, try to find by URL
+        if (!video && url) {
+            video = yield prisma_1.default.generatedVideo.findFirst({ where: { url } });
+        }
+        // If still not found and we have url/feature, create the database record
+        if (!video && url && feature) {
+            video = yield prisma_1.default.generatedVideo.create({
+                data: {
+                    url,
+                    feature,
+                },
+            });
+        }
+        if (!video) {
+            res.status(404).json({
+                error: "Video not found and cannot be created (missing url or feature)",
+            });
+            return;
+        }
+        if (allowed) {
+            // Add permission if not exists
+            yield prisma_1.default.appGeneratedVideo.upsert({
+                where: {
+                    appId_generatedVideoId: {
+                        appId,
+                        generatedVideoId: video.id,
+                    },
+                },
+                update: {},
+                create: {
+                    appId,
+                    generatedVideoId: video.id,
+                },
+            });
+        }
+        else {
+            // Remove permission if exists
+            yield prisma_1.default.appGeneratedVideo.deleteMany({
+                where: {
+                    appId,
+                    generatedVideoId: video.id,
+                },
+            });
+        }
+        res.json({ success: true, videoId: video.id });
+    }
+    catch (error) {
+        console.error("Error updating app permission:", error);
+        res.status(500).json({ error: "Failed to update app permission" });
+    }
+}));
 // Dynamic route to support renamed endpoints without server restart
 router.post("/:endpoint", (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
     try {
@@ -266,61 +339,6 @@ router.delete("/videos/:endpoint", (req, res) => __awaiter(void 0, void 0, void 
     catch (error) {
         console.error("Error deleting generated video:", error);
         res.status(500).json({ error: "Failed to delete video" });
-    }
-}));
-// Update app permission for a generated video
-router.post("/videos/app-permission", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    try {
-        const { videoId, appId, allowed } = req.body;
-        if (!videoId || !appId || typeof allowed !== "boolean") {
-            res.status(400).json({
-                error: "Missing or invalid parameters: videoId, appId, and allowed are required",
-            });
-            return;
-        }
-        // Verify the video and app exist
-        const [video, app] = yield Promise.all([
-            prisma_1.default.generatedVideo.findUnique({ where: { id: videoId } }),
-            prisma_1.default.app.findUnique({ where: { id: appId } }),
-        ]);
-        if (!video) {
-            res.status(404).json({ error: "Video not found" });
-            return;
-        }
-        if (!app) {
-            res.status(404).json({ error: "App not found" });
-            return;
-        }
-        if (allowed) {
-            // Add permission if not exists
-            yield prisma_1.default.appGeneratedVideo.upsert({
-                where: {
-                    appId_generatedVideoId: {
-                        appId,
-                        generatedVideoId: videoId,
-                    },
-                },
-                update: {},
-                create: {
-                    appId,
-                    generatedVideoId: videoId,
-                },
-            });
-        }
-        else {
-            // Remove permission if exists
-            yield prisma_1.default.appGeneratedVideo.deleteMany({
-                where: {
-                    appId,
-                    generatedVideoId: videoId,
-                },
-            });
-        }
-        res.json({ success: true });
-    }
-    catch (error) {
-        console.error("Error updating app permission:", error);
-        res.status(500).json({ error: "Failed to update app permission" });
     }
 }));
 // Return latest S3 video per endpoint directly from S3 bucket
