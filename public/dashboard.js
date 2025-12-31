@@ -10108,10 +10108,10 @@ window.generatePhotoPackImages = async function () {
   const selectedModel = modelSelect ? modelSelect.value : "bfl:2@1";
   const requestedCount = imageCountInput ? parseInt(imageCountInput.value) : 5;
 
-  // Validate count against remaining slots
+  // Validate count against remaining slots only (not against prompts.length, we cycle prompts)
   const currentCount = (currentPhotoPack.images || []).length;
   const maxRemaining = currentPhotoPack.photoCount - currentCount;
-  const imageCount = Math.min(requestedCount, maxRemaining, prompts.length);
+  const imageCount = Math.min(requestedCount, maxRemaining);
 
   if (imageCount <= 0) {
     alert(
@@ -10134,10 +10134,11 @@ window.generatePhotoPackImages = async function () {
 
   try {
     const generatedUrls = [];
-    const promptsToUse = prompts.slice(0, imageCount);
 
-    for (let i = 0; i < promptsToUse.length; i++) {
-      const prompt = promptsToUse[i];
+    // Generate exactly imageCount images, cycling through prompts if needed
+    for (let i = 0; i < imageCount; i++) {
+      // Cycle through prompts: if we have 1 prompt and need 5 images, use same prompt 5 times
+      const prompt = prompts[i % prompts.length];
       if (statusEl) {
         statusEl.textContent = `Generating ${i + 1}/${imageCount} images...`;
       }
@@ -10150,10 +10151,13 @@ window.generatePhotoPackImages = async function () {
           height: 1024,
         };
 
-        // Add reference image if available
+        // Add reference image if available - send as both referenceImages array and seedImage
         if (photoPackReferenceImageUrl) {
           requestBody.referenceImages = [photoPackReferenceImageUrl];
+          requestBody.seedImage = photoPackReferenceImageUrl;
         }
+
+        console.log("[Photo Pack] Generating image:", requestBody);
 
         const res = await fetch("/api/runware/generate-photo", {
           method: "POST",
@@ -10162,6 +10166,7 @@ window.generatePhotoPackImages = async function () {
         });
 
         const data = await res.json();
+        console.log("[Photo Pack] Response:", data);
 
         // Response format: { success: true, image: { url, imageUUID } }
         if (res.ok && data.success && data.image && data.image.url) {
@@ -10188,19 +10193,16 @@ window.generatePhotoPackImages = async function () {
       const saveData = await saveRes.json();
 
       if (saveRes.ok && saveData.success) {
-        alert(`Successfully generated ${generatedUrls.length} images!`);
+        // No alert - just refresh the page to show new images
         await showPhotoPackDetail(currentPhotoPack.id);
       } else {
         throw new Error(saveData.message || "Failed to save generated images");
       }
     } else {
-      alert(
-        "No images were generated. Please check your prompts and try again."
-      );
+      console.error("No images were generated");
     }
   } catch (error) {
     console.error("Error generating images:", error);
-    alert(error.message || "Failed to generate images");
   } finally {
     generateBtn.innerHTML = originalText;
     generateBtn.disabled = false;
