@@ -384,3 +384,38 @@ model AppGeneratedCartoonVideo {
   @@index([appId])
   @@index([generatedCartoonVideoId])
 }
+
+// Photo Packs feature - themed collections of generated photos
+model Photo_Pack {
+  id          Int               @id @default(autoincrement())
+  name        String
+  description String?
+  emoji       String?           @default("📸")
+  photoCount  Int               @default(15)
+  isActive    Boolean           @default(true)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  prompts     Photo_Pack_Prompt[]
+  images      Photo_Pack_Image[]
+}
+
+model Photo_Pack_Prompt {
+  id        Int        @id @default(autoincrement())
+  pack      Photo_Pack @relation(fields: [packId], references: [id], onDelete: Cascade)
+  packId    Int
+  prompt    String
+  order     Int
+  createdAt DateTime   @default(now())
+
+  @@index([packId, order])
+}
+
+model Photo_Pack_Image {
+  id        Int        @id @default(autoincrement())
+  pack      Photo_Pack @relation(fields: [packId], references: [id], onDelete: Cascade)
+  packId    Int
+  url       String     // S3 URL
+  createdAt DateTime   @default(now())
+
+  @@index([packId, createdAt])
+}

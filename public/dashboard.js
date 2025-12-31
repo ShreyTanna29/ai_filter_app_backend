@@ -894,9 +894,10 @@ window.switchTab = function (tabName) {
     "tab-photo-filters", // 2
     "tab-templates", // 3
     "tab-photo-templates", // 4
-    "tab-cartoon-characters", // 5
-    "tab-apps", // 6
-    "tab-ai-workflows", // 7
+    "tab-photo-packs", // 5
+    "tab-cartoon-characters", // 6
+    "tab-apps", // 7
+    "tab-ai-workflows", // 8
   ];
   const tabIndex = tabIds.findIndex((id) => id === `tab-${tabName}`);
 
@@ -1002,6 +1003,14 @@ window.switchTab = function (tabName) {
       loadPhotoTemplates();
       photoTemplatesInitialRequested = true;
     }
+  } else if (showId === "tab-photo-packs") {
+    console.log("[SWITCH TAB] Loading photo packs...");
+    if (!photoPacksInitialRequested) {
+      loadPhotoPacks();
+      photoPacksInitialRequested = true;
+    } else {
+      displayPhotoPacks();
+    }
   }
 
   console.log("[SWITCH TAB] Switch complete");
@@ -1099,6 +1108,12 @@ let cartoonCharacterLatestVideos = {};
 let apps = [];
 let appsLoading = false;
 let appsInitialRequested = false;
+
+// === Photo Packs tab state ===
+let photoPacks = [];
+let photoPacksLoading = false;
+let photoPacksInitialRequested = false;
+let currentPhotoPack = null;
 
 function getStoredApiKey() {
   return "supersecretadminkey12345";
@@ -9602,3 +9617,662 @@ async function showPhotoStepDetails(endpoint) {
     `;
   }
 }
+
+// ============================================
+// === PHOTO PACKS FUNCTIONS ===
+// ============================================
+
+async function loadPhotoPacks() {
+  if (photoPacksLoading) return;
+  photoPacksLoading = true;
+
+  const grid = document.getElementById("photoPacksGrid");
+  if (grid) {
+    grid.innerHTML =
+      '<div class="col-span-3 text-center text-gray-500 py-8">Loading photo packs...</div>';
+  }
+
+  try {
+    const res = await fetch("/api/photo-packs", {
+      headers: { ...apiKeyHeaders() },
+    });
+    const data = await res.json();
+
+    if (res.ok && data.success) {
+      photoPacks = data.packs || [];
+      displayPhotoPacks();
+    } else {
+      throw new Error(data.message || "Failed to load photo packs");
+    }
+  } catch (error) {
+    console.error("Error loading photo packs:", error);
+    if (grid) {
+      grid.innerHTML = `<div class="col-span-3 text-center text-red-500 py-8">${
+        error.message || "Failed to load photo packs"
+      }</div>`;
+    }
+  } finally {
+    photoPacksLoading = false;
+  }
+}
+
+function displayPhotoPacks(searchTerm = "") {
+  const grid = document.getElementById("photoPacksGrid");
+  if (!grid) return;
+
+  let filtered = photoPacks;
+  if (searchTerm) {
+    const term = searchTerm.toLowerCase();
+    filtered = photoPacks.filter(
+      (pack) =>
+        pack.name.toLowerCase().includes(term) ||
+        (pack.description && pack.description.toLowerCase().includes(term))
+    );
+  }
+
+  if (filtered.length === 0) {
+    grid.innerHTML =
+      '<div class="col-span-3 text-center text-gray-500 py-8">No photo packs found. Click "Add Photo Pack" to create one.</div>';
+    return;
+  }
+
+  grid.innerHTML = filtered
+    .map((pack) => {
+      const imageCount = pack.imageCount || pack.images?.length || 0;
+      const previewImages = (pack.images || []).slice(0, 4);
+
+      const imageGridHtml =
+        previewImages.length > 0
+          ? `<div class="grid grid-cols-2 gap-1 mb-3">
+          ${previewImages
+            .map(
+              (img) => `
+            <img src="${
+              img.signedUrl || img.url
+            }" alt="" class="w-full h-20 object-cover rounded" />
+          `
+            )
+            .join("")}
+        </div>`
+          : '<div class="bg-gray-100 h-32 rounded-lg flex items-center justify-center mb-3"><i class="fa fa-images text-gray-400 text-3xl"></i></div>';
+
+      return `
+      <div class="bg-white rounded-xl shadow-md overflow-hidden hover:shadow-lg transition-shadow cursor-pointer" onclick="showPhotoPackDetail(${
+        pack.id
+      })">
+        ${imageGridHtml}
+        <div class="p-4">
+          <div class="flex items-center gap-2 mb-2">
+            <span class="text-2xl">${pack.emoji || "📸"}</span>
+            <h3 class="text-lg font-bold text-gray-800">${pack.name}</h3>
+          </div>
+          <p class="text-sm text-gray-600 mb-3 line-clamp-2">${
+            pack.description || "No description"
+          }</p>
+          <div class="flex items-center justify-between">
+            <span class="bg-pink-100 text-pink-700 text-xs px-2 py-1 rounded-full">${imageCount} / ${
+        pack.photoCount
+      } photos</span>
+            <div class="flex gap-2">
+              <button onclick="event.stopPropagation(); editPhotoPack(${
+                pack.id
+              })" class="text-blue-600 hover:text-blue-800">
+                <i class="fa fa-edit"></i>
+              </button>
+              <button onclick="event.stopPropagation(); deletePhotoPack(${
+                pack.id
+              })" class="text-red-600 hover:text-red-800">
+                <i class="fa fa-trash"></i>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+    })
+    .join("");
+}
+
+window.openPhotoPackCrudModal = function (packId = null) {
+  const modal = document.getElementById("photoPackCrudModal");
+  const title = document.getElementById("photoPackCrudModalTitle");
+  const idInput = document.getElementById("photoPackCrudId");
+  const nameInput = document.getElementById("photoPackCrudName");
+  const emojiInput = document.getElementById("photoPackCrudEmoji");
+  const descInput = document.getElementById("photoPackCrudDescription");
+  const countInput = document.getElementById("photoPackCrudPhotoCount");
+  const countDisplay = document.getElementById("photoPackPhotoCountDisplay");
+  const promptsContainer = document.getElementById("photoPackCrudPrompts");
+
+  if (packId) {
+    const pack = photoPacks.find((p) => p.id === packId);
+    if (pack) {
+      title.textContent = "Edit Photo Pack";
+      idInput.value = pack.id;
+      nameInput.value = pack.name;
+      emojiInput.value = pack.emoji || "📸";
+      descInput.value = pack.description || "";
+      countInput.value = pack.photoCount || 15;
+      countDisplay.textContent = pack.photoCount || 15;
+
+      // Populate prompts
+      promptsContainer.innerHTML = "";
+      (pack.prompts || []).forEach((p) => {
+        addPhotoPackPromptRow(p.prompt);
+      });
+      if ((pack.prompts || []).length === 0) {
+        addPhotoPackPromptRow();
+      }
+    }
+  } else {
+    title.textContent = "Create Photo Pack";
+    idInput.value = "";
+    nameInput.value = "";
+    emojiInput.value = "📸";
+    descInput.value = "";
+    countInput.value = 15;
+    countDisplay.textContent = "15";
+    promptsContainer.innerHTML = "";
+    addPhotoPackPromptRow();
+  }
+
+  modal.classList.remove("hidden");
+};
+
+window.closePhotoPackCrudModal = function () {
+  document.getElementById("photoPackCrudModal").classList.add("hidden");
+};
+
+window.addPhotoPackPromptRow = function (value = "") {
+  const container = document.getElementById("photoPackCrudPrompts");
+  const row = document.createElement("div");
+  row.className = "prompt-row flex gap-2";
+  row.innerHTML = `
+    <input type="text" class="prompt-input flex-1 border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-pink-400" placeholder="Enter a prompt..." value="${value}" />
+    <button type="button" onclick="removePhotoPackPromptRow(this)" class="px-3 py-2 bg-red-100 text-red-600 rounded-lg hover:bg-red-200">
+      <i class="fa fa-trash"></i>
+    </button>
+  `;
+  container.appendChild(row);
+};
+
+window.removePhotoPackPromptRow = function (btn) {
+  const container = document.getElementById("photoPackCrudPrompts");
+  const rows = container.querySelectorAll(".prompt-row");
+  if (rows.length > 1) {
+    btn.closest(".prompt-row").remove();
+  }
+};
+
+// Wire up range slider display
+document.addEventListener("DOMContentLoaded", function () {
+  const countSlider = document.getElementById("photoPackCrudPhotoCount");
+  const countDisplay = document.getElementById("photoPackPhotoCountDisplay");
+  if (countSlider && countDisplay) {
+    countSlider.addEventListener("input", function () {
+      countDisplay.textContent = this.value;
+    });
+  }
+
+  // Wire up photo pack search
+  const searchInput = document.getElementById("photoPackSearch");
+  if (searchInput) {
+    searchInput.addEventListener("input", function () {
+      displayPhotoPacks(this.value);
+    });
+  }
+
+  // Wire up photo pack form submission
+  const form = document.getElementById("photoPackCrudForm");
+  if (form) {
+    form.addEventListener("submit", async function (e) {
+      e.preventDefault();
+      await savePhotoPack();
+    });
+  }
+});
+
+async function savePhotoPack() {
+  const idInput = document.getElementById("photoPackCrudId");
+  const nameInput = document.getElementById("photoPackCrudName");
+  const emojiInput = document.getElementById("photoPackCrudEmoji");
+  const descInput = document.getElementById("photoPackCrudDescription");
+  const countInput = document.getElementById("photoPackCrudPhotoCount");
+  const promptInputs = document.querySelectorAll(
+    "#photoPackCrudPrompts .prompt-input"
+  );
+
+  const id = idInput.value ? parseInt(idInput.value) : null;
+  const name = nameInput.value.trim();
+  const emoji = emojiInput.value.trim() || "📸";
+  const description = descInput.value.trim();
+  const photoCount = parseInt(countInput.value);
+  const prompts = Array.from(promptInputs)
+    .map((input) => input.value.trim())
+    .filter((p) => p);
+
+  if (!name) {
+    alert("Name is required");
+    return;
+  }
+
+  if (prompts.length === 0) {
+    alert("At least one prompt is required");
+    return;
+  }
+
+  const saveBtn = document.getElementById("photoPackCrudSaveBtn");
+  const originalText = saveBtn.textContent;
+  saveBtn.textContent = "Saving...";
+  saveBtn.disabled = true;
+
+  try {
+    const url = id ? `/api/photo-packs/${id}` : "/api/photo-packs";
+    const method = id ? "PUT" : "POST";
+
+    const res = await fetch(url, {
+      method,
+      headers: { "Content-Type": "application/json", ...apiKeyHeaders() },
+      body: JSON.stringify({ name, emoji, description, photoCount, prompts }),
+    });
+
+    const data = await res.json();
+
+    if (res.ok && data.success) {
+      closePhotoPackCrudModal();
+      await loadPhotoPacks();
+    } else {
+      throw new Error(data.message || "Failed to save photo pack");
+    }
+  } catch (error) {
+    console.error("Error saving photo pack:", error);
+    alert(error.message || "Failed to save photo pack");
+  } finally {
+    saveBtn.textContent = originalText;
+    saveBtn.disabled = false;
+  }
+}
+
+window.editPhotoPack = function (packId) {
+  openPhotoPackCrudModal(packId);
+};
+
+window.deletePhotoPack = async function (packId) {
+  if (
+    !confirm(
+      "Are you sure you want to delete this photo pack? This will also delete all associated images."
+    )
+  ) {
+    return;
+  }
+
+  try {
+    const res = await fetch(`/api/photo-packs/${packId}`, {
+      method: "DELETE",
+      headers: { ...apiKeyHeaders() },
+    });
+
+    const data = await res.json();
+
+    if (res.ok && data.success) {
+      await loadPhotoPacks();
+    } else {
+      throw new Error(data.message || "Failed to delete photo pack");
+    }
+  } catch (error) {
+    console.error("Error deleting photo pack:", error);
+    alert(error.message || "Failed to delete photo pack");
+  }
+};
+
+window.showPhotoPackDetail = async function (packId) {
+  showFullscreenLoader();
+
+  try {
+    const res = await fetch(`/api/photo-packs/${packId}`, {
+      headers: { ...apiKeyHeaders() },
+    });
+    const data = await res.json();
+
+    if (!res.ok || !data.success) {
+      throw new Error(data.message || "Failed to load photo pack");
+    }
+
+    currentPhotoPack = data.pack;
+
+    // Populate detail page
+    document.getElementById("photoPackDetailEmoji").textContent =
+      currentPhotoPack.emoji || "📸";
+    document.getElementById("photoPackDetailTitle").textContent =
+      currentPhotoPack.name;
+    document.getElementById("photoPackDetailDescription").textContent =
+      currentPhotoPack.description || "";
+    document.getElementById("photoPackDetailCount").textContent = `${
+      currentPhotoPack.images?.length || 0
+    } / ${currentPhotoPack.photoCount} photos`;
+
+    // Render prompts
+    const promptsContainer = document.getElementById("photoPackDetailPrompts");
+    promptsContainer.innerHTML = (currentPhotoPack.prompts || [])
+      .map(
+        (p, idx) => `
+      <div class="bg-gray-50 rounded-lg px-4 py-2 text-sm">
+        <span class="text-gray-400 mr-2">${idx + 1}.</span>
+        <span class="text-gray-700">${p.prompt}</span>
+      </div>
+    `
+      )
+      .join("");
+
+    // Render images
+    const imagesContainer = document.getElementById("photoPackDetailImages");
+    if ((currentPhotoPack.images || []).length === 0) {
+      imagesContainer.innerHTML =
+        '<div class="col-span-4 text-center text-gray-500 py-8">No images generated yet. Click "Generate" to create photos.</div>';
+    } else {
+      imagesContainer.innerHTML = currentPhotoPack.images
+        .map(
+          (img) => `
+        <div class="relative group">
+          <img src="${
+            img.signedUrl || img.url
+          }" alt="" class="w-full h-40 object-cover rounded-lg shadow" />
+          <button onclick="deletePhotoPackImage(${currentPhotoPack.id}, ${
+            img.id
+          })" class="absolute top-2 right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+            <i class="fa fa-times text-xs"></i>
+          </button>
+        </div>
+      `
+        )
+        .join("");
+    }
+
+    // Populate model selector with text-only models suitable for generation
+    const modelSelect = document.getElementById("photoPackModelSelect");
+    if (modelSelect) {
+      const textOnlyModels = PHOTO_MODEL_OPTIONS.filter(
+        (m) =>
+          !m.requiresReferences && !m.requiresSeedImage && !m.requiresMaskImage
+      );
+      modelSelect.innerHTML = textOnlyModels
+        .map((m) => `<option value="${m.value}">${m.label}</option>`)
+        .join("");
+    }
+
+    // Set max image count based on remaining slots
+    const currentCount = (currentPhotoPack.images || []).length;
+    const maxRemaining = Math.max(
+      0,
+      currentPhotoPack.photoCount - currentCount
+    );
+    const imageCountInput = document.getElementById("photoPackImageCount");
+    const maxCountSpan = document.getElementById("photoPackMaxCount");
+    if (imageCountInput) {
+      imageCountInput.max = maxRemaining;
+      imageCountInput.value = Math.min(5, maxRemaining);
+    }
+    if (maxCountSpan) {
+      maxCountSpan.textContent = `/ ${maxRemaining} remaining`;
+    }
+
+    // Show detail page, hide tab
+    document.getElementById("tab-photo-packs").classList.add("hidden");
+    document.getElementById("photoPackDetailPage").classList.remove("hidden");
+  } catch (error) {
+    console.error("Error loading photo pack detail:", error);
+    alert(error.message || "Failed to load photo pack details");
+  } finally {
+    hideFullscreenLoader();
+  }
+};
+
+window.closePhotoPackDetailPage = function () {
+  document.getElementById("photoPackDetailPage").classList.add("hidden");
+  document.getElementById("tab-photo-packs").classList.remove("hidden");
+  currentPhotoPack = null;
+  // Clear reference image state
+  clearPhotoPackReferenceImage();
+};
+
+window.editCurrentPhotoPack = function () {
+  if (currentPhotoPack) {
+    openPhotoPackCrudModal(currentPhotoPack.id);
+  }
+};
+
+window.deletePhotoPackImage = async function (packId, imageId) {
+  if (!confirm("Are you sure you want to delete this image?")) {
+    return;
+  }
+
+  try {
+    const res = await fetch(`/api/photo-packs/${packId}/images/${imageId}`, {
+      method: "DELETE",
+      headers: { ...apiKeyHeaders() },
+    });
+
+    const data = await res.json();
+
+    if (res.ok && data.success) {
+      // Refresh detail page
+      await showPhotoPackDetail(packId);
+    } else {
+      throw new Error(data.message || "Failed to delete image");
+    }
+  } catch (error) {
+    console.error("Error deleting image:", error);
+    alert(error.message || "Failed to delete image");
+  }
+};
+
+window.deleteCurrentPhotoPack = async function () {
+  if (!currentPhotoPack) return;
+  if (
+    !confirm(
+      `Are you sure you want to delete "${currentPhotoPack.name}"? This will also delete all associated images.`
+    )
+  ) {
+    return;
+  }
+  try {
+    const res = await fetch(`/api/photo-packs/${currentPhotoPack.id}`, {
+      method: "DELETE",
+      headers: { ...apiKeyHeaders() },
+    });
+    const data = await res.json();
+    if (res.ok && data.success) {
+      closePhotoPackDetailPage();
+      await loadPhotoPacks();
+    } else {
+      throw new Error(data.message || "Failed to delete photo pack");
+    }
+  } catch (error) {
+    console.error("Error deleting photo pack:", error);
+    alert(error.message || "Failed to delete photo pack");
+  }
+};
+
+window.generatePhotoPackImages = async function () {
+  if (!currentPhotoPack) return;
+
+  const prompts = currentPhotoPack.prompts || [];
+  if (prompts.length === 0) {
+    alert("No prompts configured for this pack. Please add prompts first.");
+    return;
+  }
+
+  // Get selected model and image count
+  const modelSelect = document.getElementById("photoPackModelSelect");
+  const imageCountInput = document.getElementById("photoPackImageCount");
+  const selectedModel = modelSelect ? modelSelect.value : "bfl:2@1";
+  const requestedCount = imageCountInput ? parseInt(imageCountInput.value) : 5;
+
+  // Validate count against remaining slots
+  const currentCount = (currentPhotoPack.images || []).length;
+  const maxRemaining = currentPhotoPack.photoCount - currentCount;
+  const imageCount = Math.min(requestedCount, maxRemaining, prompts.length);
+
+  if (imageCount <= 0) {
+    alert(
+      "This pack has reached its maximum photo count. Edit the pack to increase the limit."
+    );
+    return;
+  }
+
+  const generateBtn = document.getElementById("generatePhotoPackBtn");
+  const statusEl = document.getElementById("photoPackGenerationStatus");
+  const originalText = generateBtn.innerHTML;
+  generateBtn.innerHTML =
+    '<i class="fa fa-spinner fa-spin mr-2"></i>Generating...';
+  generateBtn.disabled = true;
+
+  if (statusEl) {
+    statusEl.classList.remove("hidden");
+    statusEl.textContent = `Generating 0/${imageCount} images...`;
+  }
+
+  try {
+    const generatedUrls = [];
+    const promptsToUse = prompts.slice(0, imageCount);
+
+    for (let i = 0; i < promptsToUse.length; i++) {
+      const prompt = promptsToUse[i];
+      if (statusEl) {
+        statusEl.textContent = `Generating ${i + 1}/${imageCount} images...`;
+      }
+      try {
+        // Build request body including reference image if uploaded
+        const requestBody = {
+          prompt: prompt.prompt,
+          model: selectedModel,
+          width: 1024,
+          height: 1024,
+        };
+
+        // Add reference image if available
+        if (photoPackReferenceImageUrl) {
+          requestBody.referenceImages = [photoPackReferenceImageUrl];
+        }
+
+        const res = await fetch("/api/runware/generate-photo", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...apiKeyHeaders() },
+          body: JSON.stringify(requestBody),
+        });
+
+        const data = await res.json();
+
+        // Response format: { success: true, image: { url, imageUUID } }
+        if (res.ok && data.success && data.image && data.image.url) {
+          generatedUrls.push(data.image.url);
+        }
+      } catch (e) {
+        console.error("Error generating image for prompt:", prompt.prompt, e);
+      }
+    }
+
+    if (generatedUrls.length > 0) {
+      if (statusEl) {
+        statusEl.textContent = "Saving images...";
+      }
+      const saveRes = await fetch(
+        `/api/photo-packs/${currentPhotoPack.id}/images`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...apiKeyHeaders() },
+          body: JSON.stringify({ urls: generatedUrls }),
+        }
+      );
+
+      const saveData = await saveRes.json();
+
+      if (saveRes.ok && saveData.success) {
+        alert(`Successfully generated ${generatedUrls.length} images!`);
+        await showPhotoPackDetail(currentPhotoPack.id);
+      } else {
+        throw new Error(saveData.message || "Failed to save generated images");
+      }
+    } else {
+      alert(
+        "No images were generated. Please check your prompts and try again."
+      );
+    }
+  } catch (error) {
+    console.error("Error generating images:", error);
+    alert(error.message || "Failed to generate images");
+  } finally {
+    generateBtn.innerHTML = originalText;
+    generateBtn.disabled = false;
+    if (statusEl) {
+      statusEl.classList.add("hidden");
+    }
+  }
+};
+
+// Photo Pack reference image state
+let photoPackReferenceImageUrl = null;
+
+window.handlePhotoPackImageUpload = async function (input) {
+  if (!input.files || input.files.length === 0) return;
+
+  const file = input.files[0];
+  const label = document.getElementById("photoPackImageLabel");
+  const preview = document.getElementById("photoPackImagePreview");
+  const clearBtn = document.getElementById("photoPackClearImageBtn");
+
+  // Show loading state
+  if (label)
+    label.innerHTML = '<i class="fa fa-spinner fa-spin mr-2"></i>Uploading...';
+
+  try {
+    // Upload the image to get a URL
+    const formData = new FormData();
+    formData.append("file", file);
+
+    const res = await fetch("/api/upload-image", {
+      method: "POST",
+      headers: { ...apiKeyHeaders() },
+      body: formData,
+    });
+
+    const data = await res.json();
+
+    if (res.ok && data.success) {
+      photoPackReferenceImageUrl = data.signedUrl || data.url;
+
+      // Show preview
+      if (preview) {
+        preview.src = URL.createObjectURL(file);
+        preview.classList.remove("hidden");
+      }
+      if (label)
+        label.innerHTML = '<i class="fa fa-check mr-2"></i>Image uploaded';
+      if (clearBtn) clearBtn.classList.remove("hidden");
+    } else {
+      throw new Error(data.message || "Upload failed");
+    }
+  } catch (error) {
+    console.error("Error uploading reference image:", error);
+    alert("Failed to upload image: " + (error.message || "Unknown error"));
+    if (label)
+      label.innerHTML = '<i class="fa fa-upload mr-2"></i>Choose image';
+    photoPackReferenceImageUrl = null;
+  }
+};
+
+window.clearPhotoPackReferenceImage = function () {
+  photoPackReferenceImageUrl = null;
+  const input = document.getElementById("photoPackReferenceImage");
+  const label = document.getElementById("photoPackImageLabel");
+  const preview = document.getElementById("photoPackImagePreview");
+  const clearBtn = document.getElementById("photoPackClearImageBtn");
+
+  if (input) input.value = "";
+  if (label) label.innerHTML = '<i class="fa fa-upload mr-2"></i>Choose image';
+  if (preview) {
+    preview.src = "";
+    preview.classList.add("hidden");
+  }
+  if (clearBtn) clearBtn.classList.add("hidden");
+};

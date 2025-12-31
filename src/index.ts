@@ -11,6 +11,7 @@ import simpleAuthRouter from "./routes/simple-auth";
 import categoriesRouter from "./routes/categories";
 import appsRouter from "./routes/apps";
 import workflowsRouter from "./routes/workflows";
+import photoPacksRouter from "./routes/photo-packs";
 import multer from "multer";
 import {
   uploadBuffer,
@@ -923,6 +924,7 @@ app.use("/api/auth", simpleAuthRouter);
 app.use("/api/categories", categoriesRouter);
 app.use("/api/apps", appsRouter);
 app.use("/api", workflowsRouter);
+app.use("/api/photo-packs", photoPacksRouter);
 
 // Get all sounds organized by category from S3
 app.get("/api/sounds", async (req, res) => {
