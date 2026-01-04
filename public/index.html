@@ -734,60 +734,7 @@
               <span id="photoPackDetailCount" class="bg-pink-100 text-pink-700 px-3 py-1 rounded-full"></span>
             </div>
             
-            <!-- Generation Options Section -->
-            <div class="mb-8 bg-gradient-to-br from-pink-50 to-purple-50 rounded-xl p-6 border border-pink-100">
-              <h3 class="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
-                <i class="fa fa-wand-magic-sparkles text-pink-600"></i>
-                Generate Images
-              </h3>
-              <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <div>
-                  <label class="block text-sm font-medium text-gray-700 mb-2">AI Model</label>
-                  <select id="photoPackModelSelect" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-pink-400 bg-white">
-                    <!-- Options populated by JS -->
-                  </select>
-                </div>
-                <div>
-                  <label class="block text-sm font-medium text-gray-700 mb-2">Number of Images</label>
-                  <div class="flex items-center gap-2">
-                    <input 
-                      type="number" 
-                      id="photoPackImageCount" 
-                      min="1" 
-                      max="20" 
-                      value="5" 
-                      class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-pink-400"
-                    />
-                    <span id="photoPackMaxCount" class="text-sm text-gray-500 whitespace-nowrap">/ 15 max</span>
-                  </div>
-                </div>
-                <div>
-                  <label class="block text-sm font-medium text-gray-700 mb-2">Reference Image (optional)</label>
-                  <div class="flex items-center gap-2">
-                    <label class="flex-1 cursor-pointer">
-                      <input type="file" id="photoPackReferenceImage" accept="image/*" class="hidden" onchange="handlePhotoPackImageUpload(this)" />
-                      <div id="photoPackImagePreviewContainer" class="border border-gray-300 rounded-lg px-3 py-2 bg-white hover:bg-gray-50 flex items-center justify-center text-sm text-gray-500 h-10">
-                        <span id="photoPackImageLabel"><i class="fa fa-upload mr-2"></i>Choose image</span>
-                      </div>
-                    </label>
-                    <button type="button" id="photoPackClearImageBtn" onclick="clearPhotoPackReferenceImage()" class="hidden px-2 py-2 bg-red-100 text-red-600 rounded-lg hover:bg-red-200">
-                      <i class="fa fa-times"></i>
-                    </button>
-                  </div>
-                  <img id="photoPackImagePreview" src="" alt="Preview" class="hidden mt-2 w-full h-20 object-cover rounded-lg" />
-                </div>
-                <div class="flex items-end">
-                  <button
-                    id="generatePhotoPackBtn"
-                    onclick="generatePhotoPackImages()"
-                    class="w-full px-4 py-2 bg-pink-600 text-white rounded-lg hover:bg-pink-700 flex items-center justify-center"
-                  >
-                    <i class="fa fa-wand-magic-sparkles mr-2"></i>Generate
-                  </button>
-                </div>
-              </div>
-              <p id="photoPackGenerationStatus" class="text-sm text-gray-500 mt-3 hidden"></p>
-            </div>
+
 
             <!-- Prompts Section -->
             <div class="mb-8">
@@ -797,7 +744,15 @@
 
             <!-- Images Grid -->
             <div>
-              <h3 class="text-lg font-semibold text-gray-800 mb-3">Generated Images</h3>
+              <div class="flex justify-between items-center mb-3">
+                <h3 class="text-lg font-semibold text-gray-800">Generated Images</h3>
+                <button
+                  onclick="openAddImagesToPackModal()"
+                  class="px-3 py-1 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium"
+                >
+                  <i class="fa fa-plus mr-1"></i> Add Images
+                </button>
+              </div>
               <div id="photoPackDetailImages" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4"></div>
             </div>
           </div>
@@ -852,34 +807,32 @@
                 ></textarea>
               </div>
 
+              <!-- Selected Images Preview -->
               <div>
-                <label class="block text-gray-700 font-semibold mb-1">Photo Count (10-20)</label>
-                <input
-                  id="photoPackCrudPhotoCount"
-                  type="range"
-                  min="10"
-                  max="20"
-                  value="15"
-                  class="w-full accent-pink-600"
-                />
-                <div class="text-center text-pink-600 font-semibold">
-                  <span id="photoPackPhotoCountDisplay">15</span> photos
+                <div class="flex justify-between items-center mb-2">
+                  <label class="block text-gray-700 font-semibold">Initial Images</label>
+                  <button
+                    type="button"
+                    onclick="openGeneratedImagesModal()"
+                    class="text-sm text-blue-600 hover:text-blue-800 font-medium"
+                  >
+                    + Select Generated Images
+                  </button>
                 </div>
+                <div id="photoPackSelectedImages" class="grid grid-cols-4 gap-2 mb-2"></div>
+                <p class="text-xs text-gray-500">Selected images will be added to the pack upon creation.</p>
               </div>
 
               <div>
-                <label class="block text-gray-700 font-semibold mb-2">Prompts</label>
-                <div id="photoPackCrudPrompts" class="space-y-2 max-h-40 overflow-auto">
-                  <div class="prompt-row flex gap-2">
-                    <input type="text" class="prompt-input flex-1 border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-pink-400" placeholder="Enter a prompt..." />
-                    <button type="button" onclick="removePhotoPackPromptRow(this)" class="px-3 py-2 bg-red-100 text-red-600 rounded-lg hover:bg-red-200">
-                      <i class="fa fa-trash"></i>
-                    </button>
-                  </div>
-                </div>
-                <button type="button" onclick="addPhotoPackPromptRow()" class="mt-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 w-full">
-                  <i class="fa fa-plus mr-2"></i>Add Prompt
-                </button>
+                <label class="block text-gray-700 font-semibold mb-1">Photo Count</label>
+                <input
+                  id="photoPackCrudPhotoCount"
+                  type="number"
+                  min="1"
+                  value="15"
+                  class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-pink-400"
+                />
+                <p class="text-xs text-gray-500 mt-1">Maximum number of photos for this pack (no limit)</p>
               </div>
 
               <div class="flex justify-end gap-2 pt-4">
@@ -2473,10 +2426,61 @@
                 type="submit"
                 class="px-6 py-2 bg-blue-600 text-white rounded-lg font-semibold text-lg hover:bg-blue-700 transition"
               >
-                Save Photo Template
               </button>
             </div>
           </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- Generated Images Modal -->
+    <div
+      id="generatedImagesModal"
+      class="fixed inset-0 z-[60] hidden"
+      style="background-color: rgba(0,0,0,0.5);"
+    >
+      <div class="flex items-center justify-center w-full h-full p-4">
+        <div class="bg-white rounded-xl shadow-lg w-full max-w-4xl relative flex flex-col" style="max-height: 85vh;">
+          <button
+            onclick="closeGeneratedImagesModal()"
+            class="absolute top-4 right-4 text-gray-400 hover:text-gray-700 text-xl z-10"
+          >
+            <i class="fa fa-times"></i>
+          </button>
+          <div class="flex justify-between items-center p-6 pb-4 border-b border-gray-100">
+            <h2 class="text-xl font-bold">Select Generated Images</h2>
+            <button
+              id="syncS3ImagesBtn"
+              onclick="syncS3Images()"
+              class="px-3 py-1 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium mr-8"
+            >
+              <i class="fa fa-refresh mr-1"></i> Sync from S3
+            </button>
+          </div>
+          
+          <div class="flex-1 overflow-y-auto p-6 pt-4" id="generatedImagesScrollArea" style="min-height: 0;">
+            <div id="generatedImagesGrid" class="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+              <!-- Images will be injected here -->
+            </div>
+            <div id="generatedImagesLoading" class="text-center py-4 hidden">
+              <i class="fa fa-spinner fa-spin text-gray-400"></i>
+            </div>
+            <div id="generatedImagesLoadMore" class="text-center py-4 hidden">
+              <button onclick="loadMoreGeneratedImages()" class="text-blue-600 hover:text-blue-800 font-medium">
+                Load More
+              </button>
+            </div>
+          </div>
+
+          <div class="flex justify-between items-center p-6 pt-4 border-t border-gray-100">
+            <span id="generatedImagesSelectionCount" class="text-gray-600 font-medium">0 selected</span>
+            <button
+              onclick="confirmImageSelection()"
+              class="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium"
+            >
+              Confirm Selection
+            </button>
+          </div>
         </div>
       </div>
     </div>

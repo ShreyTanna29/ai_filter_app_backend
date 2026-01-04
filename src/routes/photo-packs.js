@@ -126,27 +126,17 @@ router.post("/", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
             });
             return;
         }
-        if (!prompts || !Array.isArray(prompts) || prompts.length === 0) {
-            res.status(400).json({
-                success: false,
-                message: "At least one prompt is required",
-            });
-            return;
-        }
         const pack = yield prisma_1.default.photo_Pack.create({
-            data: {
-                name,
-                description: description || null,
-                emoji: emoji || "📸",
-                photoCount: photoCount || 15,
-                isActive: true,
-                prompts: {
-                    create: prompts.map((prompt, index) => ({
-                        prompt,
-                        order: index,
-                    })),
-                },
-            },
+            data: Object.assign({ name, description: description || null, emoji: emoji || "📸", photoCount: photoCount || 15, isActive: true }, (prompts && Array.isArray(prompts) && prompts.length > 0
+                ? {
+                    prompts: {
+                        create: prompts.map((prompt, index) => ({
+                            prompt,
+                            order: index,
+                        })),
+                    },
+                }
+                : {})),
             include: {
                 prompts: {
                     orderBy: { order: "asc" },

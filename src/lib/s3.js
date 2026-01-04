@@ -25,6 +25,7 @@ exports.downloadAndUploadImage = downloadAndUploadImage;
 exports.getLatestVideosFromS3 = getLatestVideosFromS3;
 exports.getVideosForFeatureFromS3 = getVideosForFeatureFromS3;
 exports.getSoundsFromS3 = getSoundsFromS3;
+exports.listAllImagesFromS3 = listAllImagesFromS3;
 const client_s3_1 = require("@aws-sdk/client-s3");
 const lib_storage_1 = require("@aws-sdk/lib-storage");
 const sharp_1 = __importDefault(require("sharp"));
@@ -388,5 +389,45 @@ function getSoundsFromS3() {
             soundsByCategory[category].sort((a, b) => a.name.localeCompare(b.name));
         }
         return soundsByCategory;
+    });
+}
+function listAllImagesFromS3() {
+    return __awaiter(this, void 0, void 0, function* () {
+        const images = [];
+        const prefix = "images/";
+        let continuationToken;
+        do {
+            const command = new client_s3_1.ListObjectsV2Command({
+                Bucket: BUCKET,
+                Prefix: prefix,
+                ContinuationToken: continuationToken,
+            });
+            const response = yield exports.s3.send(command);
+            if (response.Contents) {
+                for (const obj of response.Contents) {
+                    if (obj.Key && obj.LastModified) {
+                        // Extract feature from key: images/{feature}/{filename}
+                        const parts = obj.Key.split("/");
+                        if (parts.length >= 3) {
+                            const feature = parts[1];
+                            // Check if it's an image file
+                            const isImage = /\.(jpg|jpeg|png|gif|webp|bmp)$/i.test(obj.Key);
+                            if (isImage) {
+                                images.push({
+                                    key: obj.Key,
+                                    url: publicUrlFor(obj.Key),
+                                    feature,
+                                    lastModified: obj.LastModified,
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+            continuationToken = response.NextContinuationToken;
+        } while (continuationToken);
+        // Sort by lastModified descending (newest first)
+        images.sort((a, b) => b.lastModified.getTime() - a.lastModified.getTime());
+        return images;
     });
 }

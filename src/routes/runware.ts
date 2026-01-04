@@ -1843,12 +1843,26 @@ router.post(
         return;
       }
 
-      // Persist generated image URL (Runware URL) for history
+      // Upload to S3
+      let finalImageURL = imageURL;
+      try {
+        finalImageURL = await downloadAndUploadImage(
+          imageURL,
+          String(feature || chosenModel || "photo")
+        );
+      } catch (uploadErr) {
+        console.error(
+          "Failed to upload generated image to S3, using original URL:",
+          uploadErr
+        );
+      }
+
+      // Persist generated image URL (S3 URL) for history
       try {
         await prisma.generated_Photo.create({
           data: {
             feature: String(feature || chosenModel || "photo"),
-            url: imageURL,
+            url: finalImageURL,
           },
         });
       } catch (e) {
@@ -1861,12 +1875,12 @@ router.post(
 
       logWithTimestamp("[GENERATE-PHOTO] Success", {
         model: chosenModel,
-        imageURL,
+        imageURL: finalImageURL,
         imageUUID,
         processingTimeMs: Date.now() - requestStartTime,
       });
 
-      res.json({ success: true, image: { url: imageURL, imageUUID } });
+      res.json({ success: true, image: { url: finalImageURL, imageUUID } });
       return;
     } catch (err: any) {
       const msg =
@@ -2921,6 +2935,101 @@ router.post(
         error: msg || "Hunyuan Image V3 generation failed",
       });
       return;
+    }
+  }
+);
+
+// GET /api/runware/generated-photos
+// Query params: limit (default 20), cursor (optional, for pagination)
+router.get(
+  "/runware/generated-photos",
+  requireApiKey,
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const limit = Math.min(
+        Math.max(parseInt(req.query.limit as string) || 20, 1),
+        50
+      );
+      const cursor = req.query.cursor
+        ? parseInt(req.query.cursor as string)
+        : undefined;
+
+      const photos = await prisma.generated_Photo.findMany({
+        take: limit,
+        skip: cursor ? 1 : 0,
+        cursor: cursor ? { id: cursor } : undefined,
+        orderBy: { createdAt: "desc" },
+        select: {
+          id: true,
+          url: true,
+          feature: true,
+          createdAt: true,
+        },
+      });
+
+      const nextCursor =
+        photos.length === limit ? photos[photos.length - 1].id : undefined;
+
+      res.json({
+        success: true,
+        photos,
+        nextCursor,
+      });
+    } catch (error) {
+      console.error("Error fetching generated photos:", error);
+      res.status(500).json({
+        success: false,
+        error: "Failed to fetch generated photos",
+      });
+    }
+  }
+);
+
+// POST /api/runware/sync-s3-images
+// Syncs images from S3 to the Generated_Photo database table
+router.post(
+  "/runware/sync-s3-images",
+  requireApiKey,
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { listAllImagesFromS3 } = await import("../lib/s3");
+      const s3Images = await listAllImagesFromS3();
+
+      let addedCount = 0;
+      let skippedCount = 0;
+
+      for (const img of s3Images) {
+        // Check if URL already exists
+        const existing = await prisma.generated_Photo.findFirst({
+          where: { url: img.url },
+        });
+
+        if (!existing) {
+          await prisma.generated_Photo.create({
+            data: {
+              feature: img.feature,
+              url: img.url,
+            },
+          });
+          addedCount++;
+        } else {
+          skippedCount++;
+        }
+      }
+
+      res.json({
+        success: true,
+        message: `Synced ${addedCount} new images from S3. ${skippedCount} already existed.`,
+        added: addedCount,
+        skipped: skippedCount,
+        total: s3Images.length,
+      });
+    } catch (error) {
+      console.error("Error syncing S3 images:", error);
+      res.status(500).json({
+        success: false,
+        error: "Failed to sync S3 images",
+      });
     }
   }
 );

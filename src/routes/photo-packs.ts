@@ -133,14 +133,6 @@ router.post("/", async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    if (!prompts || !Array.isArray(prompts) || prompts.length === 0) {
-      res.status(400).json({
-        success: false,
-        message: "At least one prompt is required",
-      });
-      return;
-    }
-
     const pack = await prisma.photo_Pack.create({
       data: {
         name,
@@ -148,12 +140,16 @@ router.post("/", async (req: Request, res: Response): Promise<void> => {
         emoji: emoji || "📸",
         photoCount: photoCount || 15,
         isActive: true,
-        prompts: {
-          create: prompts.map((prompt: string, index: number) => ({
-            prompt,
-            order: index,
-          })),
-        },
+        ...(prompts && Array.isArray(prompts) && prompts.length > 0
+          ? {
+              prompts: {
+                create: prompts.map((prompt: string, index: number) => ({
+                  prompt,
+                  order: index,
+                })),
+              },
+            }
+          : {}),
       },
       include: {
         prompts: {

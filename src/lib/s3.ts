@@ -458,3 +458,57 @@ export async function getSoundsFromS3(): Promise<{
 
   return soundsByCategory;
 }
+
+// List all images from S3 images/ prefix
+export interface S3ImageResult {
+  key: string;
+  url: string;
+  feature: string;
+  lastModified: Date;
+}
+
+export async function listAllImagesFromS3(): Promise<S3ImageResult[]> {
+  const images: S3ImageResult[] = [];
+  const prefix = "images/";
+
+  let continuationToken: string | undefined;
+
+  do {
+    const command = new ListObjectsV2Command({
+      Bucket: BUCKET,
+      Prefix: prefix,
+      ContinuationToken: continuationToken,
+    });
+
+    const response = await s3.send(command);
+
+    if (response.Contents) {
+      for (const obj of response.Contents) {
+        if (obj.Key && obj.LastModified) {
+          // Extract feature from key: images/{feature}/{filename}
+          const parts = obj.Key.split("/");
+          if (parts.length >= 3) {
+            const feature = parts[1];
+            // Check if it's an image file
+            const isImage = /\.(jpg|jpeg|png|gif|webp|bmp)$/i.test(obj.Key);
+            if (isImage) {
+              images.push({
+                key: obj.Key,
+                url: publicUrlFor(obj.Key),
+                feature,
+                lastModified: obj.LastModified,
+              });
+            }
+          }
+        }
+      }
+    }
+
+    continuationToken = response.NextContinuationToken;
+  } while (continuationToken);
+
+  // Sort by lastModified descending (newest first)
+  images.sort((a, b) => b.lastModified.getTime() - a.lastModified.getTime());
+
+  return images;
+}
