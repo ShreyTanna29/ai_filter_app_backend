@@ -10045,6 +10045,7 @@ function renderGeneratedImages() {
       const isSelected = selectedGeneratedImages.has(img.id);
       return `
       <div 
+        id="generated-img-${img.id}"
         class="relative aspect-square rounded-lg overflow-hidden cursor-pointer border-2 ${
           isSelected ? "border-blue-500" : "border-transparent"
         } group"
@@ -10052,7 +10053,7 @@ function renderGeneratedImages() {
       >
         <img src="${
           img.url
-        }" class="w-full h-full object-cover" loading="lazy" />
+        }" class="w-full h-full object-cover" loading="lazy" onerror="this.parentElement.style.display='none'" />
         <div class="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-10 transition-all flex items-center justify-center">
           ${
             isSelected
