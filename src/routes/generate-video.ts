@@ -165,14 +165,14 @@ const extractRunwareImageMeta = (obj: any): RunwareImageMeta => {
       obj.imageWidth,
       obj.meta?.width,
       obj.metadata?.width,
-      obj.dimensions?.width
+      obj.dimensions?.width,
     ),
     height: pickPositiveNumber(
       obj.height,
       obj.imageHeight,
       obj.meta?.height,
       obj.metadata?.height,
-      obj.dimensions?.height
+      obj.dimensions?.height,
     ),
   };
 };
@@ -197,11 +197,11 @@ const respondRunwareError = (
   status: number,
   fallback: string,
   rawDetails?: any,
-  extra?: Record<string, any>
+  extra?: Record<string, any>,
 ) => {
   const { message, providerError, details } = buildRunwareErrorPayload(
     fallback,
-    rawDetails
+    rawDetails,
   );
   const body: Record<string, any> = {
     success: false,
@@ -231,7 +231,7 @@ async function uploadGeneratedVideo(
   feature: string,
   variant: string,
   readable: Readable,
-  videoType: "video" | "cartoon" = "video"
+  videoType: "video" | "cartoon" = "video",
 ): Promise<{ key: string; url: string; signedUrl: string }> {
   const key = makeKey({ type: "video", feature, ext: "mp4" });
   await s3UploadStream(key, readable, "video/mp4");
@@ -255,7 +255,7 @@ async function uploadGeneratedVideo(
 // Helper: ensure image is accessible via URL for provider (uploads to S3 if not clearly public)
 async function prepareImageForProvider(
   rawUrl: string,
-  feature: string
+  feature: string,
 ): Promise<{ providerUrl: string; storedUrl: string }> {
   const isLikelyPublic =
     /^https?:\/\//i.test(rawUrl) &&
@@ -288,13 +288,13 @@ async function ensureImageDimensionsForProvider(
   sourceUrl: string,
   feature: string,
   width: number,
-  height: number
+  height: number,
 ): Promise<{ providerUrl: string; storedUrl: string }> {
   try {
     const { buffer, contentType } = await ensureImageSizeFromUrl(
       sourceUrl,
       width,
-      height
+      height,
     );
     const key = makeKey({ type: "image", feature, ext: "png" });
     await uploadBuffer(key, buffer, contentType);
@@ -323,7 +323,7 @@ async function logAppApiCall(
   model: string | undefined,
   status: "success" | "error",
   errorMessage?: string,
-  responseTime?: number
+  responseTime?: number,
 ): Promise<void> {
   if (!appId) return; // Only log for app API calls, not admin
   try {
@@ -347,7 +347,7 @@ async function logAppApiCall(
 // MUST be registered BEFORE /:feature route to prevent route matching conflicts
 const textToVideoHandler = async (
   req: Request,
-  res: Response
+  res: Response,
 ): Promise<void> => {
   const startTime = Date.now();
   const apiKeyOwner = (req as any).apiKeyOwner;
@@ -367,7 +367,7 @@ const textToVideoHandler = async (
         undefined,
         "error",
         "Prompt is required for text-to-video",
-        Date.now() - startTime
+        Date.now() - startTime,
       );
       res.status(400).json({
         success: false,
@@ -397,7 +397,7 @@ const textToVideoHandler = async (
         userModel,
         "error",
         "Unsupported model for text-to-video",
-        Date.now() - startTime
+        Date.now() - startTime,
       );
       res.status(400).json({
         success: false,
@@ -458,7 +458,7 @@ const textToVideoHandler = async (
           {
             headers: runwareHeaders,
             timeout: 180000,
-          }
+          },
         );
 
         const data = createResp.data;
@@ -496,12 +496,12 @@ const textToVideoHandler = async (
               const poll = await axios.post(
                 "https://api.runware.ai/v1",
                 pollPayload,
-                { headers: runwareHeaders, timeout: 60000 }
+                { headers: runwareHeaders, timeout: 60000 },
               );
               const pd = poll.data;
               const item = Array.isArray(pd?.data)
                 ? pd.data.find(
-                    (d: any) => d?.taskUUID === pollTaskUUID || d?.videoURL
+                    (d: any) => d?.taskUUID === pollTaskUUID || d?.videoURL,
                   ) || pd.data[0]
                 : pd?.data;
               const status = item?.status || item?.taskStatus;
@@ -526,7 +526,7 @@ const textToVideoHandler = async (
                   res,
                   502,
                   "Veo 3 text-to-video generation failed during polling",
-                  pd
+                  pd,
                 );
                 return;
               }
@@ -540,7 +540,7 @@ const textToVideoHandler = async (
                     res,
                     502,
                     "Veo 3 polling failed with repeated 400 errors",
-                    e?.response?.data || e
+                    e?.response?.data || e,
                   );
                   return;
                 }
@@ -585,7 +585,7 @@ const textToVideoHandler = async (
           uploaded = await uploadGeneratedVideo(
             "text-to-video",
             "veo3-t2v",
-            veoStream.data as Readable
+            veoStream.data as Readable,
           );
         } catch (e) {
           res.status(500).json({
@@ -603,7 +603,7 @@ const textToVideoHandler = async (
           userModel,
           "success",
           undefined,
-          Date.now() - startTime
+          Date.now() - startTime,
         );
 
         res.status(200).json({
@@ -626,7 +626,7 @@ const textToVideoHandler = async (
           userModel,
           "error",
           err?.message || "Veo 3 generation failed",
-          Date.now() - startTime
+          Date.now() - startTime,
         );
         res.status(500).json({
           success: false,
@@ -676,7 +676,7 @@ const textToVideoHandler = async (
 
         console.log(
           "[Kling 2.5 Turbo Pro Text-to-Video] Request payload:",
-          JSON.stringify([task], null, 2)
+          JSON.stringify([task], null, 2),
         );
 
         const createResp = await axios.post(
@@ -684,7 +684,7 @@ const textToVideoHandler = async (
           [task],
           {
             headers: runwareHeaders,
-          }
+          },
         );
 
         const data = createResp.data;
@@ -720,14 +720,14 @@ const textToVideoHandler = async (
 
             console.log(
               `[Kling 2.5 Turbo Pro Text-to-Video] Poll attempt ${attempt} payload:`,
-              JSON.stringify(pollPayload, null, 2)
+              JSON.stringify(pollPayload, null, 2),
             );
 
             try {
               const statusResp = await axios.post(
                 "https://api.runware.ai/v1",
                 pollPayload,
-                { headers: runwareHeaders, timeout: 60000 }
+                { headers: runwareHeaders, timeout: 60000 },
               );
               const pollData = statusResp.data;
               const pollItem = Array.isArray(pollData?.data)
@@ -740,7 +740,7 @@ const textToVideoHandler = async (
                   taskUUID: pollTaskUUID,
                   status: pollItem?.status || pollItem?.taskStatus,
                   hasVideo: !!pollItem?.videoURL,
-                }
+                },
               );
 
               videoUrl =
@@ -751,7 +751,7 @@ const textToVideoHandler = async (
 
               if (videoUrl) {
                 console.log(
-                  `[Kling 2.5 Turbo Pro Text-to-Video] Video ready after ${attempt} polls`
+                  `[Kling 2.5 Turbo Pro Text-to-Video] Video ready after ${attempt} polls`,
                 );
                 break;
               }
@@ -763,7 +763,7 @@ const textToVideoHandler = async (
               ) {
                 console.error(
                   "[Kling 2.5 Turbo Pro Text-to-Video] Task failed:",
-                  pollItem
+                  pollItem,
                 );
                 await logAppApiCall(
                   appId,
@@ -772,13 +772,13 @@ const textToVideoHandler = async (
                   userModel,
                   "error",
                   "Video generation failed",
-                  Date.now() - startTime
+                  Date.now() - startTime,
                 );
                 return respondRunwareError(
                   res,
                   500,
                   "Video generation failed",
-                  pollItem
+                  pollItem,
                 );
               }
 
@@ -791,11 +791,11 @@ const textToVideoHandler = async (
                   {
                     error: serializeError(pollErr),
                     responseData: pollErr?.response?.data,
-                  }
+                  },
                 );
                 if (consecutive400 >= 3) {
                   console.error(
-                    "[Kling 2.5 Turbo Pro Text-to-Video] Too many 400s during polling"
+                    "[Kling 2.5 Turbo Pro Text-to-Video] Too many 400s during polling",
                   );
                   await logAppApiCall(
                     appId,
@@ -804,19 +804,19 @@ const textToVideoHandler = async (
                     userModel,
                     "error",
                     "Polling failed with repeated 400 errors",
-                    Date.now() - startTime
+                    Date.now() - startTime,
                   );
                   return respondRunwareError(
                     res,
                     500,
                     "Polling failed with repeated 400 errors",
-                    pollErr?.response?.data
+                    pollErr?.response?.data,
                   );
                 }
               } else {
                 console.error(
                   "[Kling 2.5 Turbo Pro Text-to-Video] Poll error:",
-                  serializeError(pollErr)
+                  serializeError(pollErr),
                 );
               }
             }
@@ -825,7 +825,7 @@ const textToVideoHandler = async (
 
         if (!videoUrl) {
           console.error(
-            "[Kling 2.5 Turbo Pro Text-to-Video] Missing videoURL after polling"
+            "[Kling 2.5 Turbo Pro Text-to-Video] Missing videoURL after polling",
           );
           await logAppApiCall(
             appId,
@@ -834,20 +834,20 @@ const textToVideoHandler = async (
             userModel,
             "error",
             "Missing videoURL in response",
-            Date.now() - startTime
+            Date.now() - startTime,
           );
           return respondRunwareError(
             res,
             500,
-            "Missing videoURL in Runware response"
+            "Missing videoURL in Runware response",
           );
         }
 
         console.log(
           `[Kling 2.5 Turbo Pro Text-to-Video] Video URL received: ${videoUrl.slice(
             0,
-            100
-          )}`
+            100,
+          )}`,
         );
 
         const videoResponse = await axios.get(videoUrl, {
@@ -862,11 +862,11 @@ const textToVideoHandler = async (
         } = await uploadGeneratedVideo(
           "text-to-video-kling25turbo",
           "text-to-video",
-          videoResponse.data
+          videoResponse.data,
         );
 
         console.log(
-          `[Kling 2.5 Turbo Pro Text-to-Video] Video uploaded to S3: ${key}`
+          `[Kling 2.5 Turbo Pro Text-to-Video] Video uploaded to S3: ${key}`,
         );
 
         await logAppApiCall(
@@ -876,7 +876,7 @@ const textToVideoHandler = async (
           userModel,
           "success",
           undefined,
-          Date.now() - startTime
+          Date.now() - startTime,
         );
 
         res.json({
@@ -890,7 +890,7 @@ const textToVideoHandler = async (
       } catch (error: any) {
         console.error(
           "[Kling 2.5 Turbo Pro Text-to-Video] Error:",
-          serializeError(error)
+          serializeError(error),
         );
 
         const errorMessage =
@@ -903,7 +903,7 @@ const textToVideoHandler = async (
           userModel,
           "error",
           errorMessage,
-          Date.now() - startTime
+          Date.now() - startTime,
         );
 
         if (error?.response?.data) {
@@ -911,7 +911,7 @@ const textToVideoHandler = async (
             res,
             error.response.status || 500,
             "Kling 2.5 Turbo Pro text-to-video generation failed",
-            error.response.data
+            error.response.data,
           );
         }
 
@@ -945,8 +945,8 @@ const textToVideoHandler = async (
           req.body.duration !== undefined
             ? Number(req.body.duration)
             : process.env.PIXVERSE_V5_DURATION
-            ? Number(process.env.PIXVERSE_V5_DURATION)
-            : 5;
+              ? Number(process.env.PIXVERSE_V5_DURATION)
+              : 5;
 
         const resolutionMap: Record<string, { width: number; height: number }> =
           {
@@ -1012,7 +1012,7 @@ const textToVideoHandler = async (
           {
             headers: runwareHeaders,
             timeout: 180000,
-          }
+          },
         );
 
         const data = createResp.data;
@@ -1050,12 +1050,12 @@ const textToVideoHandler = async (
               const poll = await axios.post(
                 "https://api.runware.ai/v1",
                 pollPayload,
-                { headers: runwareHeaders, timeout: 60000 }
+                { headers: runwareHeaders, timeout: 60000 },
               );
               const pd = poll.data;
               const item = Array.isArray(pd?.data)
                 ? pd.data.find(
-                    (d: any) => d?.taskUUID === pollTaskUUID || d?.videoURL
+                    (d: any) => d?.taskUUID === pollTaskUUID || d?.videoURL,
                   ) || pd.data[0]
                 : pd?.data;
               const status = item?.status || item?.taskStatus;
@@ -1080,7 +1080,7 @@ const textToVideoHandler = async (
                   res,
                   502,
                   "PixVerse v5 text-to-video generation failed during polling",
-                  pd
+                  pd,
                 );
                 return;
               }
@@ -1094,7 +1094,7 @@ const textToVideoHandler = async (
                     res,
                     502,
                     "PixVerse v5 polling failed with repeated 400 errors",
-                    e?.response?.data || e
+                    e?.response?.data || e,
                   );
                   return;
                 }
@@ -1127,7 +1127,7 @@ const textToVideoHandler = async (
             timeout: 180000,
           });
           console.log(
-            "[PixVerse v5 T2V] Download successful, starting S3 upload"
+            "[PixVerse v5 T2V] Download successful, starting S3 upload",
           );
         } catch (e) {
           console.error("[PixVerse v5 T2V] Download error:", serializeError(e));
@@ -1144,13 +1144,13 @@ const textToVideoHandler = async (
           uploaded = await uploadGeneratedVideo(
             "text-to-video",
             "pixverse-v5-t2v",
-            pixStream.data as Readable
+            pixStream.data as Readable,
           );
           console.log("[PixVerse v5 T2V] S3 upload successful:", uploaded.key);
         } catch (e) {
           console.error(
             "[PixVerse v5 T2V] S3 upload error:",
-            serializeError(e)
+            serializeError(e),
           );
           res.status(500).json({
             success: false,
@@ -1167,7 +1167,7 @@ const textToVideoHandler = async (
           userModel,
           "success",
           undefined,
-          Date.now() - startTime
+          Date.now() - startTime,
         );
 
         res.status(200).json({
@@ -1184,7 +1184,7 @@ const textToVideoHandler = async (
       } catch (err: any) {
         console.error(
           "[PixVerse v5 T2V] Fatal error:",
-          err?.response?.data || err
+          err?.response?.data || err,
         );
 
         await logAppApiCall(
@@ -1194,7 +1194,7 @@ const textToVideoHandler = async (
           userModel,
           "error",
           err?.message || "PixVerse v5 generation failed",
-          Date.now() - startTime
+          Date.now() - startTime,
         );
 
         res.status(500).json({
@@ -1217,7 +1217,7 @@ const textToVideoHandler = async (
       userModel,
       "error",
       errorMessage,
-      Date.now() - startTime
+      Date.now() - startTime,
     );
 
     res.status(500).json({
@@ -1260,7 +1260,7 @@ router.post(
           undefined,
           "error",
           "Image URL is required",
-          Date.now() - startTime
+          Date.now() - startTime,
         );
         res.status(400).json({
           success: false,
@@ -1316,7 +1316,7 @@ router.post(
             undefined,
             "error",
             errorMsg,
-            Date.now() - startTime
+            Date.now() - startTime,
           );
           res.status(403).json({
             success: false,
@@ -1336,7 +1336,7 @@ router.post(
 
       // Model will always have a value now (either from request, DB, or default)
       console.log(
-        `[Model Selection] Using model: ${finalModel} for feature: ${feature}`
+        `[Model Selection] Using model: ${finalModel} for feature: ${feature}`,
       );
 
       // If model provided in request, update it in the Features table
@@ -1347,12 +1347,12 @@ router.post(
             data: { model: userModelFromRequest },
           });
           console.log(
-            `[Model Update] Updated feature "${feature}" model to: ${userModelFromRequest}`
+            `[Model Update] Updated feature "${feature}" model to: ${userModelFromRequest}`,
           );
         } catch (e) {
           console.warn(
             `[Model Update] Failed to update model for feature "${feature}":`,
-            e
+            e,
           );
         }
       }
@@ -1360,7 +1360,7 @@ router.post(
       // Step 2: Prepare image for provider (S3 private bucket migration)
       const { providerUrl: imageCloudUrl } = await prepareImageForProvider(
         imageUrl,
-        feature
+        feature,
       );
 
       // Optional: second image for transition models (Pixverse) - treat similarly
@@ -1381,8 +1381,8 @@ router.post(
         typeof promptOverride === "string" && promptOverride.trim().length > 0
           ? promptOverride
           : featureObj
-          ? featureObj.prompt
-          : "";
+            ? featureObj.prompt
+            : "";
 
       // Step 4: Provider branching (Pixverse transition, then MiniMax, else Luma)
       const rawModel = finalModel; // Use the guaranteed string value
@@ -1390,7 +1390,7 @@ router.post(
       // Support v4, v4.5 and v5 image to video variants
       const isPixverseImage2Video =
         /pixverse-v4(?:\.5)?-image-to-video|pixverse-v5-image-to-video|kling-v1-pro-image-to-video|kling-v1-standard-image-to-video|kling-1\.5-pro-image-to-video|kling-v1\.6-pro-image-to-video|kling-1\.6-standard-image-to-video|kling-v2-master-image-to-video|kling-v2\.1-standard-image-to-video|kling-v2\.1-pro-image-to-video|kling-v?2\.5-turbo-pro-image-to-video|kling-2\.5-turbo-pro|klingai:6@1/i.test(
-          rawModel
+          rawModel,
         );
       // Runware Veo 3 Fast (native audio) direct support
       const isRunwareVeo3Fast = /veo3@fast/i.test(rawModel);
@@ -1398,26 +1398,26 @@ router.post(
       const isRunwareVeo31 = /veo\s*3\.1(?!.*fast)|google:3@2/i.test(rawModel);
       const isRunwareSeedanceProFast =
         /seedance[\s-]*1\.0[\s-]*pro[\s-]*fast|seedance[\s-]*pro[\s-]*fast|bytedance:2@2/i.test(
-          rawModel
+          rawModel,
         );
       const isRunwareLTX2Pro = /ltx[\s-]*2.*pro|lightricks:2@0/i.test(rawModel);
       const isRunwareLTX2Fast = /ltx[\s-]*2.*fast|lightricks:2@1/i.test(
-        rawModel
+        rawModel,
       );
       const isRunwareViduQ2Turbo = /vidu[\s-]*q?2.*turbo|vidu:3@2/i.test(
-        rawModel
+        rawModel,
       );
       const isRunwareViduQ2Pro = /vidu[\s-]*q?2.*pro|vidu:3@1/i.test(rawModel);
       const isRunwayGen4Turbo = /runway.*gen[\s-]*4.*turbo|runway:1@1/i.test(
-        rawModel
+        rawModel,
       );
       const isRunwareSora2 = /sora[\s-]*2|openai:3@1/i.test(rawModel);
       const isRunwareSora2Pro = /sora[\s-]*2.*pro|openai:3@2/i.test(rawModel);
       const isRunwareHailuo23Fast = /hailuo[\s-]*2\.?3.*fast|minimax:4@2/i.test(
-        rawModel
+        rawModel,
       );
       const isRunwareHailuo23 = /hailuo[\s-]*2\.?3(?!.*fast)|minimax:4@1/i.test(
-        rawModel
+        rawModel,
       );
       const isRunwareControlNetXL =
         /controlnet[\s-]*xl[\s-]*video|civitai:136070@267493/i.test(rawModel);
@@ -1429,6 +1429,149 @@ router.post(
         /ray[\s-]*1\.6/i.test(rawModel) ||
         /ray[\s-]*2/i.test(rawModel) ||
         /ray.*flash/i.test(rawModel);
+      const isWan26Flash = /wan-v2-6-image-to-video-flash|wan-2\.6-flash/i.test(
+        rawModel,
+      );
+
+      if (isWan26Flash) {
+        try {
+          console.log("[Wan 2.6 Flash] Start generation", {
+            feature,
+            rawModel,
+            imageUrl: imageCloudUrl?.slice(0, 100),
+          });
+
+          const eachLabsHeaders = {
+            "X-API-Key":
+              process.env.EACHLABS_API_KEY || process.env.PIXVERSE_API_KEY, // Fallback or specific key
+            "Content-Type": "application/json",
+          };
+
+          // Prepare payload for EachLabs Wan 2.6
+          const payload = {
+            model: "wan-v2-6-image-to-video-flash",
+            version: "0.0.1",
+            input: {
+              prompt: prompt || "A cinematic video",
+              image_url: imageCloudUrl,
+              resolution: req.body.resolution || "1080p",
+              duration: req.body.duration ? String(req.body.duration) : "5",
+              negative_prompt:
+                req.body.negative_prompt ||
+                "low resolution, error, worst quality, low quality, defects",
+              enable_prompt_expansion: true,
+              enable_safety_checker: true,
+            },
+            webhook_url: "", // Optional
+          };
+
+          console.log(
+            "[Wan 2.6 Flash] Creating prediction",
+            JSON.stringify(payload, null, 2),
+          );
+
+          const createResp = await axios.post(
+            "https://api.eachlabs.ai/v1/prediction/",
+            payload,
+            { headers: eachLabsHeaders, timeout: 60000 },
+          );
+
+          const predictionId = createResp.data?.id;
+          if (!predictionId) {
+            throw new Error("No prediction ID returned from EachLabs");
+          }
+
+          console.log("[Wan 2.6 Flash] Prediction created", { predictionId });
+
+          // Poll for completion
+          let videoUrl: string | undefined;
+          const maxAttempts = 60; // 60 * 2s = 120s max wait
+          const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+          for (let i = 0; i < maxAttempts; i++) {
+            await delay(2000);
+            const pollResp = await axios.get(
+              `https://api.eachlabs.ai/v1/prediction/${predictionId}`,
+              { headers: eachLabsHeaders, timeout: 30000 },
+            );
+
+            const status = pollResp.data?.status;
+            console.log(
+              `[Wan 2.6 Flash] Poll ${i + 1}/${maxAttempts} status: ${status}`,
+            );
+
+            if (status === "succeeded") {
+              videoUrl = pollResp.data?.output;
+              break;
+            } else if (status === "failed" || status === "canceled") {
+              throw new Error(
+                `Wan 2.6 generation failed with status: ${status}. Error: ${pollResp.data?.error}`,
+              );
+            }
+          }
+
+          if (!videoUrl) {
+            throw new Error("Wan 2.6 generation timed out");
+          }
+
+          console.log("[Wan 2.6 Flash] Video ready", { videoUrl });
+
+          // Download and upload to S3
+          const videoStream = await axios.get(videoUrl, {
+            responseType: "stream",
+            timeout: 180000,
+          });
+
+          const uploaded = await uploadGeneratedVideo(
+            feature,
+            "wan-2.6-flash",
+            videoStream.data as Readable,
+            videoType,
+          );
+
+          await logAppApiCall(
+            appId,
+            feature,
+            videoType,
+            userModel,
+            "success",
+            undefined,
+            Date.now() - startTime,
+          );
+
+          res.status(200).json({
+            success: true,
+            video: {
+              url: uploaded.signedUrl,
+              signedUrl: uploaded.signedUrl,
+              key: uploaded.key,
+            },
+            s3Key: uploaded.key,
+            provider: "EachLabs (Wan 2.6)",
+          });
+          return;
+        } catch (err: any) {
+          console.error("[Wan 2.6 Flash] Error:", err?.response?.data || err);
+          const errorMessage = extractEachlabsErrorMessage(err);
+
+          await logAppApiCall(
+            appId,
+            feature,
+            videoType,
+            userModel,
+            "error",
+            errorMessage,
+            Date.now() - startTime,
+          );
+
+          res.status(500).json({
+            success: false,
+            error: "Wan 2.6 generation failed",
+            details: errorMessage,
+          });
+          return;
+        }
+      }
       if (isRunwareSeedanceProFast) {
         try {
           console.log("[Seedance] Start generation", {
@@ -1457,7 +1600,7 @@ router.post(
             const up = await axios.post(
               "https://api.runware.ai/v1",
               uploadPayload,
-              { headers: runwareHeaders, timeout: 180000 }
+              { headers: runwareHeaders, timeout: 180000 },
             );
             const d = up.data;
             const obj = Array.isArray(d?.data) ? d.data[0] : d?.data;
@@ -1466,13 +1609,13 @@ router.post(
           } catch (e: any) {
             console.error(
               "Runware Seedance imageUpload failed:",
-              e?.response?.data || e?.message || e
+              e?.response?.data || e?.message || e,
             );
             respondRunwareError(
               res,
               400,
               "Failed to upload image to Runware (Seedance)",
-              e?.response?.data || e
+              e?.response?.data || e,
             );
             return;
           }
@@ -1517,12 +1660,12 @@ router.post(
           const createResp = await axios.post(
             "https://api.runware.ai/v1",
             [task],
-            { headers: runwareHeaders, timeout: 180000 }
+            { headers: runwareHeaders, timeout: 180000 },
           );
           const createData = createResp.data;
           const ackItem = Array.isArray(createData?.data)
             ? createData.data.find(
-                (d: any) => d?.taskType === "videoInference"
+                (d: any) => d?.taskType === "videoInference",
               ) || createData.data[0]
             : createData?.data;
           let videoUrl =
@@ -1558,12 +1701,12 @@ router.post(
                 const poll = await axios.post(
                   "https://api.runware.ai/v1",
                   pollPayload,
-                  { headers: runwareHeaders, timeout: 60000 }
+                  { headers: runwareHeaders, timeout: 60000 },
                 );
                 const pd = poll.data;
                 const item = Array.isArray(pd?.data)
                   ? pd.data.find(
-                      (d: any) => d?.taskUUID === pollTaskUUID || d?.videoURL
+                      (d: any) => d?.taskUUID === pollTaskUUID || d?.videoURL,
                     ) || pd.data[0]
                   : pd?.data;
                 const status = item?.status || item?.taskStatus;
@@ -1582,7 +1725,7 @@ router.post(
                     res,
                     502,
                     "Runware Seedance generation failed during polling",
-                    pd
+                    pd,
                   );
                   return;
                 }
@@ -1608,7 +1751,7 @@ router.post(
                   ) {
                     console.log(
                       "[Seedance] Switching to created taskUUID due to repeated 400",
-                      { from: pollTaskUUID, to: taskUUIDCreated }
+                      { from: pollTaskUUID, to: taskUUIDCreated },
                     );
                     pollTaskUUID = taskUUIDCreated;
                     switchedToCreated = true;
@@ -1619,7 +1762,7 @@ router.post(
                       res,
                       502,
                       "Runware Seedance polling returned repeated 400 errors",
-                      body || e?.response?.data || e
+                      body || e?.response?.data || e,
                     );
                     return;
                   }
@@ -1631,13 +1774,13 @@ router.post(
 
           if (!videoUrl) {
             console.log(
-              "[Seedance] Timeout - no video URL returned after polling"
+              "[Seedance] Timeout - no video URL returned after polling",
             );
             respondRunwareError(
               res,
               502,
               "Runware Seedance 1.0 Pro Fast did not return a video URL (timeout or missing)",
-              createData
+              createData,
             );
             return;
           }
@@ -1666,7 +1809,7 @@ router.post(
             uploaded = await uploadGeneratedVideo(
               feature,
               "seedance-pro-fast",
-              rwStream.data as Readable
+              rwStream.data as Readable,
             );
             console.log("[Seedance] S3 upload success", { key: uploaded.key });
           } catch (e) {
@@ -1693,7 +1836,7 @@ router.post(
         } catch (err: any) {
           console.error(
             "Runware Seedance 1.0 Pro Fast error:",
-            err?.response?.data || err
+            err?.response?.data || err,
           );
           res.status(500).json({
             success: false,
@@ -1736,7 +1879,7 @@ router.post(
               {
                 headers: runwareHeaders,
                 timeout: 180000,
-              }
+              },
             );
             const d = up.data;
             const obj = Array.isArray(d?.data) ? d.data[0] : d?.data;
@@ -1745,13 +1888,13 @@ router.post(
           } catch (e: any) {
             console.error(
               "[LTX2] imageUpload failed:",
-              e?.response?.data || e?.message || e
+              e?.response?.data || e?.message || e,
             );
             respondRunwareError(
               res,
               400,
               "Failed to upload image to Runware (LTX-2)",
-              e?.response?.data || e
+              e?.response?.data || e,
             );
             return;
           }
@@ -1825,7 +1968,7 @@ router.post(
             {
               headers: runwareHeaders,
               timeout: 180000,
-            }
+            },
           );
           const data = createResp.data;
           const ackItem = Array.isArray(data?.data)
@@ -1868,12 +2011,12 @@ router.post(
                   {
                     headers: runwareHeaders,
                     timeout: 60000,
-                  }
+                  },
                 );
                 const pd = poll.data;
                 const item = Array.isArray(pd?.data)
                   ? pd.data.find(
-                      (d: any) => d?.taskUUID === pollTaskUUID || d?.videoURL
+                      (d: any) => d?.taskUUID === pollTaskUUID || d?.videoURL,
                     ) || pd.data[0]
                   : pd?.data;
                 const status = item?.status || item?.taskStatus;
@@ -1892,7 +2035,7 @@ router.post(
                     res,
                     502,
                     "LTX-2 generation failed during polling",
-                    pd
+                    pd,
                   );
                   return;
                 }
@@ -1917,7 +2060,7 @@ router.post(
                   ) {
                     console.log(
                       "[LTX2] Switching poll taskUUID to created one due to repeated 400",
-                      { from: pollTaskUUID, to: createdTaskUUID }
+                      { from: pollTaskUUID, to: createdTaskUUID },
                     );
                     pollTaskUUID = createdTaskUUID;
                     switched = true;
@@ -1928,7 +2071,7 @@ router.post(
                       res,
                       502,
                       "LTX-2 polling returned repeated 400 errors",
-                      body || e?.response?.data || e
+                      body || e?.response?.data || e,
                     );
                     return;
                   }
@@ -1944,7 +2087,7 @@ router.post(
               res,
               502,
               "LTX-2 did not return a video URL (timeout or missing)",
-              data
+              data,
             );
             return;
           }
@@ -1969,7 +2112,7 @@ router.post(
             uploaded = await uploadGeneratedVideo(
               feature,
               "ltx2-pro",
-              ltxStream.data as Readable
+              ltxStream.data as Readable,
             );
           } catch (e) {
             res.status(500).json({
@@ -2032,7 +2175,7 @@ router.post(
               {
                 headers: runwareHeaders,
                 timeout: 180000,
-              }
+              },
             );
             const d = up.data;
             const obj = Array.isArray(d?.data) ? d.data[0] : d?.data;
@@ -2041,13 +2184,13 @@ router.post(
           } catch (e: any) {
             console.error(
               "[LTX2F] imageUpload failed:",
-              e?.response?.data || e?.message || e
+              e?.response?.data || e?.message || e,
             );
             respondRunwareError(
               res,
               400,
               "Failed to upload image to Runware (LTX-2 Fast)",
-              e?.response?.data || e
+              e?.response?.data || e,
             );
             return;
           }
@@ -2117,7 +2260,7 @@ router.post(
             {
               headers: runwareHeaders,
               timeout: 180000,
-            }
+            },
           );
           const data = createResp.data;
           const ackItem = Array.isArray(data?.data)
@@ -2160,12 +2303,12 @@ router.post(
                   {
                     headers: runwareHeaders,
                     timeout: 60000,
-                  }
+                  },
                 );
                 const pd = poll.data;
                 const item = Array.isArray(pd?.data)
                   ? pd.data.find(
-                      (d: any) => d?.taskUUID === pollTaskUUID || d?.videoURL
+                      (d: any) => d?.taskUUID === pollTaskUUID || d?.videoURL,
                     ) || pd.data[0]
                   : pd?.data;
                 const status = item?.status || item?.taskStatus;
@@ -2184,7 +2327,7 @@ router.post(
                     res,
                     502,
                     "LTX-2 Fast generation failed during polling",
-                    pd
+                    pd,
                   );
                   return;
                 }
@@ -2209,7 +2352,7 @@ router.post(
                   ) {
                     console.log(
                       "[LTX2F] Switching poll taskUUID to created one due to repeated 400",
-                      { from: pollTaskUUID, to: createdTaskUUID }
+                      { from: pollTaskUUID, to: createdTaskUUID },
                     );
                     pollTaskUUID = createdTaskUUID;
                     switched = true;
@@ -2220,7 +2363,7 @@ router.post(
                       res,
                       502,
                       "LTX-2 Fast polling returned repeated 400 errors",
-                      body || e?.response?.data || e
+                      body || e?.response?.data || e,
                     );
                     return;
                   }
@@ -2232,13 +2375,13 @@ router.post(
 
           if (!videoUrl) {
             console.log(
-              "[LTX2F] Timeout - no video URL returned after polling"
+              "[LTX2F] Timeout - no video URL returned after polling",
             );
             respondRunwareError(
               res,
               502,
               "LTX-2 Fast did not return a video URL (timeout or missing)",
-              data
+              data,
             );
             return;
           }
@@ -2263,7 +2406,7 @@ router.post(
             uploaded = await uploadGeneratedVideo(
               feature,
               "ltx2-fast",
-              ltxStream.data as Readable
+              ltxStream.data as Readable,
             );
           } catch (e) {
             res.status(500).json({
@@ -2335,13 +2478,13 @@ router.post(
           } catch (e: any) {
             console.error(
               "[VIDUQ2] imageUpload first failed:",
-              e?.response?.data || e?.message || e
+              e?.response?.data || e?.message || e,
             );
             respondRunwareError(
               res,
               400,
               "Failed to upload first frame to Runware (Vidu Q2)",
-              e?.response?.data || e
+              e?.response?.data || e,
             );
             return;
           }
@@ -2360,7 +2503,7 @@ router.post(
             } catch (e: any) {
               console.warn(
                 "[VIDUQ2] imageUpload last failed (continuing as single frame)",
-                e?.response?.data || e?.message || e
+                e?.response?.data || e?.message || e,
               );
             }
           }
@@ -2407,7 +2550,7 @@ router.post(
           const createResp = await axios.post(
             "https://api.runware.ai/v1",
             [task],
-            { headers: runwareHeaders, timeout: 180000 }
+            { headers: runwareHeaders, timeout: 180000 },
           );
           const data = createResp.data;
           const ackItem = Array.isArray(data?.data)
@@ -2447,12 +2590,12 @@ router.post(
                 const poll = await axios.post(
                   "https://api.runware.ai/v1",
                   pollPayload,
-                  { headers: runwareHeaders, timeout: 60000 }
+                  { headers: runwareHeaders, timeout: 60000 },
                 );
                 const pd = poll.data;
                 const item = Array.isArray(pd?.data)
                   ? pd.data.find(
-                      (d: any) => d?.taskUUID === pollTaskUUID || d?.videoURL
+                      (d: any) => d?.taskUUID === pollTaskUUID || d?.videoURL,
                     ) || pd.data[0]
                   : pd?.data;
                 const status = item?.status || item?.taskStatus;
@@ -2471,7 +2614,7 @@ router.post(
                     res,
                     502,
                     "Vidu Q2 Turbo generation failed during polling",
-                    pd
+                    pd,
                   );
                   return;
                 }
@@ -2496,7 +2639,7 @@ router.post(
                   ) {
                     console.log(
                       "[VIDUQ2] Switching poll taskUUID to created one due to repeated 400",
-                      { from: pollTaskUUID, to: createdTaskUUID }
+                      { from: pollTaskUUID, to: createdTaskUUID },
                     );
                     pollTaskUUID = createdTaskUUID;
                     switched = true;
@@ -2507,7 +2650,7 @@ router.post(
                       res,
                       502,
                       "Vidu Q2 Turbo polling returned repeated 400 errors",
-                      body || e?.response?.data || e
+                      body || e?.response?.data || e,
                     );
                     return;
                   }
@@ -2519,13 +2662,13 @@ router.post(
 
           if (!videoUrl) {
             console.log(
-              "[VIDUQ2] Timeout - no video URL returned after polling"
+              "[VIDUQ2] Timeout - no video URL returned after polling",
             );
             respondRunwareError(
               res,
               502,
               "Vidu Q2 Turbo did not return a video URL (timeout or missing)",
-              data
+              data,
             );
             return;
           }
@@ -2550,7 +2693,7 @@ router.post(
             uploaded = await uploadGeneratedVideo(
               feature,
               "viduq2-turbo",
-              vq2Stream.data as Readable
+              vq2Stream.data as Readable,
             );
           } catch (e) {
             res.status(500).json({
@@ -2592,12 +2735,12 @@ router.post(
 
           console.log(
             "Runware API KEY: ",
-            process.env.RUNWARE_API_KEY || process.env.RUNWARE_KEY
+            process.env.RUNWARE_API_KEY || process.env.RUNWARE_KEY,
           );
 
           // Helper to upload an image url and get imageUUID
           const uploadToRunware = async (
-            img: string
+            img: string,
           ): Promise<string | undefined> => {
             try {
               const uploadPayload = [
@@ -2611,7 +2754,7 @@ router.post(
                   timeout: 180000,
                   maxBodyLength: Infinity,
                   maxContentLength: Infinity,
-                }
+                },
               );
               const d = r.data;
               const obj = Array.isArray(d?.data) ? d.data[0] : d?.data;
@@ -2619,7 +2762,7 @@ router.post(
             } catch (e) {
               console.warn(
                 "Runware imageUpload failed (Veo3.1):",
-                (e as any)?.response?.data || (e as any)?.message || e
+                (e as any)?.response?.data || (e as any)?.message || e,
               );
               return undefined;
             }
@@ -2631,7 +2774,7 @@ router.post(
             const firstUUID = await uploadToRunware(imageCloudUrl);
             if (!firstUUID) {
               throw new Error(
-                "Runware imageUpload did not return imageUUID for the first frame (Veo3.1)"
+                "Runware imageUpload did not return imageUUID for the first frame (Veo3.1)",
               );
             }
             frameImages.push({ inputImage: firstUUID, frame: "first" });
@@ -2640,7 +2783,7 @@ router.post(
             const lastUUID = await uploadToRunware(lastFrameCloudUrl);
             if (!lastUUID) {
               throw new Error(
-                "Runware imageUpload did not return imageUUID for the last frame (Veo3.1)"
+                "Runware imageUpload did not return imageUUID for the last frame (Veo3.1)",
               );
             }
             frameImages.push({ inputImage: lastUUID, frame: "last" });
@@ -2685,7 +2828,7 @@ router.post(
             {
               headers: runwareHeaders,
               timeout: 180000,
-            }
+            },
           );
           const data = runwareResp.data;
           console.log("veo 3.1 resp data: ", data);
@@ -2719,7 +2862,7 @@ router.post(
                 const poll = await axios.post(
                   "https://api.runware.ai/v1",
                   pollPayload,
-                  { headers: runwareHeaders, timeout: 60000 }
+                  { headers: runwareHeaders, timeout: 60000 },
                 );
                 console.log("poll payload:", pollPayload);
 
@@ -2728,7 +2871,7 @@ router.post(
 
                 const item = Array.isArray(pd?.data)
                   ? pd.data.find(
-                      (d: any) => d?.taskUUID === pollTaskUUID || d?.videoURL
+                      (d: any) => d?.taskUUID === pollTaskUUID || d?.videoURL,
                     ) || pd.data[0]
                   : pd?.data;
                 const status = item?.status || item?.taskStatus;
@@ -2745,7 +2888,7 @@ router.post(
                     res,
                     422,
                     "Runware Veo 3.1 returned error during polling",
-                    pd
+                    pd,
                   );
                   return;
                 }
@@ -2777,7 +2920,7 @@ router.post(
                       res,
                       422,
                       "Runware Veo 3.1 polling returned repeated 400 errors",
-                      body || e?.response?.data || e
+                      body || e?.response?.data || e,
                     );
                     return;
                   }
@@ -2792,7 +2935,7 @@ router.post(
               res,
               502,
               "Runware Veo 3.1 did not return video URL (timeout or missing)",
-              data
+              data,
             );
             return;
           }
@@ -2817,7 +2960,7 @@ router.post(
             uploaded = await uploadGeneratedVideo(
               feature,
               "veo31",
-              rwStream.data as Readable
+              rwStream.data as Readable,
             );
           } catch (e) {
             res.status(500).json({
@@ -2866,7 +3009,7 @@ router.post(
 
           // Helper upload
           const uploadToRunware = async (
-            img: string
+            img: string,
           ): Promise<string | undefined> => {
             try {
               const uploadPayload = [
@@ -2880,7 +3023,7 @@ router.post(
                   timeout: 180000,
                   maxBodyLength: Infinity,
                   maxContentLength: Infinity,
-                }
+                },
               );
               const d = r.data;
               const obj = Array.isArray(d?.data) ? d.data[0] : d?.data;
@@ -2888,7 +3031,7 @@ router.post(
             } catch (e) {
               console.warn(
                 "Runware imageUpload failed (Veo3.1 Fast):",
-                (e as any)?.response?.data || (e as any)?.message || e
+                (e as any)?.response?.data || (e as any)?.message || e,
               );
               return undefined;
             }
@@ -2899,7 +3042,7 @@ router.post(
             const firstUUID = await uploadToRunware(imageCloudUrl);
             if (!firstUUID) {
               throw new Error(
-                "Runware imageUpload did not return imageUUID for the first frame (Veo3.1 Fast)"
+                "Runware imageUpload did not return imageUUID for the first frame (Veo3.1 Fast)",
               );
             }
             frameImages.push({ inputImage: firstUUID, frame: "first" });
@@ -2908,7 +3051,7 @@ router.post(
             const lastUUID = await uploadToRunware(lastFrameCloudUrl);
             if (!lastUUID) {
               throw new Error(
-                "Runware imageUpload did not return imageUUID for the last frame (Veo3.1 Fast)"
+                "Runware imageUpload did not return imageUUID for the last frame (Veo3.1 Fast)",
               );
             }
             frameImages.push({ inputImage: lastUUID, frame: "last" });
@@ -2956,7 +3099,7 @@ router.post(
           const runwareResp = await axios.post(
             "https://api.runware.ai/v1",
             [task],
-            { headers: runwareHeaders, timeout: 180000 }
+            { headers: runwareHeaders, timeout: 180000 },
           );
           const data = runwareResp.data;
           const ackItem = Array.isArray(data?.data)
@@ -2995,12 +3138,12 @@ router.post(
                 const poll = await axios.post(
                   "https://api.runware.ai/v1",
                   pollPayload,
-                  { headers: runwareHeaders, timeout: 60000 }
+                  { headers: runwareHeaders, timeout: 60000 },
                 );
                 const pd = poll.data;
                 const item = Array.isArray(pd?.data)
                   ? pd.data.find(
-                      (d: any) => d?.taskUUID === pollTaskUUID || d?.videoURL
+                      (d: any) => d?.taskUUID === pollTaskUUID || d?.videoURL,
                     ) || pd.data[0]
                   : pd?.data;
                 const status = item?.status || item?.taskStatus;
@@ -3019,7 +3162,7 @@ router.post(
                     res,
                     422,
                     "Runware Veo 3.1 Fast returned error during polling",
-                    pd
+                    pd,
                   );
                   return;
                 }
@@ -3044,7 +3187,7 @@ router.post(
                   ) {
                     console.log(
                       "[VEO31F] Switching poll taskUUID to created one due to repeated 400",
-                      { from: pollTaskUUID, to: createdTaskUUID }
+                      { from: pollTaskUUID, to: createdTaskUUID },
                     );
                     pollTaskUUID = createdTaskUUID;
                     switched = true;
@@ -3052,13 +3195,13 @@ router.post(
                   }
                   if (consecutive400 >= 5) {
                     console.log(
-                      "[VEO31F] Aborting after repeated 400s during polling"
+                      "[VEO31F] Aborting after repeated 400s during polling",
                     );
                     respondRunwareError(
                       res,
                       422,
                       "Runware Veo 3.1 Fast polling returned repeated 400 errors",
-                      body || e?.response?.data || e
+                      body || e?.response?.data || e,
                     );
                     return;
                   }
@@ -3073,7 +3216,7 @@ router.post(
               res,
               502,
               "Runware Veo 3.1 Fast did not return video URL (timeout or missing)",
-              data
+              data,
             );
             return;
           }
@@ -3097,7 +3240,7 @@ router.post(
             uploaded = await uploadGeneratedVideo(
               feature,
               "veo31-fast",
-              rwStream.data as Readable
+              rwStream.data as Readable,
             );
             console.log("[VEO31F] S3 upload success", { key: uploaded.key });
           } catch (e) {
@@ -3121,7 +3264,7 @@ router.post(
         } catch (err: any) {
           console.error(
             "Runware Veo 3.1 Fast error:",
-            err?.response?.data || err
+            err?.response?.data || err,
           );
           res.status(500).json({
             success: false,
@@ -3149,7 +3292,7 @@ router.post(
             "Content-Type": "application/json",
           };
           const uploadToRunware = async (
-            img: string
+            img: string,
           ): Promise<string | undefined> => {
             try {
               const uploadPayload = [
@@ -3163,7 +3306,7 @@ router.post(
                   timeout: 180000,
                   maxBodyLength: Infinity,
                   maxContentLength: Infinity,
-                }
+                },
               );
               const d = r.data;
               const obj = Array.isArray(d?.data) ? d.data[0] : d?.data;
@@ -3171,7 +3314,7 @@ router.post(
             } catch (e) {
               console.warn(
                 "Runware imageUpload failed:",
-                (e as any)?.response?.data || (e as any)?.message || e
+                (e as any)?.response?.data || (e as any)?.message || e,
               );
               return undefined;
             }
@@ -3183,7 +3326,7 @@ router.post(
             const firstUUID = await uploadToRunware(imageCloudUrl);
             if (!firstUUID) {
               throw new Error(
-                "Runware imageUpload did not return imageUUID for the first frame"
+                "Runware imageUpload did not return imageUUID for the first frame",
               );
             }
             frameImages.push({ inputImage: firstUUID, frame: "first" });
@@ -3192,7 +3335,7 @@ router.post(
             const lastUUID = await uploadToRunware(lastFrameCloudUrl);
             if (!lastUUID) {
               throw new Error(
-                "Runware imageUpload did not return imageUUID for the last frame"
+                "Runware imageUpload did not return imageUUID for the last frame",
               );
             }
             frameImages.push({ inputImage: lastUUID, frame: "last" });
@@ -3239,7 +3382,7 @@ router.post(
             {
               headers: runwareHeaders,
               timeout: 180000,
-            }
+            },
           );
           const data = runwareResp.data;
           const ackItem = Array.isArray(data?.data)
@@ -3274,20 +3417,20 @@ router.post(
                 pollResp = await axios.post(
                   "https://api.runware.ai/v1",
                   pollPayload,
-                  { headers: runwareHeaders, timeout: 60000 }
+                  { headers: runwareHeaders, timeout: 60000 },
                 );
               } catch (e) {
                 // transient errors: continue polling
                 console.log(
                   "[VEO3F] Poll transient error (continuing)",
-                  (e as any)?.response?.status || (e as any)?.message
+                  (e as any)?.response?.status || (e as any)?.message,
                 );
                 continue;
               }
               const pd = pollResp.data;
               const item = Array.isArray(pd?.data)
                 ? pd.data.find(
-                    (d: any) => d?.taskUUID === taskUUID || d?.videoURL
+                    (d: any) => d?.taskUUID === taskUUID || d?.videoURL,
                   ) || pd.data[0]
                 : pd?.data;
               const status = item?.status || item?.taskStatus;
@@ -3306,7 +3449,7 @@ router.post(
                   res,
                   422,
                   "Runware Veo3@fast returned error during polling",
-                  pd
+                  pd,
                 );
                 return;
               }
@@ -3314,13 +3457,13 @@ router.post(
           }
           if (!videoUrl) {
             console.log(
-              "[VEO3F] Timeout - no video URL returned after polling"
+              "[VEO3F] Timeout - no video URL returned after polling",
             );
             respondRunwareError(
               res,
               502,
               "Runware Veo3@fast did not return video URL (timeout or missing)",
-              data
+              data,
             );
             return;
           }
@@ -3344,7 +3487,7 @@ router.post(
             uploaded = await uploadGeneratedVideo(
               feature,
               "veo3-fast",
-              rwStream.data as Readable
+              rwStream.data as Readable,
             );
             console.log("[VEO3F] S3 upload success", { key: uploaded.key });
           } catch (e) {
@@ -3406,7 +3549,7 @@ router.post(
               {
                 headers: runwareHeaders,
                 timeout: 180000,
-              }
+              },
             );
             const data = resp.data;
             const obj = Array.isArray(data?.data) ? data.data[0] : data?.data;
@@ -3422,13 +3565,13 @@ router.post(
           } catch (e: any) {
             console.error(
               "[Runway Gen4] imageUpload first failed:",
-              e?.response?.data || e?.message || e
+              e?.response?.data || e?.message || e,
             );
             respondRunwareError(
               res,
               400,
               "Failed to upload first frame to Runway Gen-4 Turbo",
-              e?.response?.data || e
+              e?.response?.data || e,
             );
             return;
           }
@@ -3450,7 +3593,7 @@ router.post(
             } catch (e: any) {
               console.warn(
                 "[Runway Gen4] imageUpload last failed (continuing with first frame only)",
-                e?.response?.data || e?.message || e
+                e?.response?.data || e?.message || e,
               );
             }
           }
@@ -3470,43 +3613,43 @@ router.post(
             req.body.width !== undefined
               ? Number(req.body.width)
               : Number(
-                  process.env.RUNWAY_TURBO_WIDTH || supportedDefaults.width
+                  process.env.RUNWAY_TURBO_WIDTH || supportedDefaults.width,
                 ),
             256,
-            1920
+            1920,
           );
           const height = clamp(
             req.body.height !== undefined
               ? Number(req.body.height)
               : Number(
-                  process.env.RUNWAY_TURBO_HEIGHT || supportedDefaults.height
+                  process.env.RUNWAY_TURBO_HEIGHT || supportedDefaults.height,
                 ),
             256,
-            1080
+            1080,
           );
           const duration = clamp(
             req.body.duration !== undefined
               ? Number(req.body.duration)
               : Number(
                   process.env.RUNWAY_TURBO_DURATION ||
-                    supportedDefaults.duration
+                    supportedDefaults.duration,
                 ),
             2,
-            10
+            10,
           );
           const fps = clamp(
             req.body.fps !== undefined
               ? Number(req.body.fps)
               : Number(process.env.RUNWAY_TURBO_FPS || supportedDefaults.fps),
             15,
-            60
+            60,
           );
           const cfgScale = clamp(
             req.body.cfgScale !== undefined
               ? Number(req.body.cfgScale)
               : Number(process.env.RUNWAY_TURBO_CFG || supportedDefaults.cfg),
             1,
-            20
+            20,
           );
           const publicFigureThreshold =
             req.body.publicFigureThreshold !== undefined
@@ -3557,7 +3700,7 @@ router.post(
             {
               headers: runwareHeaders,
               timeout: 180000,
-            }
+            },
           );
           const data = createResp.data;
           const ackItem = Array.isArray(data?.data)
@@ -3596,12 +3739,12 @@ router.post(
                 const poll = await axios.post(
                   "https://api.runware.ai/v1",
                   pollPayload,
-                  { headers: runwareHeaders, timeout: 60000 }
+                  { headers: runwareHeaders, timeout: 60000 },
                 );
                 const pd = poll.data;
                 const item = Array.isArray(pd?.data)
                   ? pd.data.find(
-                      (d: any) => d?.taskUUID === pollTaskUUID || d?.videoURL
+                      (d: any) => d?.taskUUID === pollTaskUUID || d?.videoURL,
                     ) || pd.data[0]
                   : pd?.data;
                 const status = item?.status || item?.taskStatus;
@@ -3620,7 +3763,7 @@ router.post(
                     res,
                     502,
                     "Runway Gen-4 Turbo generation failed during polling",
-                    pd
+                    pd,
                   );
                   return;
                 }
@@ -3657,7 +3800,7 @@ router.post(
                   ) {
                     console.log(
                       "[Runway Gen4] Switching poll UUID due to repeated 400",
-                      { from: pollTaskUUID, to: createdTaskUUID }
+                      { from: pollTaskUUID, to: createdTaskUUID },
                     );
                     pollTaskUUID = createdTaskUUID;
                     switched = true;
@@ -3672,7 +3815,7 @@ router.post(
                       parsedBody || body || e,
                       runwareMessage
                         ? { code: "RUNWAY_PROVIDER_ERROR" }
-                        : undefined
+                        : undefined,
                     );
                     return;
                   }
@@ -3687,7 +3830,7 @@ router.post(
               res,
               502,
               "Runway Gen-4 Turbo did not return a video URL",
-              data
+              data,
             );
             return;
           }
@@ -3712,7 +3855,7 @@ router.post(
             uploadedRunway = await uploadGeneratedVideo(
               feature,
               "runway-gen4-turbo",
-              runwayStream.data as Readable
+              runwayStream.data as Readable,
             );
           } catch (e) {
             res.status(500).json({
@@ -3736,12 +3879,12 @@ router.post(
         } catch (err: any) {
           console.error(
             "Runway Gen-4 Turbo error:",
-            err?.response?.data || err
+            err?.response?.data || err,
           );
           const runwareErrors = err?.response?.data?.errors;
           const invalidPromptError = Array.isArray(runwareErrors)
             ? runwareErrors.find(
-                (e: any) => e?.code === "invalidPositivePrompt"
+                (e: any) => e?.code === "invalidPositivePrompt",
               )
             : null;
           if (invalidPromptError) {
@@ -3783,7 +3926,7 @@ router.post(
 
           if (lastFrameCloudUrl) {
             console.warn(
-              "[Sora2] last frame provided but ignored (model supports first frame only)"
+              "[Sora2] last frame provided but ignored (model supports first frame only)",
             );
           }
 
@@ -3795,7 +3938,7 @@ router.post(
           };
 
           const uploadFrame = async (
-            imgUrl: string
+            imgUrl: string,
           ): Promise<RunwareImageMeta> => {
             const payload = [
               {
@@ -3809,7 +3952,7 @@ router.post(
               payload,
               {
                 headers: runwareHeaders,
-              }
+              },
             );
             const data = resp.data;
             const obj = Array.isArray(data?.data) ? data.data[0] : data?.data;
@@ -3835,7 +3978,7 @@ router.post(
             process.env.SORA2_ASPECT ||
             "";
           const usePortrait = /portrait|vertical|9[:x]16|720x1280/.test(
-            orientation
+            orientation,
           );
           const targetWidth = usePortrait ? 720 : 1280;
           const targetHeight = usePortrait ? 1280 : 720;
@@ -3845,7 +3988,7 @@ router.post(
               imageCloudUrl,
               feature,
               targetWidth,
-              targetHeight
+              targetHeight,
             );
 
           let firstUUID: string | undefined;
@@ -3866,13 +4009,13 @@ router.post(
           } catch (e: any) {
             console.error(
               "[Sora2] imageUpload failed:",
-              e?.response?.data || e?.message || e
+              e?.response?.data || e?.message || e,
             );
             respondRunwareError(
               res,
               400,
               "Failed to upload image to Runware (Sora 2)",
-              e?.response?.data || e
+              e?.response?.data || e,
             );
             return;
           }
@@ -3912,7 +4055,7 @@ router.post(
             [task],
             {
               headers: runwareHeaders,
-            }
+            },
           );
           const data = createResp.data;
           const ackItem = Array.isArray(data?.data)
@@ -3951,12 +4094,12 @@ router.post(
                 const poll = await axios.post(
                   "https://api.runware.ai/v1",
                   pollPayload,
-                  { headers: runwareHeaders, timeout: 60000 }
+                  { headers: runwareHeaders, timeout: 60000 },
                 );
                 const pd = poll.data;
                 const item = Array.isArray(pd?.data)
                   ? pd.data.find(
-                      (d: any) => d?.taskUUID === pollTaskUUID || d?.videoURL
+                      (d: any) => d?.taskUUID === pollTaskUUID || d?.videoURL,
                     ) || pd.data[0]
                   : pd?.data;
                 const status = item?.status || item?.taskStatus;
@@ -3975,7 +4118,7 @@ router.post(
                     res,
                     502,
                     "Sora 2 generation failed during polling",
-                    pd
+                    pd,
                   );
                   return;
                 }
@@ -4000,7 +4143,7 @@ router.post(
                   ) {
                     console.log(
                       "[Sora2] Switching poll UUID due to repeated 400",
-                      { from: pollTaskUUID, to: createdTaskUUID }
+                      { from: pollTaskUUID, to: createdTaskUUID },
                     );
                     pollTaskUUID = createdTaskUUID;
                     switched = true;
@@ -4011,7 +4154,7 @@ router.post(
                       res,
                       502,
                       "Sora 2 polling returned repeated 400 errors",
-                      body || e?.response?.data || serializeError(e)
+                      body || e?.response?.data || serializeError(e),
                     );
                     return;
                   }
@@ -4026,7 +4169,7 @@ router.post(
               res,
               502,
               "Sora 2 did not return a video URL",
-              data
+              data,
             );
             return;
           }
@@ -4051,7 +4194,7 @@ router.post(
             uploadedSora = await uploadGeneratedVideo(
               feature,
               "sora-2",
-              soraStream.data as Readable
+              soraStream.data as Readable,
             );
           } catch (e) {
             res.status(500).json({
@@ -4078,7 +4221,7 @@ router.post(
             res,
             500,
             "Sora 2 generation failed",
-            err?.response?.data || err
+            err?.response?.data || err,
           );
           return;
         }
@@ -4103,7 +4246,7 @@ router.post(
 
           if (lastFrameCloudUrl) {
             console.warn(
-              "[Sora2Pro] last frame provided but ignored (model supports first frame only)"
+              "[Sora2Pro] last frame provided but ignored (model supports first frame only)",
             );
           }
 
@@ -4115,7 +4258,7 @@ router.post(
           };
 
           const uploadFrame = async (
-            imgUrl: string
+            imgUrl: string,
           ): Promise<RunwareImageMeta> => {
             const payload = [
               {
@@ -4129,7 +4272,7 @@ router.post(
               payload,
               {
                 headers: runwareHeaders,
-              }
+              },
             );
             const data = resp.data;
             const obj = Array.isArray(data?.data) ? data.data[0] : data?.data;
@@ -4154,7 +4297,7 @@ router.post(
             const envHeight = Number(process.env.SORA2PRO_HEIGHT);
             if (envWidth && envHeight) {
               const match = combos.find(
-                (c) => c.width === envWidth && c.height === envHeight
+                (c) => c.width === envWidth && c.height === envHeight,
               );
               if (match) return match;
             }
@@ -4183,7 +4326,7 @@ router.post(
               imageCloudUrl,
               feature,
               targetWidth,
-              targetHeight
+              targetHeight,
             );
 
           let firstUUID: string | undefined;
@@ -4204,13 +4347,13 @@ router.post(
           } catch (e: any) {
             console.error(
               "[Sora2Pro] imageUpload failed:",
-              e?.response?.data || e?.message || e
+              e?.response?.data || e?.message || e,
             );
             respondRunwareError(
               res,
               400,
               "Failed to upload image to Runware (Sora 2 Pro)",
-              e?.response?.data || e
+              e?.response?.data || e,
             );
             return;
           }
@@ -4252,7 +4395,7 @@ router.post(
             {
               headers: runwareHeaders,
               timeout: 180000,
-            }
+            },
           );
           const data = createResp.data;
           const ackItem = Array.isArray(data?.data)
@@ -4291,12 +4434,12 @@ router.post(
                 const poll = await axios.post(
                   "https://api.runware.ai/v1",
                   pollPayload,
-                  { headers: runwareHeaders, timeout: 60000 }
+                  { headers: runwareHeaders, timeout: 60000 },
                 );
                 const pd = poll.data;
                 const item = Array.isArray(pd?.data)
                   ? pd.data.find(
-                      (d: any) => d?.taskUUID === pollTaskUUID || d?.videoURL
+                      (d: any) => d?.taskUUID === pollTaskUUID || d?.videoURL,
                     ) || pd.data[0]
                   : pd?.data;
                 const status = item?.status || item?.taskStatus;
@@ -4315,7 +4458,7 @@ router.post(
                     res,
                     502,
                     "Sora 2 Pro generation failed during polling",
-                    pd
+                    pd,
                   );
                   return;
                 }
@@ -4340,7 +4483,7 @@ router.post(
                   ) {
                     console.log(
                       "[Sora2Pro] Switching poll UUID due to repeated 400",
-                      { from: pollTaskUUID, to: createdTaskUUID }
+                      { from: pollTaskUUID, to: createdTaskUUID },
                     );
                     pollTaskUUID = createdTaskUUID;
                     switched = true;
@@ -4351,7 +4494,7 @@ router.post(
                       res,
                       502,
                       "Sora 2 Pro polling returned repeated 400 errors",
-                      body || e?.response?.data || e
+                      body || e?.response?.data || e,
                     );
                     return;
                   }
@@ -4366,7 +4509,7 @@ router.post(
               res,
               502,
               "Sora 2 Pro did not return a video URL",
-              data
+              data,
             );
             return;
           }
@@ -4391,7 +4534,7 @@ router.post(
             uploadedSoraPro = await uploadGeneratedVideo(
               feature,
               "sora-2-pro",
-              soraProStream.data as Readable
+              soraProStream.data as Readable,
             );
           } catch (e) {
             res.status(500).json({
@@ -4436,7 +4579,7 @@ router.post(
 
           if (lastFrameCloudUrl) {
             console.warn(
-              "[Hailuo2.3Fast] last frame provided but ignored (model uses first frame only)"
+              "[Hailuo2.3Fast] last frame provided but ignored (model uses first frame only)",
             );
           }
 
@@ -4461,7 +4604,7 @@ router.post(
               {
                 headers: runwareHeaders,
                 timeout: 180000,
-              }
+              },
             );
             const data = resp.data;
             const obj = Array.isArray(data?.data) ? data.data[0] : data?.data;
@@ -4475,13 +4618,13 @@ router.post(
           } catch (e: any) {
             console.error(
               "[Hailuo2.3Fast] imageUpload failed:",
-              e?.response?.data || e?.message || e
+              e?.response?.data || e?.message || e,
             );
             respondRunwareError(
               res,
               400,
               "Failed to upload image to Runware (Hailuo 2.3 Fast)",
-              e?.response?.data || e
+              e?.response?.data || e,
             );
             return;
           }
@@ -4500,7 +4643,7 @@ router.post(
             : 6;
           if (duration === 10) {
             console.log(
-              "[Hailuo2.3Fast] Using 10s duration – ensure input frame is 1366x768 per Runware docs"
+              "[Hailuo2.3Fast] Using 10s duration – ensure input frame is 1366x768 per Runware docs",
             );
           }
 
@@ -4542,7 +4685,7 @@ router.post(
             {
               headers: runwareHeaders,
               timeout: 180000,
-            }
+            },
           );
           const data = createResp.data;
           const ackItem = Array.isArray(data?.data)
@@ -4581,12 +4724,12 @@ router.post(
                 const poll = await axios.post(
                   "https://api.runware.ai/v1",
                   pollPayload,
-                  { headers: runwareHeaders, timeout: 60000 }
+                  { headers: runwareHeaders, timeout: 60000 },
                 );
                 const pd = poll.data;
                 const item = Array.isArray(pd?.data)
                   ? pd.data.find(
-                      (d: any) => d?.taskUUID === pollTaskUUID || d?.videoURL
+                      (d: any) => d?.taskUUID === pollTaskUUID || d?.videoURL,
                     ) || pd.data[0]
                   : pd?.data;
                 const status = item?.status || item?.taskStatus;
@@ -4608,7 +4751,7 @@ router.post(
                     res,
                     502,
                     "Hailuo 2.3 Fast generation failed during polling",
-                    pd
+                    pd,
                   );
                   return;
                 }
@@ -4633,7 +4776,7 @@ router.post(
                   ) {
                     console.log(
                       "[Hailuo2.3Fast] Switching poll UUID due to repeated 400",
-                      { from: pollTaskUUID, to: createdTaskUUID }
+                      { from: pollTaskUUID, to: createdTaskUUID },
                     );
                     pollTaskUUID = createdTaskUUID;
                     switched = true;
@@ -4644,7 +4787,7 @@ router.post(
                       res,
                       502,
                       "Hailuo 2.3 Fast polling returned repeated 400 errors",
-                      body || e?.response?.data || e
+                      body || e?.response?.data || e,
                     );
                     return;
                   }
@@ -4659,7 +4802,7 @@ router.post(
               res,
               502,
               "Hailuo 2.3 Fast did not return a video URL",
-              data
+              data,
             );
             return;
           }
@@ -4684,7 +4827,7 @@ router.post(
             uploadedFast = await uploadGeneratedVideo(
               feature,
               "hailuo-2-3-fast",
-              hailuoFastStream.data as Readable
+              hailuoFastStream.data as Readable,
             );
           } catch (e) {
             res.status(500).json({
@@ -4727,7 +4870,7 @@ router.post(
 
           if (lastFrameCloudUrl) {
             console.warn(
-              "[Hailuo2.3] last frame provided but ignored (model uses first frame only)"
+              "[Hailuo2.3] last frame provided but ignored (model uses first frame only)",
             );
           }
 
@@ -4752,7 +4895,7 @@ router.post(
               {
                 headers: runwareHeaders,
                 timeout: 180000,
-              }
+              },
             );
             const data = resp.data;
             const obj = Array.isArray(data?.data) ? data.data[0] : data?.data;
@@ -4766,13 +4909,13 @@ router.post(
           } catch (e: any) {
             console.error(
               "[Hailuo2.3] imageUpload failed:",
-              e?.response?.data || e?.message || e
+              e?.response?.data || e?.message || e,
             );
             respondRunwareError(
               res,
               400,
               "Failed to upload image to Runware (Hailuo 2.3)",
-              e?.response?.data || e
+              e?.response?.data || e,
             );
             return;
           }
@@ -4795,7 +4938,7 @@ router.post(
             : 6;
           if (duration === 10) {
             console.log(
-              "[Hailuo2.3] Using 10s duration – ensure source frame is 1366x768 per Runware docs"
+              "[Hailuo2.3] Using 10s duration – ensure source frame is 1366x768 per Runware docs",
             );
           }
 
@@ -4840,7 +4983,7 @@ router.post(
             {
               headers: runwareHeaders,
               timeout: 180000,
-            }
+            },
           );
           const data = createResp.data;
           const ackItem = Array.isArray(data?.data)
@@ -4879,12 +5022,12 @@ router.post(
                 const poll = await axios.post(
                   "https://api.runware.ai/v1",
                   pollPayload,
-                  { headers: runwareHeaders, timeout: 60000 }
+                  { headers: runwareHeaders, timeout: 60000 },
                 );
                 const pd = poll.data;
                 const item = Array.isArray(pd?.data)
                   ? pd.data.find(
-                      (d: any) => d?.taskUUID === pollTaskUUID || d?.videoURL
+                      (d: any) => d?.taskUUID === pollTaskUUID || d?.videoURL,
                     ) || pd.data[0]
                   : pd?.data;
                 const status = item?.status || item?.taskStatus;
@@ -4903,7 +5046,7 @@ router.post(
                     res,
                     502,
                     "Hailuo 2.3 generation failed during polling",
-                    pd
+                    pd,
                   );
                   return;
                 }
@@ -4928,7 +5071,7 @@ router.post(
                   ) {
                     console.log(
                       "[Hailuo2.3] Switching poll UUID due to repeated 400",
-                      { from: pollTaskUUID, to: createdTaskUUID }
+                      { from: pollTaskUUID, to: createdTaskUUID },
                     );
                     pollTaskUUID = createdTaskUUID;
                     switched = true;
@@ -4939,7 +5082,7 @@ router.post(
                       res,
                       502,
                       "Hailuo 2.3 polling returned repeated 400 errors",
-                      body || e?.response?.data || e
+                      body || e?.response?.data || e,
                     );
                     return;
                   }
@@ -4954,7 +5097,7 @@ router.post(
               res,
               502,
               "Hailuo 2.3 did not return a video URL",
-              data
+              data,
             );
             return;
           }
@@ -4979,7 +5122,7 @@ router.post(
             uploaded = await uploadGeneratedVideo(
               feature,
               "hailuo-2-3",
-              hailuoStream.data as Readable
+              hailuoStream.data as Readable,
             );
           } catch (e) {
             res.status(500).json({
@@ -5040,7 +5183,7 @@ router.post(
             const up = await axios.post(
               "https://api.runware.ai/v1",
               uploadPayload,
-              { headers: runwareHeaders, timeout: 180000 }
+              { headers: runwareHeaders, timeout: 180000 },
             );
             const d = up.data;
             const obj = Array.isArray(d?.data) ? d.data[0] : d?.data;
@@ -5051,13 +5194,13 @@ router.post(
           } catch (e: any) {
             console.error(
               "Runware ControlNet XL Video imageUpload failed:",
-              e?.response?.data || e?.message || e
+              e?.response?.data || e?.message || e,
             );
             respondRunwareError(
               res,
               400,
               "Failed to upload image to Runware (ControlNet XL Video)",
-              e?.response?.data || e
+              e?.response?.data || e,
             );
             return;
           }
@@ -5092,12 +5235,12 @@ router.post(
           const createResp = await axios.post(
             "https://api.runware.ai/v1",
             [task],
-            { headers: runwareHeaders, timeout: 180000 }
+            { headers: runwareHeaders, timeout: 180000 },
           );
           const createData = createResp.data;
           const ackItem = Array.isArray(createData?.data)
             ? createData.data.find(
-                (d: any) => d?.taskType === "videoInference"
+                (d: any) => d?.taskType === "videoInference",
               ) || createData.data[0]
             : createData?.data;
           let videoUrl =
@@ -5133,12 +5276,12 @@ router.post(
                 const poll = await axios.post(
                   "https://api.runware.ai/v1",
                   pollPayload,
-                  { headers: runwareHeaders, timeout: 60000 }
+                  { headers: runwareHeaders, timeout: 60000 },
                 );
                 const pd = poll.data;
                 const item = Array.isArray(pd?.data)
                   ? pd.data.find(
-                      (d: any) => d?.taskUUID === pollTaskUUID || d?.videoURL
+                      (d: any) => d?.taskUUID === pollTaskUUID || d?.videoURL,
                     ) || pd.data[0]
                   : pd?.data;
                 const status = item?.status || item?.taskStatus;
@@ -5160,7 +5303,7 @@ router.post(
                     res,
                     502,
                     "Runware ControlNet XL Video generation failed during polling",
-                    pd
+                    pd,
                   );
                   return;
                 }
@@ -5186,7 +5329,7 @@ router.post(
                   ) {
                     console.log(
                       "[ControlNet XL Video] Switching to created taskUUID due to repeated 400",
-                      { from: pollTaskUUID, to: taskUUIDCreated }
+                      { from: pollTaskUUID, to: taskUUIDCreated },
                     );
                     pollTaskUUID = taskUUIDCreated;
                     switchedToCreated = true;
@@ -5197,7 +5340,7 @@ router.post(
                       res,
                       502,
                       "Runware ControlNet XL Video polling returned repeated 400 errors",
-                      body || e?.response?.data || e
+                      body || e?.response?.data || e,
                     );
                     return;
                   }
@@ -5209,13 +5352,13 @@ router.post(
 
           if (!videoUrl) {
             console.log(
-              "[ControlNet XL Video] Timeout - no video URL returned after polling"
+              "[ControlNet XL Video] Timeout - no video URL returned after polling",
             );
             respondRunwareError(
               res,
               502,
               "Runware ControlNet XL Video did not return a video URL (timeout or missing)",
-              createData
+              createData,
             );
             return;
           }
@@ -5245,7 +5388,7 @@ router.post(
               feature,
               "controlnet-xl-video",
               rwStream.data as Readable,
-              videoType
+              videoType,
             );
             console.log("[ControlNet XL Video] S3 upload success", {
               key: uploaded.key,
@@ -5274,7 +5417,7 @@ router.post(
         } catch (err: any) {
           console.error(
             "Runware ControlNet XL Video error:",
-            err?.response?.data || err
+            err?.response?.data || err,
           );
           res.status(500).json({
             success: false,
@@ -5314,7 +5457,7 @@ router.post(
             const up = await axios.post(
               "https://api.runware.ai/v1",
               uploadPayload,
-              { headers: runwareHeaders, timeout: 180000 }
+              { headers: runwareHeaders, timeout: 180000 },
             );
             const d = up.data;
             const obj = Array.isArray(d?.data) ? d.data[0] : d?.data;
@@ -5323,13 +5466,13 @@ router.post(
           } catch (e: any) {
             console.error(
               "Runware Claymotion F1 imageUpload failed:",
-              e?.response?.data || e?.message || e
+              e?.response?.data || e?.message || e,
             );
             respondRunwareError(
               res,
               400,
               "Failed to upload image to Runware (Claymotion F1)",
-              e?.response?.data || e
+              e?.response?.data || e,
             );
             return;
           }
@@ -5364,12 +5507,12 @@ router.post(
           const createResp = await axios.post(
             "https://api.runware.ai/v1",
             [task],
-            { headers: runwareHeaders, timeout: 180000 }
+            { headers: runwareHeaders, timeout: 180000 },
           );
           const createData = createResp.data;
           const ackItem = Array.isArray(createData?.data)
             ? createData.data.find(
-                (d: any) => d?.taskType === "videoInference"
+                (d: any) => d?.taskType === "videoInference",
               ) || createData.data[0]
             : createData?.data;
           let videoUrl =
@@ -5405,12 +5548,12 @@ router.post(
                 const poll = await axios.post(
                   "https://api.runware.ai/v1",
                   pollPayload,
-                  { headers: runwareHeaders, timeout: 60000 }
+                  { headers: runwareHeaders, timeout: 60000 },
                 );
                 const pd = poll.data;
                 const item = Array.isArray(pd?.data)
                   ? pd.data.find(
-                      (d: any) => d?.taskUUID === pollTaskUUID || d?.videoURL
+                      (d: any) => d?.taskUUID === pollTaskUUID || d?.videoURL,
                     ) || pd.data[0]
                   : pd?.data;
                 const status = item?.status || item?.taskStatus;
@@ -5432,7 +5575,7 @@ router.post(
                     res,
                     502,
                     "Runware Claymotion F1 generation failed during polling",
-                    pd
+                    pd,
                   );
                   return;
                 }
@@ -5458,7 +5601,7 @@ router.post(
                   ) {
                     console.log(
                       "[Claymotion F1] Switching to created taskUUID due to repeated 400",
-                      { from: pollTaskUUID, to: taskUUIDCreated }
+                      { from: pollTaskUUID, to: taskUUIDCreated },
                     );
                     pollTaskUUID = taskUUIDCreated;
                     switchedToCreated = true;
@@ -5469,7 +5612,7 @@ router.post(
                       res,
                       502,
                       "Runware Claymotion F1 polling returned repeated 400 errors",
-                      body || e?.response?.data || e
+                      body || e?.response?.data || e,
                     );
                     return;
                   }
@@ -5481,13 +5624,13 @@ router.post(
 
           if (!videoUrl) {
             console.log(
-              "[Claymotion F1] Timeout - no video URL returned after polling"
+              "[Claymotion F1] Timeout - no video URL returned after polling",
             );
             respondRunwareError(
               res,
               502,
               "Runware Claymotion F1 did not return a video URL (timeout or missing)",
-              createData
+              createData,
             );
             return;
           }
@@ -5517,7 +5660,7 @@ router.post(
               feature,
               "claymotion-f1",
               rwStream.data as Readable,
-              videoType
+              videoType,
             );
             console.log("[Claymotion F1] S3 upload success", {
               key: uploaded.key,
@@ -5546,7 +5689,7 @@ router.post(
         } catch (err: any) {
           console.error(
             "Runware Claymotion F1 error:",
-            err?.response?.data || err
+            err?.response?.data || err,
           );
           res.status(500).json({
             success: false,
@@ -5566,7 +5709,7 @@ router.post(
             if (/\/image\/upload\/c_fill,w_512,h_512\//.test(url)) return url;
             return url.replace(
               /(\/image\/upload\/)(?!c_fill,w_512,h_512\/)/,
-              "$1c_fill,w_512,h_512,q_auto,f_auto/"
+              "$1c_fill,w_512,h_512,q_auto,f_auto/",
             );
           } catch {
             return url;
@@ -5575,7 +5718,7 @@ router.post(
 
         // Normalize any URL to 512x512 by resizing+reuploading to S3 when not Cloudinary
         const normalizeTo512 = async (
-          url?: string
+          url?: string,
         ): Promise<string | undefined> => {
           if (!url) return undefined;
           // If Cloudinary, prefer URL transformation for speed
@@ -5639,26 +5782,26 @@ router.post(
           model: isPixverseTransition
             ? "pixverse-v4-transition"
             : /kling-v2\.1-pro-image-to-video/i.test(rawModel)
-            ? "kling-v2-1-pro-image-to-video"
-            : /kling-v2\.1-standard-image-to-video/i.test(rawModel)
-            ? "kling-v2-1-standard-image-to-video"
-            : /kling-v2-master-image-to-video/i.test(rawModel)
-            ? "kling-v2-master-image-to-video"
-            : /kling-v1\.6-pro-image-to-video/i.test(rawModel)
-            ? "kling-v1-6-pro-image-to-video"
-            : /kling-1\.6-standard-image-to-video/i.test(rawModel)
-            ? "kling-1-6-standard-image-to-video"
-            : /kling-1\.5-pro-image-to-video/i.test(rawModel)
-            ? "kling-1-5-pro-image-to-video"
-            : /kling-v1-pro-image-to-video/i.test(rawModel)
-            ? "kling-v1-pro-image-to-video"
-            : /kling-v1-standard-image-to-video/i.test(rawModel)
-            ? "kling-v1-standard-image-to-video"
-            : /pixverse-v5-image-to-video/i.test(rawModel)
-            ? "pixverse-v5-image-to-video"
-            : /pixverse-v4\.5-image-to-video/i.test(rawModel)
-            ? "pixverse-v4-5-image-to-video"
-            : "pixverse-v4-image-to-video",
+              ? "kling-v2-1-pro-image-to-video"
+              : /kling-v2\.1-standard-image-to-video/i.test(rawModel)
+                ? "kling-v2-1-standard-image-to-video"
+                : /kling-v2-master-image-to-video/i.test(rawModel)
+                  ? "kling-v2-master-image-to-video"
+                  : /kling-v1\.6-pro-image-to-video/i.test(rawModel)
+                    ? "kling-v1-6-pro-image-to-video"
+                    : /kling-1\.6-standard-image-to-video/i.test(rawModel)
+                      ? "kling-1-6-standard-image-to-video"
+                      : /kling-1\.5-pro-image-to-video/i.test(rawModel)
+                        ? "kling-1-5-pro-image-to-video"
+                        : /kling-v1-pro-image-to-video/i.test(rawModel)
+                          ? "kling-v1-pro-image-to-video"
+                          : /kling-v1-standard-image-to-video/i.test(rawModel)
+                            ? "kling-v1-standard-image-to-video"
+                            : /pixverse-v5-image-to-video/i.test(rawModel)
+                              ? "pixverse-v5-image-to-video"
+                              : /pixverse-v4\.5-image-to-video/i.test(rawModel)
+                                ? "pixverse-v4-5-image-to-video"
+                                : "pixverse-v4-image-to-video",
           version: pixVersion,
           input: commonInput,
         };
@@ -5672,7 +5815,7 @@ router.post(
                 "X-API-Key": pixKey,
                 "Content-Type": "application/json",
               },
-            }
+            },
           );
           const prediction = createResp.data || {};
           console.log("Pixverse create response:", prediction);
@@ -5730,7 +5873,7 @@ router.post(
           try {
             const pollResp = await axios.get(
               `https://api.eachlabs.ai/v1/prediction/${predictionId}`,
-              { headers: { "X-API-Key": pixKey }, timeout: 20000 }
+              { headers: { "X-API-Key": pixKey }, timeout: 20000 },
             );
             const result = pollResp.data;
             console.log(result);
@@ -5788,7 +5931,7 @@ router.post(
           } catch (e) {
             console.warn(
               "Pixverse poll error (continuing)",
-              (e as any)?.message || e
+              (e as any)?.message || e,
             );
             continue;
           }
@@ -5823,7 +5966,7 @@ router.post(
           uploadedPix = await uploadGeneratedVideo(
             feature,
             "pixverse",
-            pixStream.data as Readable
+            pixStream.data as Readable,
           );
         } catch (e) {
           res.status(500).json({
@@ -5862,7 +6005,7 @@ router.post(
         let image2Raw: string | undefined = (req.body as any).image_url2;
         let image3Raw: string | undefined = (req.body as any).image_url3;
         const maybeUploadExtra = async (
-          raw?: string
+          raw?: string,
         ): Promise<string | undefined> => {
           if (!raw) return undefined;
           if (raw.includes("cloudinary.com")) return raw; // already hosted
@@ -5877,12 +6020,12 @@ router.post(
               formD.append("file", raw);
               formD.append(
                 "upload_preset",
-                process.env.CLOUDINARY_UPLOAD_PRESET
+                process.env.CLOUDINARY_UPLOAD_PRESET,
               );
               const upRes = await axios.post(
                 process.env.CLOUDINARY_UPLOAD_URL,
                 formD,
-                { headers: formD.getHeaders(), timeout: 60000 }
+                { headers: formD.getHeaders(), timeout: 60000 },
               );
               return upRes.data?.secure_url || upRes.data?.url || raw;
             }
@@ -5890,7 +6033,7 @@ router.post(
           } catch (e) {
             console.warn(
               "Optional reference image upload failed (ignored)",
-              serializeError(e)
+              serializeError(e),
             );
             if (isLikelyPublic) return raw;
           }
@@ -5939,7 +6082,7 @@ router.post(
                 "Content-Type": "application/json",
               },
               timeout: 45000,
-            }
+            },
           );
           const prediction = createResp.data || {};
           console.log("Vidu Q1 create response:", prediction);
@@ -5997,7 +6140,7 @@ router.post(
           try {
             const pollResp = await axios.get(
               `https://api.eachlabs.ai/v1/prediction/${predictionId}`,
-              { headers: { "X-API-Key": eachLabsKey }, timeout: 20000 }
+              { headers: { "X-API-Key": eachLabsKey }, timeout: 20000 },
             );
             const result = pollResp.data || {};
             const lower = String(result.status || "").toLowerCase();
@@ -6042,7 +6185,7 @@ router.post(
           } catch (e) {
             console.warn(
               "Vidu Q1 poll error (continuing)",
-              (e as any)?.message || e
+              (e as any)?.message || e,
             );
             continue;
           }
@@ -6078,7 +6221,7 @@ router.post(
             feature,
             "viduq1-ref",
             viduStream.data as Readable,
-            videoType
+            videoType,
           );
         } catch (e) {
           res.status(500).json({
@@ -6142,7 +6285,7 @@ router.post(
                 "Content-Type": "application/json",
               },
               timeout: 30000,
-            }
+            },
           );
           const prediction = createResp.data || {};
           console.log("Vidu 1.5 create response:", prediction);
@@ -6195,7 +6338,7 @@ router.post(
           try {
             const pollResp = await axios.get(
               `https://api.eachlabs.ai/v1/prediction/${predictionId}`,
-              { headers: { "X-API-Key": eachLabsKey }, timeout: 20000 }
+              { headers: { "X-API-Key": eachLabsKey }, timeout: 20000 },
             );
             const result = pollResp.data || {};
             const lower = String(result.status || "").toLowerCase();
@@ -6240,7 +6383,7 @@ router.post(
           } catch (e) {
             console.warn(
               "Vidu Q1 poll error (continuing)",
-              (e as any)?.message || e
+              (e as any)?.message || e,
             );
             continue;
           }
@@ -6275,7 +6418,7 @@ router.post(
           uploadedVidu15 = await uploadGeneratedVideo(
             feature,
             "vidu15",
-            viduStream.data as Readable
+            viduStream.data as Readable,
           );
         } catch (e) {
           res.status(500).json({
@@ -6350,7 +6493,7 @@ router.post(
                 "Content-Type": "application/json",
               },
               timeout: 30000,
-            }
+            },
           );
           const prediction = createResp.data || {};
           console.log("Wan 2.5 create response:", prediction);
@@ -6403,7 +6546,7 @@ router.post(
           try {
             const pollResp = await axios.get(
               `https://api.eachlabs.ai/v1/prediction/${predictionId}`,
-              { headers: { "X-API-Key": eachLabsKey }, timeout: 20000 }
+              { headers: { "X-API-Key": eachLabsKey }, timeout: 20000 },
             );
             const result = pollResp.data || {};
             const lower = String(result.status || "").toLowerCase();
@@ -6448,7 +6591,7 @@ router.post(
           } catch (e) {
             console.warn(
               "Wan 2.5 poll error (continuing)",
-              (e as any)?.message || e
+              (e as any)?.message || e,
             );
             continue;
           }
@@ -6484,7 +6627,7 @@ router.post(
             feature,
             "wan25",
             wanStream.data as Readable,
-            videoType
+            videoType,
           );
         } catch (e) {
           res.status(500).json({
@@ -6502,7 +6645,7 @@ router.post(
           "wan-2.5-image-to-video",
           "success",
           undefined,
-          Date.now() - startTime
+          Date.now() - startTime,
         );
 
         res.status(200).json({
@@ -6562,7 +6705,7 @@ router.post(
                 "Content-Type": "application/json",
               },
               timeout: 30000,
-            }
+            },
           );
           const prediction = createResp.data || {};
           console.log("Vidu Q1 I2V create response:", prediction);
@@ -6618,7 +6761,7 @@ router.post(
               {
                 headers: { "x-api-key": eachLabsKey },
                 timeout: 10000,
-              }
+              },
             );
             const lower = String(result.data.status || "").toLowerCase();
             if (lower === "success" || lower === "completed") {
@@ -6659,7 +6802,7 @@ router.post(
           } catch (e) {
             console.warn(
               "Vidu Q1 I2V poll error (continuing)",
-              (e as any)?.message || e
+              (e as any)?.message || e,
             );
             continue;
           }
@@ -6694,7 +6837,7 @@ router.post(
           uploadedViduQ1I2V = await uploadGeneratedVideo(
             feature,
             "viduq1-i2v",
-            viduStream.data as Readable
+            viduStream.data as Readable,
           );
         } catch (e) {
           res.status(500).json({
@@ -6759,7 +6902,7 @@ router.post(
                 "Content-Type": "application/json",
               },
               timeout: 30000,
-            }
+            },
           );
           const prediction = createResp.data || {};
           console.log("Vidu 2.0 create response:", prediction);
@@ -6816,7 +6959,7 @@ router.post(
               {
                 headers: { "x-api-key": eachLabsKey },
                 timeout: 20000,
-              }
+              },
             );
             const result = pollResp.data || {};
             const lower = String(result.status || "").toLowerCase();
@@ -6862,7 +7005,7 @@ router.post(
           } catch (e) {
             console.warn(
               "Vidu 2.0 poll error (continuing)",
-              (e as any)?.message || e
+              (e as any)?.message || e,
             );
             continue;
           }
@@ -6897,7 +7040,7 @@ router.post(
           uploadedVidu20 = await uploadGeneratedVideo(
             feature,
             "vidu20",
-            viduStream.data as Readable
+            viduStream.data as Readable,
           );
         } catch (e) {
           res.status(500).json({
@@ -6963,7 +7106,7 @@ router.post(
                 "Content-Type": "application/json",
               },
               timeout: 30000,
-            }
+            },
           );
           const prediction = createResp.data || {};
           console.log("Veo 2 Image to Video create response:", prediction);
@@ -7020,7 +7163,7 @@ router.post(
               {
                 headers: { "x-api-key": eachLabsKey },
                 timeout: 20000,
-              }
+              },
             );
             const result = pollResp.data || {};
             const lower = String(result.status || "").toLowerCase();
@@ -7066,7 +7209,7 @@ router.post(
           } catch (e) {
             console.warn(
               "Veo 2 Image to Video poll error (continuing)",
-              (e as any)?.message || e
+              (e as any)?.message || e,
             );
             continue;
           }
@@ -7101,7 +7244,7 @@ router.post(
           uploadedVeo2I2V = await uploadGeneratedVideo(
             feature,
             "veo2-i2v",
-            veoStream.data as Readable
+            veoStream.data as Readable,
           );
         } catch (e) {
           res.status(500).json({
@@ -7165,7 +7308,7 @@ router.post(
                 "Content-Type": "application/json",
               },
               timeout: 30000,
-            }
+            },
           );
           const prediction = createResp.data || {};
           console.log("Veo 3 Image to Video create response:", prediction);
@@ -7222,7 +7365,7 @@ router.post(
               {
                 headers: { "x-api-key": eachLabsKey },
                 timeout: 20000,
-              }
+              },
             );
             const result = pollResp.data || {};
             const lower = String(result.status || "").toLowerCase();
@@ -7268,7 +7411,7 @@ router.post(
           } catch (e) {
             console.warn(
               "Veo 3 Image to Video poll error (continuing)",
-              (e as any)?.message || e
+              (e as any)?.message || e,
             );
             continue;
           }
@@ -7303,7 +7446,7 @@ router.post(
           uploadedVeo3I2V = await uploadGeneratedVideo(
             feature,
             "veo3-i2v",
-            veoStream.data as Readable
+            veoStream.data as Readable,
           );
         } catch (e) {
           res.status(500).json({
@@ -7335,7 +7478,7 @@ router.post(
           "[Bytedance] Starting video generation for model:",
           isBytedanceOmnihuman
             ? "bytedance-omnihuman"
-            : "seedance-v1-pro-image-to-video"
+            : "seedance-v1-pro-image-to-video",
         );
         console.log("[Bytedance] Feature endpoint:", feature);
         console.log("[Bytedance] Image URL:", imageCloudUrl);
@@ -7370,7 +7513,7 @@ router.post(
             await uploadBuffer(
               audioKey,
               req.file.buffer,
-              req.file.mimetype || "audio/mpeg"
+              req.file.mimetype || "audio/mpeg",
             );
             try {
               audioUrl = await signKey(audioKey);
@@ -7420,7 +7563,7 @@ router.post(
         }
         console.log(
           "[Bytedance] Payload:",
-          JSON.stringify(bytedancePayload, null, 2)
+          JSON.stringify(bytedancePayload, null, 2),
         );
 
         let taskId: string | undefined;
@@ -7434,12 +7577,12 @@ router.post(
                 "Content-Type": "application/json",
               },
               timeout: 45000,
-            }
+            },
           );
           const data = createResp.data || {};
           console.log(
             "[Bytedance] Creation response:",
-            JSON.stringify(data, null, 2)
+            JSON.stringify(data, null, 2),
           );
 
           if (data.status !== "success") {
@@ -7448,7 +7591,7 @@ router.post(
             console.error(
               "[Bytedance] Creation failed:",
               provider_message,
-              data
+              data,
             );
             res.status(502).json({
               success: false,
@@ -7499,12 +7642,12 @@ router.post(
                   "Content-Type": "application/json",
                 },
                 timeout: 20000,
-              }
+              },
             );
             const pollData = pollResp.data || {};
             console.log(
               `[Bytedance] Poll #${i + 1}:`,
-              JSON.stringify(pollData, null, 2)
+              JSON.stringify(pollData, null, 2),
             );
 
             if (
@@ -7515,7 +7658,7 @@ router.post(
               if (bytedanceVideoUrl) {
                 console.log(
                   "[Bytedance] Generation completed. Video URL:",
-                  bytedanceVideoUrl
+                  bytedanceVideoUrl,
                 );
                 break;
               }
@@ -7527,7 +7670,7 @@ router.post(
               console.error(
                 `[Bytedance] Generation failed:`,
                 provider_message,
-                pollData
+                pollData,
               );
               res.status(500).json({
                 success: false,
@@ -7542,7 +7685,7 @@ router.post(
           } catch (e: any) {
             console.warn(
               `[Bytedance] Poll error (continuing):`,
-              e?.message || e
+              e?.message || e,
             );
             continue;
           }
@@ -7550,7 +7693,7 @@ router.post(
 
         if (!bytedanceVideoUrl) {
           console.error(
-            "[Bytedance] Generation timeout: No video URL after polling"
+            "[Bytedance] Generation timeout: No video URL after polling",
           );
           res.status(504).json({
             success: false,
@@ -7586,7 +7729,7 @@ router.post(
           uploadedBytedance = await uploadGeneratedVideo(
             feature,
             isBytedanceOmnihuman ? "bytedance-omnihuman" : "seedance-v1-pro",
-            bytedanceStream.data as Readable
+            bytedanceStream.data as Readable,
           );
         } catch (e) {
           console.error("[Bytedance] S3 upload error", serializeError(e));
@@ -7660,7 +7803,7 @@ router.post(
                 "Content-Type": "application/json",
               },
               timeout: 45000,
-            }
+            },
           );
           const data = createResp.data || {};
           console.log("Minimax response: ", data);
@@ -7715,7 +7858,7 @@ router.post(
                 headers: { Authorization: `Bearer ${miniMaxKey}` },
                 params: { task_id: taskId },
                 timeout: 20000,
-              }
+              },
             );
             const status = pollResp.data?.status;
             if (status === "Success" || status === "success") {
@@ -7723,7 +7866,7 @@ router.post(
               const fileId = pollResp.data?.file_id;
               console.log(
                 "MiniMax generation success payload:",
-                safeJson(pollResp.data)
+                safeJson(pollResp.data),
               );
               mmFileId = fileId || null;
               // If API already provides a direct downloadable URL use it, else will fetch below
@@ -7784,7 +7927,7 @@ router.post(
                 },
                 params: { file_id: mmFileId },
                 timeout: 30000,
-              }
+              },
             );
             mmVideoUrl =
               retrieveResp.data?.file?.download_url ||
@@ -7793,7 +7936,7 @@ router.post(
             if (!mmVideoUrl) {
               console.error(
                 "MiniMax retrieve missing download_url",
-                safeJson(retrieveResp.data)
+                safeJson(retrieveResp.data),
               );
               res.status(502).json({
                 success: false,
@@ -7865,7 +8008,7 @@ router.post(
           uploadedMiniMax = await uploadGeneratedVideo(
             feature,
             "minimax",
-            mmStream.data as Readable
+            mmStream.data as Readable,
           );
         } catch (e) {
           res.status(500).json({
@@ -7958,7 +8101,7 @@ router.post(
               timeout: 45000,
               httpsAgent,
               httpAgent,
-            }
+            },
           );
           break; // success
         } catch (err) {
@@ -7967,7 +8110,7 @@ router.post(
             const backoff = attempt * 2000;
             console.warn(
               `Luma create generation transient error (attempt ${attempt}/3):`,
-              e?.code || e?.message || e
+              e?.code || e?.message || e,
             );
             await new Promise((r) => setTimeout(r, backoff));
             continue;
@@ -8033,14 +8176,14 @@ router.post(
               timeout: 25000,
               httpsAgent,
               httpAgent,
-            }
+            },
           );
         } catch (err) {
           const e = err as any;
           if (isTransient(e)) {
             console.warn(
               "Luma poll transient error, continuing:",
-              e?.code || e?.message || e
+              e?.code || e?.message || e,
             );
             continue; // let loop retry after delay
           }
@@ -8131,7 +8274,7 @@ router.post(
         uploadedLuma = await uploadGeneratedVideo(
           feature,
           variant,
-          videoResponse.data as Readable
+          videoResponse.data as Readable,
         );
       } catch (e) {
         await logAppApiCall(
@@ -8141,7 +8284,7 @@ router.post(
           userModel,
           "error",
           "Failed to upload Luma video to S3",
-          Date.now() - startTime
+          Date.now() - startTime,
         );
         res.status(500).json({
           success: false,
@@ -8160,7 +8303,7 @@ router.post(
         userModel,
         "success",
         undefined,
-        Date.now() - startTime
+        Date.now() - startTime,
       );
 
       res.status(200).json({
@@ -8186,7 +8329,7 @@ router.post(
         userModel,
         "error",
         errorMessage,
-        Date.now() - startTime
+        Date.now() - startTime,
       );
 
       res.status(500).json({
@@ -8198,7 +8341,7 @@ router.post(
         details: errorMessage,
       });
     }
-  }
+  },
 );
 
 export default router;

@@ -857,7 +857,7 @@ const textToVideoHandler = (req, res) => __awaiter(void 0, void 0, void 0, funct
 router.post("/text-to-video", apiKey_1.requireApiKey, textToVideoHandler);
 // Generate video from feature endpoint
 router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _0, _1, _2, _3, _4, _5, _6, _7, _8, _9, _10, _11, _12, _13, _14, _15, _16, _17, _18, _19, _20, _21, _22, _23, _24, _25, _26, _27, _28, _29, _30, _31, _32, _33, _34, _35, _36, _37, _38, _39, _40, _41, _42, _43, _44, _45, _46, _47, _48, _49, _50, _51, _52, _53, _54, _55, _56, _57, _58, _59, _60, _61, _62, _63, _64, _65, _66, _67, _68, _69, _70, _71, _72, _73, _74, _75, _76, _77, _78, _79, _80, _81, _82, _83, _84, _85, _86, _87, _88, _89, _90, _91, _92, _93, _94, _95, _96, _97, _98, _99, _100, _101, _102, _103, _104, _105, _106, _107, _108, _109, _110, _111, _112, _113, _114, _115;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _0, _1, _2, _3, _4, _5, _6, _7, _8, _9, _10, _11, _12, _13, _14, _15, _16, _17, _18, _19, _20, _21, _22, _23, _24, _25, _26, _27, _28, _29, _30, _31, _32, _33, _34, _35, _36, _37, _38, _39, _40, _41, _42, _43, _44, _45, _46, _47, _48, _49, _50, _51, _52, _53, _54, _55, _56, _57, _58, _59, _60, _61, _62, _63, _64, _65, _66, _67, _68, _69, _70, _71, _72, _73, _74, _75, _76, _77, _78, _79, _80, _81, _82, _83, _84, _85, _86, _87, _88, _89, _90, _91, _92, _93, _94, _95, _96, _97, _98, _99, _100, _101, _102, _103, _104, _105, _106, _107, _108, _109, _110, _111, _112, _113, _114, _115, _116, _117, _118, _119, _120;
     const startTime = Date.now();
     const { feature } = req.params;
     const apiKeyOwner = req.apiKeyOwner;
@@ -987,6 +987,93 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
             /ray[\s-]*1\.6/i.test(rawModel) ||
             /ray[\s-]*2/i.test(rawModel) ||
             /ray.*flash/i.test(rawModel);
+        const isWan26Flash = /wan-v2-6-image-to-video-flash|wan-2\.6-flash/i.test(rawModel);
+        if (isWan26Flash) {
+            try {
+                console.log("[Wan 2.6 Flash] Start generation", {
+                    feature,
+                    rawModel,
+                    imageUrl: imageCloudUrl === null || imageCloudUrl === void 0 ? void 0 : imageCloudUrl.slice(0, 100),
+                });
+                const eachLabsHeaders = {
+                    "X-API-Key": process.env.EACHLABS_API_KEY || process.env.PIXVERSE_API_KEY, // Fallback or specific key
+                    "Content-Type": "application/json",
+                };
+                // Prepare payload for EachLabs Wan 2.6
+                const payload = {
+                    model: "wan-v2-6-image-to-video-flash",
+                    version: "0.0.1",
+                    input: {
+                        prompt: prompt || "A cinematic video",
+                        image_url: imageCloudUrl,
+                        resolution: req.body.resolution || "1080p",
+                        duration: req.body.duration ? String(req.body.duration) : "5",
+                        negative_prompt: req.body.negative_prompt ||
+                            "low resolution, error, worst quality, low quality, defects",
+                        enable_prompt_expansion: true,
+                        enable_safety_checker: true,
+                    },
+                    webhook_url: "", // Optional
+                };
+                console.log("[Wan 2.6 Flash] Creating prediction", JSON.stringify(payload, null, 2));
+                const createResp = yield axios_1.default.post("https://api.eachlabs.ai/v1/prediction/", payload, { headers: eachLabsHeaders, timeout: 60000 });
+                const predictionId = (_b = createResp.data) === null || _b === void 0 ? void 0 : _b.id;
+                if (!predictionId) {
+                    throw new Error("No prediction ID returned from EachLabs");
+                }
+                console.log("[Wan 2.6 Flash] Prediction created", { predictionId });
+                // Poll for completion
+                let videoUrl;
+                const maxAttempts = 60; // 60 * 2s = 120s max wait
+                const delay = (ms) => new Promise((r) => setTimeout(r, ms));
+                for (let i = 0; i < maxAttempts; i++) {
+                    yield delay(2000);
+                    const pollResp = yield axios_1.default.get(`https://api.eachlabs.ai/v1/prediction/${predictionId}`, { headers: eachLabsHeaders, timeout: 30000 });
+                    const status = (_c = pollResp.data) === null || _c === void 0 ? void 0 : _c.status;
+                    console.log(`[Wan 2.6 Flash] Poll ${i + 1}/${maxAttempts} status: ${status}`);
+                    if (status === "succeeded") {
+                        videoUrl = (_d = pollResp.data) === null || _d === void 0 ? void 0 : _d.output;
+                        break;
+                    }
+                    else if (status === "failed" || status === "canceled") {
+                        throw new Error(`Wan 2.6 generation failed with status: ${status}. Error: ${(_e = pollResp.data) === null || _e === void 0 ? void 0 : _e.error}`);
+                    }
+                }
+                if (!videoUrl) {
+                    throw new Error("Wan 2.6 generation timed out");
+                }
+                console.log("[Wan 2.6 Flash] Video ready", { videoUrl });
+                // Download and upload to S3
+                const videoStream = yield axios_1.default.get(videoUrl, {
+                    responseType: "stream",
+                    timeout: 180000,
+                });
+                const uploaded = yield uploadGeneratedVideo(feature, "wan-2.6-flash", videoStream.data, videoType);
+                yield logAppApiCall(appId, feature, videoType, userModel, "success", undefined, Date.now() - startTime);
+                res.status(200).json({
+                    success: true,
+                    video: {
+                        url: uploaded.signedUrl,
+                        signedUrl: uploaded.signedUrl,
+                        key: uploaded.key,
+                    },
+                    s3Key: uploaded.key,
+                    provider: "EachLabs (Wan 2.6)",
+                });
+                return;
+            }
+            catch (err) {
+                console.error("[Wan 2.6 Flash] Error:", ((_f = err === null || err === void 0 ? void 0 : err.response) === null || _f === void 0 ? void 0 : _f.data) || err);
+                const errorMessage = extractEachlabsErrorMessage(err);
+                yield logAppApiCall(appId, feature, videoType, userModel, "error", errorMessage, Date.now() - startTime);
+                res.status(500).json({
+                    success: false,
+                    error: "Wan 2.6 generation failed",
+                    details: errorMessage,
+                });
+                return;
+            }
+        }
         if (isRunwareSeedanceProFast) {
             try {
                 console.log("[Seedance] Start generation", {
@@ -1015,8 +1102,8 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                     console.log("[Seedance] imageUpload success", { firstUUID });
                 }
                 catch (e) {
-                    console.error("Runware Seedance imageUpload failed:", ((_b = e === null || e === void 0 ? void 0 : e.response) === null || _b === void 0 ? void 0 : _b.data) || (e === null || e === void 0 ? void 0 : e.message) || e);
-                    respondRunwareError(res, 400, "Failed to upload image to Runware (Seedance)", ((_c = e === null || e === void 0 ? void 0 : e.response) === null || _c === void 0 ? void 0 : _c.data) || e);
+                    console.error("Runware Seedance imageUpload failed:", ((_g = e === null || e === void 0 ? void 0 : e.response) === null || _g === void 0 ? void 0 : _g.data) || (e === null || e === void 0 ? void 0 : e.message) || e);
+                    respondRunwareError(res, 400, "Failed to upload image to Runware (Seedance)", ((_h = e === null || e === void 0 ? void 0 : e.response) === null || _h === void 0 ? void 0 : _h.data) || e);
                     return;
                 }
                 if (!firstUUID) {
@@ -1109,8 +1196,8 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                             consecutive400 = 0; // reset on successful poll
                         }
                         catch (e) {
-                            const statusCode = (_d = e === null || e === void 0 ? void 0 : e.response) === null || _d === void 0 ? void 0 : _d.status;
-                            const body = (_e = e === null || e === void 0 ? void 0 : e.response) === null || _e === void 0 ? void 0 : _e.data;
+                            const statusCode = (_j = e === null || e === void 0 ? void 0 : e.response) === null || _j === void 0 ? void 0 : _j.status;
+                            const body = (_k = e === null || e === void 0 ? void 0 : e.response) === null || _k === void 0 ? void 0 : _k.data;
                             console.log("[Seedance] Poll error", {
                                 attempt,
                                 statusCode,
@@ -1130,7 +1217,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                                     consecutive400 = 0;
                                 }
                                 if (consecutive400 >= 5) {
-                                    respondRunwareError(res, 502, "Runware Seedance polling returned repeated 400 errors", body || ((_f = e === null || e === void 0 ? void 0 : e.response) === null || _f === void 0 ? void 0 : _f.data) || e);
+                                    respondRunwareError(res, 502, "Runware Seedance polling returned repeated 400 errors", body || ((_l = e === null || e === void 0 ? void 0 : e.response) === null || _l === void 0 ? void 0 : _l.data) || e);
                                     return;
                                 }
                             }
@@ -1191,7 +1278,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                 return;
             }
             catch (err) {
-                console.error("Runware Seedance 1.0 Pro Fast error:", ((_g = err === null || err === void 0 ? void 0 : err.response) === null || _g === void 0 ? void 0 : _g.data) || err);
+                console.error("Runware Seedance 1.0 Pro Fast error:", ((_m = err === null || err === void 0 ? void 0 : err.response) === null || _m === void 0 ? void 0 : _m.data) || err);
                 res.status(500).json({
                     success: false,
                     error: "Seedance 1.0 Pro Fast generation failed",
@@ -1232,8 +1319,8 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                     console.log("[LTX2] imageUpload success", { firstUUID });
                 }
                 catch (e) {
-                    console.error("[LTX2] imageUpload failed:", ((_h = e === null || e === void 0 ? void 0 : e.response) === null || _h === void 0 ? void 0 : _h.data) || (e === null || e === void 0 ? void 0 : e.message) || e);
-                    respondRunwareError(res, 400, "Failed to upload image to Runware (LTX-2)", ((_j = e === null || e === void 0 ? void 0 : e.response) === null || _j === void 0 ? void 0 : _j.data) || e);
+                    console.error("[LTX2] imageUpload failed:", ((_o = e === null || e === void 0 ? void 0 : e.response) === null || _o === void 0 ? void 0 : _o.data) || (e === null || e === void 0 ? void 0 : e.message) || e);
+                    respondRunwareError(res, 400, "Failed to upload image to Runware (LTX-2)", ((_p = e === null || e === void 0 ? void 0 : e.response) === null || _p === void 0 ? void 0 : _p.data) || e);
                     return;
                 }
                 if (!firstUUID) {
@@ -1355,8 +1442,8 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                             consecutive400 = 0;
                         }
                         catch (e) {
-                            const statusCode = (_k = e === null || e === void 0 ? void 0 : e.response) === null || _k === void 0 ? void 0 : _k.status;
-                            const body = (_l = e === null || e === void 0 ? void 0 : e.response) === null || _l === void 0 ? void 0 : _l.data;
+                            const statusCode = (_q = e === null || e === void 0 ? void 0 : e.response) === null || _q === void 0 ? void 0 : _q.status;
+                            const body = (_r = e === null || e === void 0 ? void 0 : e.response) === null || _r === void 0 ? void 0 : _r.data;
                             console.log("[LTX2] Poll error", {
                                 attempt,
                                 statusCode,
@@ -1375,7 +1462,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                                     consecutive400 = 0;
                                 }
                                 if (consecutive400 >= 5) {
-                                    respondRunwareError(res, 502, "LTX-2 polling returned repeated 400 errors", body || ((_m = e === null || e === void 0 ? void 0 : e.response) === null || _m === void 0 ? void 0 : _m.data) || e);
+                                    respondRunwareError(res, 502, "LTX-2 polling returned repeated 400 errors", body || ((_s = e === null || e === void 0 ? void 0 : e.response) === null || _s === void 0 ? void 0 : _s.data) || e);
                                     return;
                                 }
                             }
@@ -1428,7 +1515,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                 return;
             }
             catch (err) {
-                console.error("[LTX2] Fatal error:", ((_o = err === null || err === void 0 ? void 0 : err.response) === null || _o === void 0 ? void 0 : _o.data) || err);
+                console.error("[LTX2] Fatal error:", ((_t = err === null || err === void 0 ? void 0 : err.response) === null || _t === void 0 ? void 0 : _t.data) || err);
                 res.status(500).json({
                     success: false,
                     error: "LTX-2 Pro generation failed",
@@ -1469,8 +1556,8 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                     console.log("[LTX2F] imageUpload success", { firstUUID });
                 }
                 catch (e) {
-                    console.error("[LTX2F] imageUpload failed:", ((_p = e === null || e === void 0 ? void 0 : e.response) === null || _p === void 0 ? void 0 : _p.data) || (e === null || e === void 0 ? void 0 : e.message) || e);
-                    respondRunwareError(res, 400, "Failed to upload image to Runware (LTX-2 Fast)", ((_q = e === null || e === void 0 ? void 0 : e.response) === null || _q === void 0 ? void 0 : _q.data) || e);
+                    console.error("[LTX2F] imageUpload failed:", ((_u = e === null || e === void 0 ? void 0 : e.response) === null || _u === void 0 ? void 0 : _u.data) || (e === null || e === void 0 ? void 0 : e.message) || e);
+                    respondRunwareError(res, 400, "Failed to upload image to Runware (LTX-2 Fast)", ((_v = e === null || e === void 0 ? void 0 : e.response) === null || _v === void 0 ? void 0 : _v.data) || e);
                     return;
                 }
                 if (!firstUUID) {
@@ -1588,8 +1675,8 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                             consecutive400 = 0;
                         }
                         catch (e) {
-                            const statusCode = (_r = e === null || e === void 0 ? void 0 : e.response) === null || _r === void 0 ? void 0 : _r.status;
-                            const body = (_s = e === null || e === void 0 ? void 0 : e.response) === null || _s === void 0 ? void 0 : _s.data;
+                            const statusCode = (_w = e === null || e === void 0 ? void 0 : e.response) === null || _w === void 0 ? void 0 : _w.status;
+                            const body = (_x = e === null || e === void 0 ? void 0 : e.response) === null || _x === void 0 ? void 0 : _x.data;
                             console.log("[LTX2F] Poll error", {
                                 attempt,
                                 statusCode,
@@ -1608,7 +1695,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                                     consecutive400 = 0;
                                 }
                                 if (consecutive400 >= 5) {
-                                    respondRunwareError(res, 502, "LTX-2 Fast polling returned repeated 400 errors", body || ((_t = e === null || e === void 0 ? void 0 : e.response) === null || _t === void 0 ? void 0 : _t.data) || e);
+                                    respondRunwareError(res, 502, "LTX-2 Fast polling returned repeated 400 errors", body || ((_y = e === null || e === void 0 ? void 0 : e.response) === null || _y === void 0 ? void 0 : _y.data) || e);
                                     return;
                                 }
                             }
@@ -1661,7 +1748,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                 return;
             }
             catch (err) {
-                console.error("[LTX2F] Fatal error:", ((_u = err === null || err === void 0 ? void 0 : err.response) === null || _u === void 0 ? void 0 : _u.data) || err);
+                console.error("[LTX2F] Fatal error:", ((_z = err === null || err === void 0 ? void 0 : err.response) === null || _z === void 0 ? void 0 : _z.data) || err);
                 res.status(500).json({
                     success: false,
                     error: "LTX-2 Fast generation failed",
@@ -1706,8 +1793,8 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                     console.log("[VIDUQ2] imageUpload first success", { firstUUID });
                 }
                 catch (e) {
-                    console.error("[VIDUQ2] imageUpload first failed:", ((_v = e === null || e === void 0 ? void 0 : e.response) === null || _v === void 0 ? void 0 : _v.data) || (e === null || e === void 0 ? void 0 : e.message) || e);
-                    respondRunwareError(res, 400, "Failed to upload first frame to Runware (Vidu Q2)", ((_w = e === null || e === void 0 ? void 0 : e.response) === null || _w === void 0 ? void 0 : _w.data) || e);
+                    console.error("[VIDUQ2] imageUpload first failed:", ((_0 = e === null || e === void 0 ? void 0 : e.response) === null || _0 === void 0 ? void 0 : _0.data) || (e === null || e === void 0 ? void 0 : e.message) || e);
+                    respondRunwareError(res, 400, "Failed to upload first frame to Runware (Vidu Q2)", ((_1 = e === null || e === void 0 ? void 0 : e.response) === null || _1 === void 0 ? void 0 : _1.data) || e);
                     return;
                 }
                 if (!firstUUID) {
@@ -1724,7 +1811,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                         console.log("[VIDUQ2] imageUpload last success", { lastUUID });
                     }
                     catch (e) {
-                        console.warn("[VIDUQ2] imageUpload last failed (continuing as single frame)", ((_x = e === null || e === void 0 ? void 0 : e.response) === null || _x === void 0 ? void 0 : _x.data) || (e === null || e === void 0 ? void 0 : e.message) || e);
+                        console.warn("[VIDUQ2] imageUpload last failed (continuing as single frame)", ((_2 = e === null || e === void 0 ? void 0 : e.response) === null || _2 === void 0 ? void 0 : _2.data) || (e === null || e === void 0 ? void 0 : e.message) || e);
                     }
                 }
                 // Model-specific params - optional from request body, fallback to env
@@ -1818,8 +1905,8 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                             consecutive400 = 0;
                         }
                         catch (e) {
-                            const statusCode = (_y = e === null || e === void 0 ? void 0 : e.response) === null || _y === void 0 ? void 0 : _y.status;
-                            const body = (_z = e === null || e === void 0 ? void 0 : e.response) === null || _z === void 0 ? void 0 : _z.data;
+                            const statusCode = (_3 = e === null || e === void 0 ? void 0 : e.response) === null || _3 === void 0 ? void 0 : _3.status;
+                            const body = (_4 = e === null || e === void 0 ? void 0 : e.response) === null || _4 === void 0 ? void 0 : _4.data;
                             console.log("[VIDUQ2] Poll error", {
                                 attempt,
                                 statusCode,
@@ -1838,7 +1925,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                                     consecutive400 = 0;
                                 }
                                 if (consecutive400 >= 5) {
-                                    respondRunwareError(res, 502, "Vidu Q2 Turbo polling returned repeated 400 errors", body || ((_0 = e === null || e === void 0 ? void 0 : e.response) === null || _0 === void 0 ? void 0 : _0.data) || e);
+                                    respondRunwareError(res, 502, "Vidu Q2 Turbo polling returned repeated 400 errors", body || ((_5 = e === null || e === void 0 ? void 0 : e.response) === null || _5 === void 0 ? void 0 : _5.data) || e);
                                     return;
                                 }
                             }
@@ -1891,7 +1978,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                 return;
             }
             catch (err) {
-                console.error("[VIDUQ2] Fatal error:", ((_1 = err === null || err === void 0 ? void 0 : err.response) === null || _1 === void 0 ? void 0 : _1.data) || err);
+                console.error("[VIDUQ2] Fatal error:", ((_6 = err === null || err === void 0 ? void 0 : err.response) === null || _6 === void 0 ? void 0 : _6.data) || err);
                 res.status(500).json({
                     success: false,
                     error: "Vidu Q2 Turbo generation failed",
@@ -2027,8 +2114,8 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                             consecutive400 = 0;
                         }
                         catch (e) {
-                            const statusCode = (_2 = e === null || e === void 0 ? void 0 : e.response) === null || _2 === void 0 ? void 0 : _2.status;
-                            const body = (_3 = e === null || e === void 0 ? void 0 : e.response) === null || _3 === void 0 ? void 0 : _3.data;
+                            const statusCode = (_7 = e === null || e === void 0 ? void 0 : e.response) === null || _7 === void 0 ? void 0 : _7.status;
+                            const body = (_8 = e === null || e === void 0 ? void 0 : e.response) === null || _8 === void 0 ? void 0 : _8.data;
                             console.log("Veo 3.1 poll error", {
                                 attempt,
                                 statusCode,
@@ -2046,7 +2133,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                                     consecutive400 = 0;
                                 }
                                 if (consecutive400 >= 5) {
-                                    respondRunwareError(res, 422, "Runware Veo 3.1 polling returned repeated 400 errors", body || ((_4 = e === null || e === void 0 ? void 0 : e.response) === null || _4 === void 0 ? void 0 : _4.data) || e);
+                                    respondRunwareError(res, 422, "Runware Veo 3.1 polling returned repeated 400 errors", body || ((_9 = e === null || e === void 0 ? void 0 : e.response) === null || _9 === void 0 ? void 0 : _9.data) || e);
                                     return;
                                 }
                             }
@@ -2098,7 +2185,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                 return;
             }
             catch (err) {
-                console.error("Runware Veo 3.1 error:", ((_5 = err === null || err === void 0 ? void 0 : err.response) === null || _5 === void 0 ? void 0 : _5.data) || err);
+                console.error("Runware Veo 3.1 error:", ((_10 = err === null || err === void 0 ? void 0 : err.response) === null || _10 === void 0 ? void 0 : _10.data) || err);
                 res.status(500).json({
                     success: false,
                     error: "Runware Veo 3.1 generation failed",
@@ -2247,8 +2334,8 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                             consecutive400 = 0;
                         }
                         catch (e) {
-                            const statusCode = (_6 = e === null || e === void 0 ? void 0 : e.response) === null || _6 === void 0 ? void 0 : _6.status;
-                            const body = (_7 = e === null || e === void 0 ? void 0 : e.response) === null || _7 === void 0 ? void 0 : _7.data;
+                            const statusCode = (_11 = e === null || e === void 0 ? void 0 : e.response) === null || _11 === void 0 ? void 0 : _11.status;
+                            const body = (_12 = e === null || e === void 0 ? void 0 : e.response) === null || _12 === void 0 ? void 0 : _12.data;
                             console.log("[VEO31F] Poll error", {
                                 attempt,
                                 statusCode,
@@ -2268,7 +2355,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                                 }
                                 if (consecutive400 >= 5) {
                                     console.log("[VEO31F] Aborting after repeated 400s during polling");
-                                    respondRunwareError(res, 422, "Runware Veo 3.1 Fast polling returned repeated 400 errors", body || ((_8 = e === null || e === void 0 ? void 0 : e.response) === null || _8 === void 0 ? void 0 : _8.data) || e);
+                                    respondRunwareError(res, 422, "Runware Veo 3.1 Fast polling returned repeated 400 errors", body || ((_13 = e === null || e === void 0 ? void 0 : e.response) === null || _13 === void 0 ? void 0 : _13.data) || e);
                                     return;
                                 }
                             }
@@ -2320,7 +2407,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                 return;
             }
             catch (err) {
-                console.error("Runware Veo 3.1 Fast error:", ((_9 = err === null || err === void 0 ? void 0 : err.response) === null || _9 === void 0 ? void 0 : _9.data) || err);
+                console.error("Runware Veo 3.1 Fast error:", ((_14 = err === null || err === void 0 ? void 0 : err.response) === null || _14 === void 0 ? void 0 : _14.data) || err);
                 res.status(500).json({
                     success: false,
                     error: "Runware Veo 3.1 Fast generation failed",
@@ -2445,7 +2532,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                         }
                         catch (e) {
                             // transient errors: continue polling
-                            console.log("[VEO3F] Poll transient error (continuing)", ((_10 = e === null || e === void 0 ? void 0 : e.response) === null || _10 === void 0 ? void 0 : _10.status) || (e === null || e === void 0 ? void 0 : e.message));
+                            console.log("[VEO3F] Poll transient error (continuing)", ((_15 = e === null || e === void 0 ? void 0 : e.response) === null || _15 === void 0 ? void 0 : _15.status) || (e === null || e === void 0 ? void 0 : e.message));
                             continue;
                         }
                         const pd = pollResp.data;
@@ -2516,7 +2603,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                 return;
             }
             catch (err) {
-                console.error("Runware Veo3@fast error:", ((_11 = err === null || err === void 0 ? void 0 : err.response) === null || _11 === void 0 ? void 0 : _11.data) || err);
+                console.error("Runware Veo3@fast error:", ((_16 = err === null || err === void 0 ? void 0 : err.response) === null || _16 === void 0 ? void 0 : _16.data) || err);
                 res.status(500).json({
                     success: false,
                     error: "Runware Veo3@fast generation failed",
@@ -2561,8 +2648,8 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                     });
                 }
                 catch (e) {
-                    console.error("[Runway Gen4] imageUpload first failed:", ((_12 = e === null || e === void 0 ? void 0 : e.response) === null || _12 === void 0 ? void 0 : _12.data) || (e === null || e === void 0 ? void 0 : e.message) || e);
-                    respondRunwareError(res, 400, "Failed to upload first frame to Runway Gen-4 Turbo", ((_13 = e === null || e === void 0 ? void 0 : e.response) === null || _13 === void 0 ? void 0 : _13.data) || e);
+                    console.error("[Runway Gen4] imageUpload first failed:", ((_17 = e === null || e === void 0 ? void 0 : e.response) === null || _17 === void 0 ? void 0 : _17.data) || (e === null || e === void 0 ? void 0 : e.message) || e);
+                    respondRunwareError(res, 400, "Failed to upload first frame to Runway Gen-4 Turbo", ((_18 = e === null || e === void 0 ? void 0 : e.response) === null || _18 === void 0 ? void 0 : _18.data) || e);
                     return;
                 }
                 if (!firstUUID) {
@@ -2581,7 +2668,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                         });
                     }
                     catch (e) {
-                        console.warn("[Runway Gen4] imageUpload last failed (continuing with first frame only)", ((_14 = e === null || e === void 0 ? void 0 : e.response) === null || _14 === void 0 ? void 0 : _14.data) || (e === null || e === void 0 ? void 0 : e.message) || e);
+                        console.warn("[Runway Gen4] imageUpload last failed (continuing with first frame only)", ((_19 = e === null || e === void 0 ? void 0 : e.response) === null || _19 === void 0 ? void 0 : _19.data) || (e === null || e === void 0 ? void 0 : e.message) || e);
                     }
                 }
                 const clamp = (val, min, max) => Math.max(min, Math.min(max, val));
@@ -2707,20 +2794,20 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                             consecutive400 = 0;
                         }
                         catch (e) {
-                            const statusCode = (_15 = e === null || e === void 0 ? void 0 : e.response) === null || _15 === void 0 ? void 0 : _15.status;
-                            const body = (_16 = e === null || e === void 0 ? void 0 : e.response) === null || _16 === void 0 ? void 0 : _16.data;
+                            const statusCode = (_20 = e === null || e === void 0 ? void 0 : e.response) === null || _20 === void 0 ? void 0 : _20.status;
+                            const body = (_21 = e === null || e === void 0 ? void 0 : e.response) === null || _21 === void 0 ? void 0 : _21.data;
                             let parsedBody = body;
                             if (typeof body === "string") {
                                 try {
                                     parsedBody = JSON.parse(body);
                                 }
-                                catch (_116) {
+                                catch (_121) {
                                     parsedBody = undefined;
                                 }
                             }
                             const runwareMessage = Array.isArray(parsedBody === null || parsedBody === void 0 ? void 0 : parsedBody.errors)
-                                ? ((_17 = parsedBody.errors[0]) === null || _17 === void 0 ? void 0 : _17.message) ||
-                                    ((_18 = parsedBody.errors[0]) === null || _18 === void 0 ? void 0 : _18.responseContent)
+                                ? ((_22 = parsedBody.errors[0]) === null || _22 === void 0 ? void 0 : _22.message) ||
+                                    ((_23 = parsedBody.errors[0]) === null || _23 === void 0 ? void 0 : _23.responseContent)
                                 : undefined;
                             console.log("[Runway Gen4] Poll error", {
                                 attempt,
@@ -2794,8 +2881,8 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                 return;
             }
             catch (err) {
-                console.error("Runway Gen-4 Turbo error:", ((_19 = err === null || err === void 0 ? void 0 : err.response) === null || _19 === void 0 ? void 0 : _19.data) || err);
-                const runwareErrors = (_21 = (_20 = err === null || err === void 0 ? void 0 : err.response) === null || _20 === void 0 ? void 0 : _20.data) === null || _21 === void 0 ? void 0 : _21.errors;
+                console.error("Runway Gen-4 Turbo error:", ((_24 = err === null || err === void 0 ? void 0 : err.response) === null || _24 === void 0 ? void 0 : _24.data) || err);
+                const runwareErrors = (_26 = (_25 = err === null || err === void 0 ? void 0 : err.response) === null || _25 === void 0 ? void 0 : _25.data) === null || _26 === void 0 ? void 0 : _26.errors;
                 const invalidPromptError = Array.isArray(runwareErrors)
                     ? runwareErrors.find((e) => (e === null || e === void 0 ? void 0 : e.code) === "invalidPositivePrompt")
                     : null;
@@ -2892,8 +2979,8 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                     });
                 }
                 catch (e) {
-                    console.error("[Sora2] imageUpload failed:", ((_22 = e === null || e === void 0 ? void 0 : e.response) === null || _22 === void 0 ? void 0 : _22.data) || (e === null || e === void 0 ? void 0 : e.message) || e);
-                    respondRunwareError(res, 400, "Failed to upload image to Runware (Sora 2)", ((_23 = e === null || e === void 0 ? void 0 : e.response) === null || _23 === void 0 ? void 0 : _23.data) || e);
+                    console.error("[Sora2] imageUpload failed:", ((_27 = e === null || e === void 0 ? void 0 : e.response) === null || _27 === void 0 ? void 0 : _27.data) || (e === null || e === void 0 ? void 0 : e.message) || e);
+                    respondRunwareError(res, 400, "Failed to upload image to Runware (Sora 2)", ((_28 = e === null || e === void 0 ? void 0 : e.response) === null || _28 === void 0 ? void 0 : _28.data) || e);
                     return;
                 }
                 if (!firstUUID) {
@@ -2983,8 +3070,8 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                             consecutive400 = 0;
                         }
                         catch (e) {
-                            const statusCode = (_24 = e === null || e === void 0 ? void 0 : e.response) === null || _24 === void 0 ? void 0 : _24.status;
-                            const body = (_25 = e === null || e === void 0 ? void 0 : e.response) === null || _25 === void 0 ? void 0 : _25.data;
+                            const statusCode = (_29 = e === null || e === void 0 ? void 0 : e.response) === null || _29 === void 0 ? void 0 : _29.status;
+                            const body = (_30 = e === null || e === void 0 ? void 0 : e.response) === null || _30 === void 0 ? void 0 : _30.data;
                             console.log("[Sora2] Poll error", {
                                 attempt,
                                 statusCode,
@@ -3003,7 +3090,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                                     consecutive400 = 0;
                                 }
                                 if (consecutive400 >= 5) {
-                                    respondRunwareError(res, 502, "Sora 2 polling returned repeated 400 errors", body || ((_26 = e === null || e === void 0 ? void 0 : e.response) === null || _26 === void 0 ? void 0 : _26.data) || serializeError(e));
+                                    respondRunwareError(res, 502, "Sora 2 polling returned repeated 400 errors", body || ((_31 = e === null || e === void 0 ? void 0 : e.response) === null || _31 === void 0 ? void 0 : _31.data) || serializeError(e));
                                     return;
                                 }
                             }
@@ -3054,8 +3141,8 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                 return;
             }
             catch (err) {
-                console.error("Sora 2 error:", ((_27 = err === null || err === void 0 ? void 0 : err.response) === null || _27 === void 0 ? void 0 : _27.data) || err);
-                respondRunwareError(res, 500, "Sora 2 generation failed", ((_28 = err === null || err === void 0 ? void 0 : err.response) === null || _28 === void 0 ? void 0 : _28.data) || err);
+                console.error("Sora 2 error:", ((_32 = err === null || err === void 0 ? void 0 : err.response) === null || _32 === void 0 ? void 0 : _32.data) || err);
+                respondRunwareError(res, 500, "Sora 2 generation failed", ((_33 = err === null || err === void 0 ? void 0 : err.response) === null || _33 === void 0 ? void 0 : _33.data) || err);
                 return;
             }
         }
@@ -3155,8 +3242,8 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                     });
                 }
                 catch (e) {
-                    console.error("[Sora2Pro] imageUpload failed:", ((_29 = e === null || e === void 0 ? void 0 : e.response) === null || _29 === void 0 ? void 0 : _29.data) || (e === null || e === void 0 ? void 0 : e.message) || e);
-                    respondRunwareError(res, 400, "Failed to upload image to Runware (Sora 2 Pro)", ((_30 = e === null || e === void 0 ? void 0 : e.response) === null || _30 === void 0 ? void 0 : _30.data) || e);
+                    console.error("[Sora2Pro] imageUpload failed:", ((_34 = e === null || e === void 0 ? void 0 : e.response) === null || _34 === void 0 ? void 0 : _34.data) || (e === null || e === void 0 ? void 0 : e.message) || e);
+                    respondRunwareError(res, 400, "Failed to upload image to Runware (Sora 2 Pro)", ((_35 = e === null || e === void 0 ? void 0 : e.response) === null || _35 === void 0 ? void 0 : _35.data) || e);
                     return;
                 }
                 if (!firstUUID) {
@@ -3248,8 +3335,8 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                             consecutive400 = 0;
                         }
                         catch (e) {
-                            const statusCode = (_31 = e === null || e === void 0 ? void 0 : e.response) === null || _31 === void 0 ? void 0 : _31.status;
-                            const body = (_32 = e === null || e === void 0 ? void 0 : e.response) === null || _32 === void 0 ? void 0 : _32.data;
+                            const statusCode = (_36 = e === null || e === void 0 ? void 0 : e.response) === null || _36 === void 0 ? void 0 : _36.status;
+                            const body = (_37 = e === null || e === void 0 ? void 0 : e.response) === null || _37 === void 0 ? void 0 : _37.data;
                             console.log("[Sora2Pro] Poll error", {
                                 attempt,
                                 statusCode,
@@ -3268,7 +3355,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                                     consecutive400 = 0;
                                 }
                                 if (consecutive400 >= 5) {
-                                    respondRunwareError(res, 502, "Sora 2 Pro polling returned repeated 400 errors", body || ((_33 = e === null || e === void 0 ? void 0 : e.response) === null || _33 === void 0 ? void 0 : _33.data) || e);
+                                    respondRunwareError(res, 502, "Sora 2 Pro polling returned repeated 400 errors", body || ((_38 = e === null || e === void 0 ? void 0 : e.response) === null || _38 === void 0 ? void 0 : _38.data) || e);
                                     return;
                                 }
                             }
@@ -3319,8 +3406,8 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                 return;
             }
             catch (err) {
-                console.error("Sora 2 Pro error:", ((_34 = err === null || err === void 0 ? void 0 : err.response) === null || _34 === void 0 ? void 0 : _34.data) || err);
-                const providerErr = extractRunwareError((_35 = err === null || err === void 0 ? void 0 : err.response) === null || _35 === void 0 ? void 0 : _35.data);
+                console.error("Sora 2 Pro error:", ((_39 = err === null || err === void 0 ? void 0 : err.response) === null || _39 === void 0 ? void 0 : _39.data) || err);
+                const providerErr = extractRunwareError((_40 = err === null || err === void 0 ? void 0 : err.response) === null || _40 === void 0 ? void 0 : _40.data);
                 res.status(500).json({
                     success: false,
                     error: "Sora 2 Pro generation failed",
@@ -3367,8 +3454,8 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                     console.log("[Hailuo2.3Fast] imageUpload success", { firstUUID });
                 }
                 catch (e) {
-                    console.error("[Hailuo2.3Fast] imageUpload failed:", ((_36 = e === null || e === void 0 ? void 0 : e.response) === null || _36 === void 0 ? void 0 : _36.data) || (e === null || e === void 0 ? void 0 : e.message) || e);
-                    respondRunwareError(res, 400, "Failed to upload image to Runware (Hailuo 2.3 Fast)", ((_37 = e === null || e === void 0 ? void 0 : e.response) === null || _37 === void 0 ? void 0 : _37.data) || e);
+                    console.error("[Hailuo2.3Fast] imageUpload failed:", ((_41 = e === null || e === void 0 ? void 0 : e.response) === null || _41 === void 0 ? void 0 : _41.data) || (e === null || e === void 0 ? void 0 : e.message) || e);
+                    respondRunwareError(res, 400, "Failed to upload image to Runware (Hailuo 2.3 Fast)", ((_42 = e === null || e === void 0 ? void 0 : e.response) === null || _42 === void 0 ? void 0 : _42.data) || e);
                     return;
                 }
                 if (!firstUUID) {
@@ -3476,8 +3563,8 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                             consecutive400 = 0;
                         }
                         catch (e) {
-                            const statusCode = (_38 = e === null || e === void 0 ? void 0 : e.response) === null || _38 === void 0 ? void 0 : _38.status;
-                            const body = (_39 = e === null || e === void 0 ? void 0 : e.response) === null || _39 === void 0 ? void 0 : _39.data;
+                            const statusCode = (_43 = e === null || e === void 0 ? void 0 : e.response) === null || _43 === void 0 ? void 0 : _43.status;
+                            const body = (_44 = e === null || e === void 0 ? void 0 : e.response) === null || _44 === void 0 ? void 0 : _44.data;
                             console.log("[Hailuo2.3Fast] Poll error", {
                                 attempt,
                                 statusCode,
@@ -3496,7 +3583,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                                     consecutive400 = 0;
                                 }
                                 if (consecutive400 >= 5) {
-                                    respondRunwareError(res, 502, "Hailuo 2.3 Fast polling returned repeated 400 errors", body || ((_40 = e === null || e === void 0 ? void 0 : e.response) === null || _40 === void 0 ? void 0 : _40.data) || e);
+                                    respondRunwareError(res, 502, "Hailuo 2.3 Fast polling returned repeated 400 errors", body || ((_45 = e === null || e === void 0 ? void 0 : e.response) === null || _45 === void 0 ? void 0 : _45.data) || e);
                                     return;
                                 }
                             }
@@ -3547,7 +3634,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                 return;
             }
             catch (err) {
-                console.error("Hailuo 2.3 Fast error:", ((_41 = err === null || err === void 0 ? void 0 : err.response) === null || _41 === void 0 ? void 0 : _41.data) || err);
+                console.error("Hailuo 2.3 Fast error:", ((_46 = err === null || err === void 0 ? void 0 : err.response) === null || _46 === void 0 ? void 0 : _46.data) || err);
                 res.status(500).json({
                     success: false,
                     error: "Hailuo 2.3 Fast generation failed",
@@ -3593,8 +3680,8 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                     console.log("[Hailuo2.3] imageUpload success", { firstUUID });
                 }
                 catch (e) {
-                    console.error("[Hailuo2.3] imageUpload failed:", ((_42 = e === null || e === void 0 ? void 0 : e.response) === null || _42 === void 0 ? void 0 : _42.data) || (e === null || e === void 0 ? void 0 : e.message) || e);
-                    respondRunwareError(res, 400, "Failed to upload image to Runware (Hailuo 2.3)", ((_43 = e === null || e === void 0 ? void 0 : e.response) === null || _43 === void 0 ? void 0 : _43.data) || e);
+                    console.error("[Hailuo2.3] imageUpload failed:", ((_47 = e === null || e === void 0 ? void 0 : e.response) === null || _47 === void 0 ? void 0 : _47.data) || (e === null || e === void 0 ? void 0 : e.message) || e);
+                    respondRunwareError(res, 400, "Failed to upload image to Runware (Hailuo 2.3)", ((_48 = e === null || e === void 0 ? void 0 : e.response) === null || _48 === void 0 ? void 0 : _48.data) || e);
                     return;
                 }
                 if (!firstUUID) {
@@ -3705,8 +3792,8 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                             consecutive400 = 0;
                         }
                         catch (e) {
-                            const statusCode = (_44 = e === null || e === void 0 ? void 0 : e.response) === null || _44 === void 0 ? void 0 : _44.status;
-                            const body = (_45 = e === null || e === void 0 ? void 0 : e.response) === null || _45 === void 0 ? void 0 : _45.data;
+                            const statusCode = (_49 = e === null || e === void 0 ? void 0 : e.response) === null || _49 === void 0 ? void 0 : _49.status;
+                            const body = (_50 = e === null || e === void 0 ? void 0 : e.response) === null || _50 === void 0 ? void 0 : _50.data;
                             console.log("[Hailuo2.3] Poll error", {
                                 attempt,
                                 statusCode,
@@ -3725,7 +3812,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                                     consecutive400 = 0;
                                 }
                                 if (consecutive400 >= 5) {
-                                    respondRunwareError(res, 502, "Hailuo 2.3 polling returned repeated 400 errors", body || ((_46 = e === null || e === void 0 ? void 0 : e.response) === null || _46 === void 0 ? void 0 : _46.data) || e);
+                                    respondRunwareError(res, 502, "Hailuo 2.3 polling returned repeated 400 errors", body || ((_51 = e === null || e === void 0 ? void 0 : e.response) === null || _51 === void 0 ? void 0 : _51.data) || e);
                                     return;
                                 }
                             }
@@ -3776,7 +3863,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                 return;
             }
             catch (err) {
-                console.error("Hailuo 2.3 error:", ((_47 = err === null || err === void 0 ? void 0 : err.response) === null || _47 === void 0 ? void 0 : _47.data) || err);
+                console.error("Hailuo 2.3 error:", ((_52 = err === null || err === void 0 ? void 0 : err.response) === null || _52 === void 0 ? void 0 : _52.data) || err);
                 res.status(500).json({
                     success: false,
                     error: "Hailuo 2.3 generation failed",
@@ -3816,8 +3903,8 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                     });
                 }
                 catch (e) {
-                    console.error("Runware ControlNet XL Video imageUpload failed:", ((_48 = e === null || e === void 0 ? void 0 : e.response) === null || _48 === void 0 ? void 0 : _48.data) || (e === null || e === void 0 ? void 0 : e.message) || e);
-                    respondRunwareError(res, 400, "Failed to upload image to Runware (ControlNet XL Video)", ((_49 = e === null || e === void 0 ? void 0 : e.response) === null || _49 === void 0 ? void 0 : _49.data) || e);
+                    console.error("Runware ControlNet XL Video imageUpload failed:", ((_53 = e === null || e === void 0 ? void 0 : e.response) === null || _53 === void 0 ? void 0 : _53.data) || (e === null || e === void 0 ? void 0 : e.message) || e);
+                    respondRunwareError(res, 400, "Failed to upload image to Runware (ControlNet XL Video)", ((_54 = e === null || e === void 0 ? void 0 : e.response) === null || _54 === void 0 ? void 0 : _54.data) || e);
                     return;
                 }
                 if (!firstUUID) {
@@ -3906,8 +3993,8 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                             consecutive400 = 0; // reset on successful poll
                         }
                         catch (e) {
-                            const statusCode = (_50 = e === null || e === void 0 ? void 0 : e.response) === null || _50 === void 0 ? void 0 : _50.status;
-                            const body = (_51 = e === null || e === void 0 ? void 0 : e.response) === null || _51 === void 0 ? void 0 : _51.data;
+                            const statusCode = (_55 = e === null || e === void 0 ? void 0 : e.response) === null || _55 === void 0 ? void 0 : _55.status;
+                            const body = (_56 = e === null || e === void 0 ? void 0 : e.response) === null || _56 === void 0 ? void 0 : _56.data;
                             console.log("[ControlNet XL Video] Poll error", {
                                 attempt,
                                 statusCode,
@@ -3927,7 +4014,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                                     consecutive400 = 0;
                                 }
                                 if (consecutive400 >= 5) {
-                                    respondRunwareError(res, 502, "Runware ControlNet XL Video polling returned repeated 400 errors", body || ((_52 = e === null || e === void 0 ? void 0 : e.response) === null || _52 === void 0 ? void 0 : _52.data) || e);
+                                    respondRunwareError(res, 502, "Runware ControlNet XL Video polling returned repeated 400 errors", body || ((_57 = e === null || e === void 0 ? void 0 : e.response) === null || _57 === void 0 ? void 0 : _57.data) || e);
                                     return;
                                 }
                             }
@@ -3990,7 +4077,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                 return;
             }
             catch (err) {
-                console.error("Runware ControlNet XL Video error:", ((_53 = err === null || err === void 0 ? void 0 : err.response) === null || _53 === void 0 ? void 0 : _53.data) || err);
+                console.error("Runware ControlNet XL Video error:", ((_58 = err === null || err === void 0 ? void 0 : err.response) === null || _58 === void 0 ? void 0 : _58.data) || err);
                 res.status(500).json({
                     success: false,
                     error: "ControlNet XL Video generation failed",
@@ -4028,8 +4115,8 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                     console.log("[Claymotion F1] imageUpload success", { firstUUID });
                 }
                 catch (e) {
-                    console.error("Runware Claymotion F1 imageUpload failed:", ((_54 = e === null || e === void 0 ? void 0 : e.response) === null || _54 === void 0 ? void 0 : _54.data) || (e === null || e === void 0 ? void 0 : e.message) || e);
-                    respondRunwareError(res, 400, "Failed to upload image to Runware (Claymotion F1)", ((_55 = e === null || e === void 0 ? void 0 : e.response) === null || _55 === void 0 ? void 0 : _55.data) || e);
+                    console.error("Runware Claymotion F1 imageUpload failed:", ((_59 = e === null || e === void 0 ? void 0 : e.response) === null || _59 === void 0 ? void 0 : _59.data) || (e === null || e === void 0 ? void 0 : e.message) || e);
+                    respondRunwareError(res, 400, "Failed to upload image to Runware (Claymotion F1)", ((_60 = e === null || e === void 0 ? void 0 : e.response) === null || _60 === void 0 ? void 0 : _60.data) || e);
                     return;
                 }
                 if (!firstUUID) {
@@ -4118,8 +4205,8 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                             consecutive400 = 0; // reset on successful poll
                         }
                         catch (e) {
-                            const statusCode = (_56 = e === null || e === void 0 ? void 0 : e.response) === null || _56 === void 0 ? void 0 : _56.status;
-                            const body = (_57 = e === null || e === void 0 ? void 0 : e.response) === null || _57 === void 0 ? void 0 : _57.data;
+                            const statusCode = (_61 = e === null || e === void 0 ? void 0 : e.response) === null || _61 === void 0 ? void 0 : _61.status;
+                            const body = (_62 = e === null || e === void 0 ? void 0 : e.response) === null || _62 === void 0 ? void 0 : _62.data;
                             console.log("[Claymotion F1] Poll error", {
                                 attempt,
                                 statusCode,
@@ -4139,7 +4226,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                                     consecutive400 = 0;
                                 }
                                 if (consecutive400 >= 5) {
-                                    respondRunwareError(res, 502, "Runware Claymotion F1 polling returned repeated 400 errors", body || ((_58 = e === null || e === void 0 ? void 0 : e.response) === null || _58 === void 0 ? void 0 : _58.data) || e);
+                                    respondRunwareError(res, 502, "Runware Claymotion F1 polling returned repeated 400 errors", body || ((_63 = e === null || e === void 0 ? void 0 : e.response) === null || _63 === void 0 ? void 0 : _63.data) || e);
                                     return;
                                 }
                             }
@@ -4202,7 +4289,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                 return;
             }
             catch (err) {
-                console.error("Runware Claymotion F1 error:", ((_59 = err === null || err === void 0 ? void 0 : err.response) === null || _59 === void 0 ? void 0 : _59.data) || err);
+                console.error("Runware Claymotion F1 error:", ((_64 = err === null || err === void 0 ? void 0 : err.response) === null || _64 === void 0 ? void 0 : _64.data) || err);
                 res.status(500).json({
                     success: false,
                     error: "Claymotion F1 generation failed",
@@ -4359,7 +4446,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                 console.error("Pixverse create error (single attempt):", {
                     error: pixErr,
                     payload: createPayload,
-                    serverResponse: (_60 = pixErr === null || pixErr === void 0 ? void 0 : pixErr.response) === null || _60 === void 0 ? void 0 : _60.data,
+                    serverResponse: (_65 = pixErr === null || pixErr === void 0 ? void 0 : pixErr.response) === null || _65 === void 0 ? void 0 : _65.data,
                 });
                 const provider_message = extractEachlabsErrorMessage(err);
                 res.status(502).json({
@@ -4391,7 +4478,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                             pixVideoUrl =
                                 out.video_url ||
                                     out.video ||
-                                    (Array.isArray(out) ? ((_61 = out[0]) === null || _61 === void 0 ? void 0 : _61.video_url) || out[0] : null) ||
+                                    (Array.isArray(out) ? ((_66 = out[0]) === null || _66 === void 0 ? void 0 : _66.video_url) || out[0] : null) ||
                                     result.video_url ||
                                     result.video ||
                                     out.url ||
@@ -4600,7 +4687,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                 console.error("Vidu Q1 create error:", {
                     error: viduQ1Err,
                     payload: createPayload,
-                    serverResponse: (_62 = viduQ1Err === null || viduQ1Err === void 0 ? void 0 : viduQ1Err.response) === null || _62 === void 0 ? void 0 : _62.data,
+                    serverResponse: (_67 = viduQ1Err === null || viduQ1Err === void 0 ? void 0 : viduQ1Err.response) === null || _67 === void 0 ? void 0 : _67.data,
                 });
                 const provider_message = extractEachlabsErrorMessage(err);
                 res.status(502).json({
@@ -4628,7 +4715,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                             viduVideoUrl =
                                 out.video_url ||
                                     out.video ||
-                                    (Array.isArray(out) ? ((_63 = out[0]) === null || _63 === void 0 ? void 0 : _63.video_url) || out[0] : null) ||
+                                    (Array.isArray(out) ? ((_68 = out[0]) === null || _68 === void 0 ? void 0 : _68.video_url) || out[0] : null) ||
                                     result.video_url ||
                                     result.video ||
                                     out.url ||
@@ -4779,7 +4866,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                 console.error("Vidu 1.5 create error:", {
                     error: vidu15Err,
                     payload: createPayload,
-                    serverResponse: (_64 = vidu15Err === null || vidu15Err === void 0 ? void 0 : vidu15Err.response) === null || _64 === void 0 ? void 0 : _64.data,
+                    serverResponse: (_69 = vidu15Err === null || vidu15Err === void 0 ? void 0 : vidu15Err.response) === null || _69 === void 0 ? void 0 : _69.data,
                 });
                 const provider_message = extractEachlabsErrorMessage(err);
                 res.status(502).json({
@@ -4807,7 +4894,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                             viduVideoUrl =
                                 out.video_url ||
                                     out.video ||
-                                    (Array.isArray(out) ? ((_65 = out[0]) === null || _65 === void 0 ? void 0 : _65.video_url) || out[0] : null) ||
+                                    (Array.isArray(out) ? ((_70 = out[0]) === null || _70 === void 0 ? void 0 : _70.video_url) || out[0] : null) ||
                                     result.video_url ||
                                     result.video ||
                                     out.url ||
@@ -4968,7 +5055,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                 console.error("Wan 2.5 create error:", {
                     error: wan25Err,
                     payload: createPayload,
-                    serverResponse: (_66 = wan25Err === null || wan25Err === void 0 ? void 0 : wan25Err.response) === null || _66 === void 0 ? void 0 : _66.data,
+                    serverResponse: (_71 = wan25Err === null || wan25Err === void 0 ? void 0 : wan25Err.response) === null || _71 === void 0 ? void 0 : _71.data,
                 });
                 const provider_message = extractEachlabsErrorMessage(err);
                 res.status(502).json({
@@ -4996,7 +5083,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                             wanVideoUrl =
                                 out.video_url ||
                                     out.video ||
-                                    (Array.isArray(out) ? ((_67 = out[0]) === null || _67 === void 0 ? void 0 : _67.video_url) || out[0] : null) ||
+                                    (Array.isArray(out) ? ((_72 = out[0]) === null || _72 === void 0 ? void 0 : _72.video_url) || out[0] : null) ||
                                     result.video_url ||
                                     result.video ||
                                     out.url ||
@@ -5151,7 +5238,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                 console.error("Vidu Q1 I2V create error:", {
                     error: viduQ1I2VErr,
                     payload: createPayload,
-                    serverResponse: (_68 = viduQ1I2VErr === null || viduQ1I2VErr === void 0 ? void 0 : viduQ1I2VErr.response) === null || _68 === void 0 ? void 0 : _68.data,
+                    serverResponse: (_73 = viduQ1I2VErr === null || viduQ1I2VErr === void 0 ? void 0 : viduQ1I2VErr.response) === null || _73 === void 0 ? void 0 : _73.data,
                 });
                 const provider_message = extractEachlabsErrorMessage(err);
                 res.status(502).json({
@@ -5181,7 +5268,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                             viduVideoUrl =
                                 out.video_url ||
                                     out.video ||
-                                    (Array.isArray(out) ? ((_69 = out[0]) === null || _69 === void 0 ? void 0 : _69.video_url) || out[0] : null) ||
+                                    (Array.isArray(out) ? ((_74 = out[0]) === null || _74 === void 0 ? void 0 : _74.video_url) || out[0] : null) ||
                                     out.url ||
                                     result.data.url ||
                                     null;
@@ -5203,7 +5290,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                                 ? `Vidu Q1 I2V prediction failed: ${provider_message}`
                                 : "Vidu Q1 I2V prediction failed",
                             provider: "ViduQ1I2V",
-                            provider_status: (_70 = result.data) === null || _70 === void 0 ? void 0 : _70.status,
+                            provider_status: (_75 = result.data) === null || _75 === void 0 ? void 0 : _75.status,
                             provider_message,
                             details: safeJson(result.data),
                         });
@@ -5333,7 +5420,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                 console.error("Vidu 2.0 create error:", {
                     error: vidu20Err,
                     payload: createPayload,
-                    serverResponse: (_71 = vidu20Err === null || vidu20Err === void 0 ? void 0 : vidu20Err.response) === null || _71 === void 0 ? void 0 : _71.data,
+                    serverResponse: (_76 = vidu20Err === null || vidu20Err === void 0 ? void 0 : vidu20Err.response) === null || _76 === void 0 ? void 0 : _76.data,
                 });
                 const provider_message = extractEachlabsErrorMessage(err);
                 res.status(502).json({
@@ -5365,7 +5452,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                             viduVideoUrl =
                                 out.video_url ||
                                     out.video ||
-                                    (Array.isArray(out) ? ((_72 = out[0]) === null || _72 === void 0 ? void 0 : _72.video_url) || out[0] : null) ||
+                                    (Array.isArray(out) ? ((_77 = out[0]) === null || _77 === void 0 ? void 0 : _77.video_url) || out[0] : null) ||
                                     result.video_url ||
                                     result.video ||
                                     out.url ||
@@ -5520,7 +5607,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                 console.error("Veo 2 Image to Video create error:", {
                     error: veo2Err,
                     payload: createPayload,
-                    serverResponse: (_73 = veo2Err === null || veo2Err === void 0 ? void 0 : veo2Err.response) === null || _73 === void 0 ? void 0 : _73.data,
+                    serverResponse: (_78 = veo2Err === null || veo2Err === void 0 ? void 0 : veo2Err.response) === null || _78 === void 0 ? void 0 : _78.data,
                 });
                 const provider_message = extractEachlabsErrorMessage(err);
                 res.status(502).json({
@@ -5552,7 +5639,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                             veoVideoUrl =
                                 out.video_url ||
                                     out.video ||
-                                    (Array.isArray(out) ? ((_74 = out[0]) === null || _74 === void 0 ? void 0 : _74.video_url) || out[0] : null) ||
+                                    (Array.isArray(out) ? ((_79 = out[0]) === null || _79 === void 0 ? void 0 : _79.video_url) || out[0] : null) ||
                                     result.video_url ||
                                     result.video ||
                                     out.url ||
@@ -5705,7 +5792,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                 console.error("Veo 3 Image to Video create error:", {
                     error: veo3Err,
                     payload: createPayload,
-                    serverResponse: (_75 = veo3Err === null || veo3Err === void 0 ? void 0 : veo3Err.response) === null || _75 === void 0 ? void 0 : _75.data,
+                    serverResponse: (_80 = veo3Err === null || veo3Err === void 0 ? void 0 : veo3Err.response) === null || _80 === void 0 ? void 0 : _80.data,
                 });
                 const provider_message = extractEachlabsErrorMessage(err);
                 res.status(502).json({
@@ -5737,7 +5824,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                             veoVideoUrl =
                                 out.video_url ||
                                     out.video ||
-                                    (Array.isArray(out) ? ((_76 = out[0]) === null || _76 === void 0 ? void 0 : _76.video_url) || out[0] : null) ||
+                                    (Array.isArray(out) ? ((_81 = out[0]) === null || _81 === void 0 ? void 0 : _81.video_url) || out[0] : null) ||
                                     result.video_url ||
                                     result.video ||
                                     out.url ||
@@ -5860,7 +5947,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                     try {
                         audioUrl = yield (0, signedUrl_1.signKey)(audioKey);
                     }
-                    catch (_117) {
+                    catch (_122) {
                         audioUrl = (0, s3_1.publicUrlFor)(audioKey); // fallback (may be private)
                     }
                 }
@@ -6112,7 +6199,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
             }
             catch (e) {
                 // already using e as any here, so no change needed
-                const respData = (_77 = e === null || e === void 0 ? void 0 : e.response) === null || _77 === void 0 ? void 0 : _77.data;
+                const respData = (_82 = e === null || e === void 0 ? void 0 : e.response) === null || _82 === void 0 ? void 0 : _82.data;
                 const base = (respData === null || respData === void 0 ? void 0 : respData.base_resp) || {};
                 const provider_code = base === null || base === void 0 ? void 0 : base.status_code;
                 const provider_message = (base === null || base === void 0 ? void 0 : base.status_msg) || (respData === null || respData === void 0 ? void 0 : respData.message) || (e === null || e === void 0 ? void 0 : e.message);
@@ -6140,26 +6227,26 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                         params: { task_id: taskId },
                         timeout: 20000,
                     });
-                    const status = (_78 = pollResp.data) === null || _78 === void 0 ? void 0 : _78.status;
+                    const status = (_83 = pollResp.data) === null || _83 === void 0 ? void 0 : _83.status;
                     if (status === "Success" || status === "success") {
                         // Assume file_id -> downloadable endpoint
-                        const fileId = (_79 = pollResp.data) === null || _79 === void 0 ? void 0 : _79.file_id;
+                        const fileId = (_84 = pollResp.data) === null || _84 === void 0 ? void 0 : _84.file_id;
                         console.log("MiniMax generation success payload:", safeJson(pollResp.data));
                         mmFileId = fileId || null;
                         // If API already provides a direct downloadable URL use it, else will fetch below
                         mmVideoUrl =
-                            ((_80 = pollResp.data) === null || _80 === void 0 ? void 0 : _80.video_url) || ((_81 = pollResp.data) === null || _81 === void 0 ? void 0 : _81.file_url) || null;
+                            ((_85 = pollResp.data) === null || _85 === void 0 ? void 0 : _85.video_url) || ((_86 = pollResp.data) === null || _86 === void 0 ? void 0 : _86.file_url) || null;
                         break; // exit loop, will handle retrieval next
                     }
                     if (status === "Fail" ||
                         status === "failed" ||
                         status === "error") {
-                        const base = ((_82 = pollResp.data) === null || _82 === void 0 ? void 0 : _82.base_resp) || {};
+                        const base = ((_87 = pollResp.data) === null || _87 === void 0 ? void 0 : _87.base_resp) || {};
                         const provider_code = base === null || base === void 0 ? void 0 : base.status_code;
                         const provider_message = (base === null || base === void 0 ? void 0 : base.status_msg) ||
-                            ((_83 = pollResp.data) === null || _83 === void 0 ? void 0 : _83.status_reason) ||
-                            ((_84 = pollResp.data) === null || _84 === void 0 ? void 0 : _84.message) ||
-                            ((_85 = pollResp.data) === null || _85 === void 0 ? void 0 : _85.status);
+                            ((_88 = pollResp.data) === null || _88 === void 0 ? void 0 : _88.status_reason) ||
+                            ((_89 = pollResp.data) === null || _89 === void 0 ? void 0 : _89.message) ||
+                            ((_90 = pollResp.data) === null || _90 === void 0 ? void 0 : _90.status);
                         res.status(500).json({
                             success: false,
                             error: provider_message
@@ -6168,7 +6255,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                             provider: "MiniMax",
                             provider_code,
                             provider_message,
-                            provider_status: (_86 = pollResp.data) === null || _86 === void 0 ? void 0 : _86.status,
+                            provider_status: (_91 = pollResp.data) === null || _91 === void 0 ? void 0 : _91.status,
                             details: safeJson(pollResp.data),
                         });
                         return;
@@ -6201,8 +6288,8 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                         timeout: 30000,
                     });
                     mmVideoUrl =
-                        ((_88 = (_87 = retrieveResp.data) === null || _87 === void 0 ? void 0 : _87.file) === null || _88 === void 0 ? void 0 : _88.download_url) ||
-                            ((_89 = retrieveResp.data) === null || _89 === void 0 ? void 0 : _89.download_url) ||
+                        ((_93 = (_92 = retrieveResp.data) === null || _92 === void 0 ? void 0 : _92.file) === null || _93 === void 0 ? void 0 : _93.download_url) ||
+                            ((_94 = retrieveResp.data) === null || _94 === void 0 ? void 0 : _94.download_url) ||
                             null;
                     if (!mmVideoUrl) {
                         console.error("MiniMax retrieve missing download_url", safeJson(retrieveResp.data));
@@ -6218,7 +6305,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                 }
                 catch (e) {
                     console.error("MiniMax retrieve error:", serializeError(e));
-                    const respData = (_90 = e === null || e === void 0 ? void 0 : e.response) === null || _90 === void 0 ? void 0 : _90.data;
+                    const respData = (_95 = e === null || e === void 0 ? void 0 : e.response) === null || _95 === void 0 ? void 0 : _95.data;
                     const base = (respData === null || respData === void 0 ? void 0 : respData.base_resp) || {};
                     const provider_code = base === null || base === void 0 ? void 0 : base.status_code;
                     const provider_message = (base === null || base === void 0 ? void 0 : base.status_msg) || (respData === null || respData === void 0 ? void 0 : respData.message) || (e === null || e === void 0 ? void 0 : e.message);
@@ -6253,7 +6340,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                 });
             }
             catch (e) {
-                const respData = (_91 = e === null || e === void 0 ? void 0 : e.response) === null || _91 === void 0 ? void 0 : _91.data;
+                const respData = (_96 = e === null || e === void 0 ? void 0 : e.response) === null || _96 === void 0 ? void 0 : _96.data;
                 const base = (respData === null || respData === void 0 ? void 0 : respData.base_resp) || {};
                 const provider_code = base === null || base === void 0 ? void 0 : base.status_code;
                 const provider_message = (base === null || base === void 0 ? void 0 : base.status_msg) || (respData === null || respData === void 0 ? void 0 : respData.message) || (e === null || e === void 0 ? void 0 : e.message);
@@ -6372,9 +6459,9 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
                 console.error("Luma create generation error:", {
                     error: serializeError(e),
                     payload: lumaPayload,
-                    serverResponse: (_92 = e === null || e === void 0 ? void 0 : e.response) === null || _92 === void 0 ? void 0 : _92.data,
+                    serverResponse: (_97 = e === null || e === void 0 ? void 0 : e.response) === null || _97 === void 0 ? void 0 : _97.data,
                 });
-                const respData = (_93 = e === null || e === void 0 ? void 0 : e.response) === null || _93 === void 0 ? void 0 : _93.data;
+                const respData = (_98 = e === null || e === void 0 ? void 0 : e.response) === null || _98 === void 0 ? void 0 : _98.data;
                 // Prefer detail/message/error from server response for user-facing error
                 const userMessage = (respData === null || respData === void 0 ? void 0 : respData.detail) ||
                     (respData === null || respData === void 0 ? void 0 : respData.message) ||
@@ -6400,7 +6487,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
             });
             return;
         }
-        const generationId = ((_94 = createGenRes.data) === null || _94 === void 0 ? void 0 : _94.id) || ((_96 = (_95 = createGenRes.data) === null || _95 === void 0 ? void 0 : _95.data) === null || _96 === void 0 ? void 0 : _96.id);
+        const generationId = ((_99 = createGenRes.data) === null || _99 === void 0 ? void 0 : _99.id) || ((_101 = (_100 = createGenRes.data) === null || _100 === void 0 ? void 0 : _100.data) === null || _101 === void 0 ? void 0 : _101.id);
         if (!generationId) {
             res.status(500).json({
                 success: false,
@@ -6445,33 +6532,33 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
             }
             // Try to read state/status and the video URL in a robust way
             state =
-                ((_97 = pollRes.data) === null || _97 === void 0 ? void 0 : _97.state) ||
-                    ((_98 = pollRes.data) === null || _98 === void 0 ? void 0 : _98.status) ||
-                    ((_100 = (_99 = pollRes.data) === null || _99 === void 0 ? void 0 : _99.data) === null || _100 === void 0 ? void 0 : _100.state) ||
+                ((_102 = pollRes.data) === null || _102 === void 0 ? void 0 : _102.state) ||
+                    ((_103 = pollRes.data) === null || _103 === void 0 ? void 0 : _103.status) ||
+                    ((_105 = (_104 = pollRes.data) === null || _104 === void 0 ? void 0 : _104.data) === null || _105 === void 0 ? void 0 : _105.state) ||
                     "";
             if (state === "completed") {
                 videoUrl =
-                    ((_102 = (_101 = pollRes.data) === null || _101 === void 0 ? void 0 : _101.assets) === null || _102 === void 0 ? void 0 : _102.video) ||
-                        ((_103 = pollRes.data) === null || _103 === void 0 ? void 0 : _103.video) ||
-                        ((_105 = (_104 = pollRes.data) === null || _104 === void 0 ? void 0 : _104.data) === null || _105 === void 0 ? void 0 : _105.video_url) ||
-                        ((_109 = (_108 = (_107 = (_106 = pollRes.data) === null || _106 === void 0 ? void 0 : _106.assets) === null || _107 === void 0 ? void 0 : _107.mp4) === null || _108 === void 0 ? void 0 : _108[0]) === null || _109 === void 0 ? void 0 : _109.url) ||
+                    ((_107 = (_106 = pollRes.data) === null || _106 === void 0 ? void 0 : _106.assets) === null || _107 === void 0 ? void 0 : _107.video) ||
+                        ((_108 = pollRes.data) === null || _108 === void 0 ? void 0 : _108.video) ||
+                        ((_110 = (_109 = pollRes.data) === null || _109 === void 0 ? void 0 : _109.data) === null || _110 === void 0 ? void 0 : _110.video_url) ||
+                        ((_114 = (_113 = (_112 = (_111 = pollRes.data) === null || _111 === void 0 ? void 0 : _111.assets) === null || _112 === void 0 ? void 0 : _112.mp4) === null || _113 === void 0 ? void 0 : _113[0]) === null || _114 === void 0 ? void 0 : _114.url) ||
                         null;
                 console.log("Luma poll response:", pollRes.data);
                 break;
             }
             if (state === "failed") {
                 console.error("Luma generation failed:", pollRes.data);
-                const provider_message = ((_110 = pollRes.data) === null || _110 === void 0 ? void 0 : _110.failure_reason) ||
-                    ((_111 = pollRes.data) === null || _111 === void 0 ? void 0 : _111.error) ||
-                    ((_112 = pollRes.data) === null || _112 === void 0 ? void 0 : _112.message) ||
-                    ((_113 = pollRes.data) === null || _113 === void 0 ? void 0 : _113.state);
+                const provider_message = ((_115 = pollRes.data) === null || _115 === void 0 ? void 0 : _115.failure_reason) ||
+                    ((_116 = pollRes.data) === null || _116 === void 0 ? void 0 : _116.error) ||
+                    ((_117 = pollRes.data) === null || _117 === void 0 ? void 0 : _117.message) ||
+                    ((_118 = pollRes.data) === null || _118 === void 0 ? void 0 : _118.state);
                 res.status(500).json({
                     success: false,
                     error: provider_message
                         ? `Luma generation failed: ${provider_message}`
                         : "Luma generation failed",
                     provider: "Luma",
-                    provider_status: (_114 = pollRes.data) === null || _114 === void 0 ? void 0 : _114.state,
+                    provider_status: (_119 = pollRes.data) === null || _119 === void 0 ? void 0 : _119.state,
                     provider_message,
                     details: safeJson(pollRes.data),
                 });
@@ -6499,7 +6586,7 @@ router.post("/:feature", apiKey_1.requireApiKey, upload.single("audio_file"), (r
         }
         catch (err) {
             const e = err;
-            console.error("Error downloading Luma video:", ((_115 = e === null || e === void 0 ? void 0 : e.response) === null || _115 === void 0 ? void 0 : _115.data) || e);
+            console.error("Error downloading Luma video:", ((_120 = e === null || e === void 0 ? void 0 : e.response) === null || _120 === void 0 ? void 0 : _120.data) || e);
             res.status(500).json({
                 success: false,
                 error: "Failed to download Luma video",
