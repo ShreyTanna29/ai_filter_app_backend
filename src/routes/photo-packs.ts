@@ -2,6 +2,7 @@ import { Router, Request, Response } from "express";
 import prisma from "../lib/prisma";
 import { signKey, deriveKey } from "../middleware/signedUrl";
 import { uploadBuffer, makeKey } from "../lib/s3";
+import { requirePermission } from "../middleware/roles";
 
 const router = Router();
 
@@ -36,14 +37,14 @@ router.get("/", async (req: Request, res: Response): Promise<void> => {
               }
             } catch {}
             return { ...img, signedUrl };
-          })
+          }),
         );
         return {
           ...pack,
           images: signedImages,
           imageCount: pack._count.images,
         };
-      })
+      }),
     );
 
     res.json({
@@ -101,7 +102,7 @@ router.get("/:id", async (req: Request, res: Response): Promise<void> => {
           }
         } catch {}
         return { ...img, signedUrl };
-      })
+      }),
     );
 
     res.json({
@@ -121,165 +122,177 @@ router.get("/:id", async (req: Request, res: Response): Promise<void> => {
 });
 
 // Create a new photo pack
-router.post("/", async (req: Request, res: Response): Promise<void> => {
-  try {
-    const { name, description, emoji, photoCount, prompts } = req.body;
+router.post(
+  "/",
+  requirePermission("photo_packs", "CREATE"),
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { name, description, emoji, photoCount, prompts } = req.body;
 
-    if (!name) {
-      res.status(400).json({
-        success: false,
-        message: "Name is required",
-      });
-      return;
-    }
+      if (!name) {
+        res.status(400).json({
+          success: false,
+          message: "Name is required",
+        });
+        return;
+      }
 
-    const pack = await prisma.photo_Pack.create({
-      data: {
-        name,
-        description: description || null,
-        emoji: emoji || "📸",
-        photoCount: photoCount || 15,
-        isActive: true,
-        ...(prompts && Array.isArray(prompts) && prompts.length > 0
-          ? {
-              prompts: {
-                create: prompts.map((prompt: string, index: number) => ({
-                  prompt,
-                  order: index,
-                })),
-              },
-            }
-          : {}),
-      },
-      include: {
-        prompts: {
-          orderBy: { order: "asc" },
+      const pack = await prisma.photo_Pack.create({
+        data: {
+          name,
+          description: description || null,
+          emoji: emoji || "📸",
+          photoCount: photoCount || 15,
+          isActive: true,
+          ...(prompts && Array.isArray(prompts) && prompts.length > 0
+            ? {
+                prompts: {
+                  create: prompts.map((prompt: string, index: number) => ({
+                    prompt,
+                    order: index,
+                  })),
+                },
+              }
+            : {}),
         },
-      },
-    });
+        include: {
+          prompts: {
+            orderBy: { order: "asc" },
+          },
+        },
+      });
 
-    res.status(201).json({
-      success: true,
-      pack,
-    });
-  } catch (error) {
-    console.error("Error creating photo pack:", error);
-    res.status(500).json({
-      success: false,
-      message: "Failed to create photo pack",
-    });
-  }
-});
+      res.status(201).json({
+        success: true,
+        pack,
+      });
+    } catch (error) {
+      console.error("Error creating photo pack:", error);
+      res.status(500).json({
+        success: false,
+        message: "Failed to create photo pack",
+      });
+    }
+  },
+);
 
 // Update a photo pack
-router.put("/:id", async (req: Request, res: Response): Promise<void> => {
-  try {
-    const id = parseInt(req.params.id);
-    if (isNaN(id)) {
-      res.status(400).json({
-        success: false,
-        message: "Invalid pack ID",
-      });
-      return;
-    }
+router.put(
+  "/:id",
+  requirePermission("photo_packs", "UPDATE"),
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) {
+        res.status(400).json({
+          success: false,
+          message: "Invalid pack ID",
+        });
+        return;
+      }
 
-    const { name, description, emoji, photoCount, isActive, prompts } =
-      req.body;
+      const { name, description, emoji, photoCount, isActive, prompts } =
+        req.body;
 
-    // Update the pack and optionally replace prompts
-    const updateData: any = {};
-    if (name !== undefined) updateData.name = name;
-    if (description !== undefined) updateData.description = description;
-    if (emoji !== undefined) updateData.emoji = emoji;
-    if (photoCount !== undefined) updateData.photoCount = photoCount;
-    if (isActive !== undefined) updateData.isActive = isActive;
+      // Update the pack and optionally replace prompts
+      const updateData: any = {};
+      if (name !== undefined) updateData.name = name;
+      if (description !== undefined) updateData.description = description;
+      if (emoji !== undefined) updateData.emoji = emoji;
+      if (photoCount !== undefined) updateData.photoCount = photoCount;
+      if (isActive !== undefined) updateData.isActive = isActive;
 
-    // If prompts are provided, replace all existing prompts
-    if (prompts && Array.isArray(prompts)) {
-      // Delete existing prompts
-      await prisma.photo_Pack_Prompt.deleteMany({
-        where: { packId: id },
-      });
+      // If prompts are provided, replace all existing prompts
+      if (prompts && Array.isArray(prompts)) {
+        // Delete existing prompts
+        await prisma.photo_Pack_Prompt.deleteMany({
+          where: { packId: id },
+        });
 
-      // Create new prompts
-      await prisma.photo_Pack_Prompt.createMany({
-        data: prompts.map((prompt: string, index: number) => ({
-          packId: id,
-          prompt,
-          order: index,
-        })),
-      });
-    }
+        // Create new prompts
+        await prisma.photo_Pack_Prompt.createMany({
+          data: prompts.map((prompt: string, index: number) => ({
+            packId: id,
+            prompt,
+            order: index,
+          })),
+        });
+      }
 
-    const pack = await prisma.photo_Pack.update({
-      where: { id },
-      data: updateData,
-      include: {
-        prompts: {
-          orderBy: { order: "asc" },
+      const pack = await prisma.photo_Pack.update({
+        where: { id },
+        data: updateData,
+        include: {
+          prompts: {
+            orderBy: { order: "asc" },
+          },
+          images: {
+            orderBy: { createdAt: "desc" },
+            take: 6,
+          },
         },
-        images: {
-          orderBy: { createdAt: "desc" },
-          take: 6,
-        },
-      },
-    });
-
-    res.json({
-      success: true,
-      pack,
-    });
-  } catch (error: any) {
-    console.error("Error updating photo pack:", error);
-    if (error.code === "P2025") {
-      res.status(404).json({
-        success: false,
-        message: "Photo pack not found",
       });
-      return;
+
+      res.json({
+        success: true,
+        pack,
+      });
+    } catch (error: any) {
+      console.error("Error updating photo pack:", error);
+      if (error.code === "P2025") {
+        res.status(404).json({
+          success: false,
+          message: "Photo pack not found",
+        });
+        return;
+      }
+      res.status(500).json({
+        success: false,
+        message: "Failed to update photo pack",
+      });
     }
-    res.status(500).json({
-      success: false,
-      message: "Failed to update photo pack",
-    });
-  }
-});
+  },
+);
 
 // Delete a photo pack
-router.delete("/:id", async (req: Request, res: Response): Promise<void> => {
-  try {
-    const id = parseInt(req.params.id);
-    if (isNaN(id)) {
-      res.status(400).json({
-        success: false,
-        message: "Invalid pack ID",
-      });
-      return;
-    }
+router.delete(
+  "/:id",
+  requirePermission("photo_packs", "DELETE"),
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) {
+        res.status(400).json({
+          success: false,
+          message: "Invalid pack ID",
+        });
+        return;
+      }
 
-    await prisma.photo_Pack.delete({
-      where: { id },
-    });
-
-    res.json({
-      success: true,
-      message: "Photo pack deleted successfully",
-    });
-  } catch (error: any) {
-    console.error("Error deleting photo pack:", error);
-    if (error.code === "P2025") {
-      res.status(404).json({
-        success: false,
-        message: "Photo pack not found",
+      await prisma.photo_Pack.delete({
+        where: { id },
       });
-      return;
+
+      res.json({
+        success: true,
+        message: "Photo pack deleted successfully",
+      });
+    } catch (error: any) {
+      console.error("Error deleting photo pack:", error);
+      if (error.code === "P2025") {
+        res.status(404).json({
+          success: false,
+          message: "Photo pack not found",
+        });
+        return;
+      }
+      res.status(500).json({
+        success: false,
+        message: "Failed to delete photo pack",
+      });
     }
-    res.status(500).json({
-      success: false,
-      message: "Failed to delete photo pack",
-    });
-  }
-});
+  },
+);
 
 // Add generated images to a photo pack
 router.post(
@@ -374,7 +387,7 @@ router.post(
         message: "Failed to add images to pack",
       });
     }
-  }
+  },
 );
 
 // Delete an image from a photo pack
@@ -418,7 +431,7 @@ router.delete(
         message: "Failed to delete image",
       });
     }
-  }
+  },
 );
 
 export default router;

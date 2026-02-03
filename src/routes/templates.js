@@ -18,6 +18,7 @@ const prisma_1 = __importDefault(require("../lib/prisma"));
 const axios_1 = __importDefault(require("axios"));
 const s3_1 = require("../lib/s3");
 const signedUrl_1 = require("../middleware/signedUrl");
+const roles_1 = require("../middleware/roles");
 // This route previously used Cloudinary. All video assets now stored in private S3.
 // We keep DB column `videoUrl` but store canonical S3 public-style URL (not presigned).
 // Responses enrich with `signedUrl` so clients can access private objects.
@@ -144,7 +145,7 @@ function getOrCreateMainCategory(name) {
     });
 }
 // Create a new template (admin only)
-router.post("/templates", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+router.post("/templates", (0, roles_1.requirePermission)("templates", "CREATE"), (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const { name, description, subcategories } = req.body;
         if (!name || !subcategories || !Array.isArray(subcategories)) {
@@ -231,7 +232,7 @@ router.get("/templates/endpoints", (req, res) => __awaiter(void 0, void 0, void 
     }
 }));
 // Update a template (admin only)
-router.put("/templates/:id", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+router.put("/templates/:id", (0, roles_1.requirePermission)("templates", "UPDATE"), (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const { id } = req.params;
         const { name, description, subcategories } = req.body;
@@ -317,7 +318,7 @@ router.put("/templates/:id", (req, res) => __awaiter(void 0, void 0, void 0, fun
     }
 }));
 // Delete a template (admin only)
-router.delete("/templates/:id", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+router.delete("/templates/:id", (0, roles_1.requirePermission)("templates", "DELETE"), (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const { id } = req.params;
         // Get template for route removal

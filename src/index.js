@@ -26,6 +26,7 @@ const categories_1 = __importDefault(require("./routes/categories"));
 const apps_1 = __importDefault(require("./routes/apps"));
 const workflows_1 = __importDefault(require("./routes/workflows"));
 const photo_packs_1 = __importDefault(require("./routes/photo-packs"));
+const sub_admins_1 = __importDefault(require("./routes/sub-admins"));
 const multer_1 = __importDefault(require("multer"));
 const s3_1 = require("./lib/s3");
 const signedUrl_1 = require("./middleware/signedUrl");
@@ -828,6 +829,7 @@ app.use("/api/categories", categories_1.default);
 app.use("/api/apps", apps_1.default);
 app.use("/api", workflows_1.default);
 app.use("/api/photo-packs", photo_packs_1.default);
+app.use("/api/sub-admins", sub_admins_1.default);
 // Get all sounds organized by category from S3
 app.get("/api/sounds", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {

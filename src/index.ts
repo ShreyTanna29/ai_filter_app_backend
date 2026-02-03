@@ -12,6 +12,7 @@ import categoriesRouter from "./routes/categories";
 import appsRouter from "./routes/apps";
 import workflowsRouter from "./routes/workflows";
 import photoPacksRouter from "./routes/photo-packs";
+import subAdminsRouter from "./routes/sub-admins";
 import multer from "multer";
 import {
   uploadBuffer,
@@ -95,7 +96,7 @@ app.get("/api/features/all", async (req, res): Promise<any> => {
     // For non-admin, find app in cache
     const appsWithPermissionsCache = getAppsWithPermissionsCache();
     const app = appsWithPermissionsCache.find(
-      (a) => a.apiKey === apiKey && a.isActive
+      (a) => a.apiKey === apiKey && a.isActive,
     );
 
     if (!app) {
@@ -633,7 +634,7 @@ app.put(
         message: "Internal server error",
       });
     }
-  }
+  },
 );
 
 // Delete a photo feature (admin only)
@@ -850,7 +851,7 @@ app.put(
         message: "Internal server error",
       });
     }
-  }
+  },
 );
 
 // Delete a cartoon character
@@ -881,7 +882,7 @@ app.delete(
         message: "Internal server error",
       });
     }
-  }
+  },
 );
 
 // Get cartoon character graphics (latest video per endpoint)
@@ -905,7 +906,7 @@ app.get("/api/cartoon-character-graphic", async (req, res) => {
           }
         } catch {}
         return { endpoint: v.feature, graphicUrl: signed };
-      })
+      }),
     );
 
     res.json(result);
@@ -925,6 +926,7 @@ app.use("/api/categories", categoriesRouter);
 app.use("/api/apps", appsRouter);
 app.use("/api", workflowsRouter);
 app.use("/api/photo-packs", photoPacksRouter);
+app.use("/api/sub-admins", subAdminsRouter);
 
 // Get all sounds organized by category from S3
 app.get("/api/sounds", async (req, res) => {
@@ -956,7 +958,7 @@ app.get("/api/sounds", async (req, res) => {
             ...sound,
             signedUrl,
           };
-        })
+        }),
       );
     }
 
@@ -1035,7 +1037,7 @@ app.post(
         const result = await uploadBuffer(
           key,
           uploaded.buffer,
-          uploaded.mimetype
+          uploaded.mimetype,
         );
         const signedUrl = await signKey(key);
         res.json({
@@ -1093,7 +1095,7 @@ app.post(
       });
       return;
     }
-  }
+  },
 );
 
 // Backwards compatible path for former Cloudinary route if clients still call /api/cloudinary/upload
@@ -1114,7 +1116,7 @@ app.post(
         const result = await uploadBuffer(
           key,
           uploaded.buffer,
-          uploaded.mimetype
+          uploaded.mimetype,
         );
         const signedUrl = await signKey(key);
         res.json({
@@ -1133,7 +1135,7 @@ app.post(
         const result = await uploadBuffer(
           key,
           ensured.buffer,
-          ensured.contentType
+          ensured.contentType,
         );
         const signedUrl = await signKey(key);
         res.json({
@@ -1158,7 +1160,7 @@ app.post(
       });
       return;
     }
-  }
+  },
 );
 
 // Serve admin panel HTML

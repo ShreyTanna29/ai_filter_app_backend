@@ -230,6 +230,13 @@
                 ><i class="fa fa-child mr-3"></i>Cartoon Characters</button
               >
             </li>
+            <li id="nav-sub-admins">
+              <button
+                onclick="switchTab('sub-admins')"
+                class="flex items-center px-3 py-2 rounded-lg text-gray-700 hover:bg-gray-100 w-full text-left"
+                ><i class="fa fa-users-cog mr-3"></i>Sub-Admins</button
+              >
+            </li>
             <li id="nav-apps">
               <button
                 onclick="switchTab('apps')"
@@ -698,6 +705,37 @@
           ></div>
         </div>
 
+        <!-- Sub-Admins Tab -->
+        <div id="tab-sub-admins" class="tab-content w-full px-10 py-6 hidden">
+          <div class="flex items-center justify-between mb-4">
+            <h2 class="text-2xl font-bold text-gray-800">Sub-Admin Management</h2>
+            <button
+              onclick="openSubAdminModal()"
+              class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 flex items-center"
+            >
+              <i class="fa fa-user-plus mr-2"></i>Create Sub-Admin
+            </button>
+          </div>
+          <div id="subAdminsContainer" class="bg-white rounded-lg shadow overflow-hidden">
+            <div class="overflow-x-auto">
+              <table class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-50">
+                  <tr>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Permissions</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created</th>
+                    <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="subAdminsTableBody" class="bg-white divide-y divide-gray-200">
+                  <!-- Sub-admins will be loaded here -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
         <!-- Photo Pack Detail Page (hidden by default) -->
         <div
           id="photoPackDetailPage"
@@ -849,6 +887,90 @@
                   class="px-4 py-2 bg-pink-600 text-white rounded-lg hover:bg-pink-700"
                 >
                   Save
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <!-- Sub-Admin Modal -->
+        <div
+          id="subAdminModal"
+          class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40 hidden"
+        >
+          <div class="bg-white rounded-xl shadow-lg w-full max-w-4xl p-6 relative max-h-[90vh] overflow-auto">
+            <button
+              onclick="closeSubAdminModal()"
+              class="absolute top-4 right-4 text-gray-400 hover:text-gray-700 text-xl"
+            >
+              <i class="fa fa-times"></i>
+            </button>
+            <h2 id="subAdminModalTitle" class="text-2xl font-bold mb-6">Create Sub-Admin</h2>
+            <form id="subAdminForm" class="space-y-6">
+              <input type="hidden" id="subAdminId" value="" />
+              
+              <div class="grid grid-cols-2 gap-4">
+                <div>
+                  <label class="block text-gray-700 font-semibold mb-2">Email <span class="text-red-500">*</span></label>
+                  <input
+                    id="subAdminEmail"
+                    type="email"
+                    class="w-full border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                    placeholder="subadmin@example.com"
+                    required
+                  />
+                </div>
+                <div id="subAdminPasswordField">
+                  <label class="block text-gray-700 font-semibold mb-2">Password <span class="text-red-500">*</span></label>
+                  <input
+                    id="subAdminPassword"
+                    type="password"
+                    class="w-full border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                    placeholder="••••••••"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label class="block text-gray-700 font-semibold mb-3">Permissions</label>
+                <div class="border border-gray-300 rounded-lg p-4 max-h-96 overflow-y-auto">
+                  <div class="mb-4">
+                    <button
+                      type="button"
+                      onclick="selectAllSubAdminPermissions()"
+                      class="text-sm text-indigo-600 hover:text-indigo-800 font-medium mr-4"
+                    >
+                      Select All
+                    </button>
+                    <button
+                      type="button"
+                      onclick="deselectAllSubAdminPermissions()"
+                      class="text-sm text-gray-600 hover:text-gray-800 font-medium"
+                    >
+                      Deselect All
+                    </button>
+                  </div>
+                  <div id="subAdminPermissionsGrid" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <!-- Permissions will be loaded here -->
+                  </div>
+                </div>
+              </div>
+
+              <div class="flex justify-end gap-3 pt-4 border-t">
+                <button
+                  type="button"
+                  onclick="closeSubAdminModal()"
+                  class="px-5 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
+                >
+                  Cancel
+                </button>
+                <button
+                  id="subAdminSaveBtn"
+                  type="submit"
+                  class="px-5 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
+                >
+                  Create Sub-Admin
                 </button>
               </div>
             </form>

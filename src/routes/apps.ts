@@ -4,6 +4,7 @@ import crypto from "crypto";
 import { Prisma } from "@prisma/client";
 import { deriveKey, signKey } from "../middleware/signedUrl";
 import { invalidateFeaturesCache } from "../lib/cache";
+import { requirePermission } from "../middleware/roles";
 
 const router = Router();
 
@@ -57,7 +58,7 @@ router.get(
           } catch {
             return { ...v, signedUrl: v.url };
           }
-        })
+        }),
       );
 
       // Photos are stored as external URLs (Runware), not S3 - use directly
@@ -74,7 +75,7 @@ router.get(
           } catch {
             return { ...p, signedUrl: p.url };
           }
-        })
+        }),
       );
 
       res.json({
@@ -89,7 +90,7 @@ router.get(
         .status(500)
         .json({ success: false, message: "Failed to get resources" });
     }
-  }
+  },
 );
 
 // Get app details with permissions
@@ -130,6 +131,7 @@ router.get("/:id", async (req: Request, res: Response): Promise<void> => {
 // Update app permissions
 router.put(
   "/:id/permissions",
+  requirePermission("apps", "UPDATE"),
   async (req: Request, res: Response): Promise<void> => {
     const idNum = Number(req.params.id);
     if (Number.isNaN(idNum) || idNum <= 0) {
@@ -204,7 +206,7 @@ router.put(
         {
           maxWait: 10000, // Maximum time to wait to start transaction (10s)
           timeout: 30000, // Maximum time transaction can run (30s)
-        }
+        },
       );
 
       // Fetch updated app with permissions
@@ -236,7 +238,7 @@ router.put(
         .status(500)
         .json({ success: false, message: "Failed to update permissions" });
     }
-  }
+  },
 );
 
 // Create app (requires API key or ADMIN_API_KEY)
@@ -268,7 +270,7 @@ router.post(
       }
       res.status(500).json({ success: false, message: "Failed to create app" });
     }
-  }
+  },
 );
 
 // Rotate key (requires API key)
@@ -294,27 +296,31 @@ router.post(
     } catch (e: unknown) {
       res.status(404).json({ success: false, message: "App not found" });
     }
-  }
+  },
 );
 
 // Delete app (requires API key)
-router.delete("/:id", async (req: Request, res: Response): Promise<void> => {
-  const idNum = Number(req.params.id);
-  if (Number.isNaN(idNum) || idNum <= 0) {
-    res.status(400).json({ success: false, message: "invalid id" });
-    return;
-  }
-  try {
-    await prisma.app.delete({ where: { id: idNum } });
+router.delete(
+  "/:id",
+  requirePermission("apps", "DELETE"),
+  async (req: Request, res: Response): Promise<void> => {
+    const idNum = Number(req.params.id);
+    if (Number.isNaN(idNum) || idNum <= 0) {
+      res.status(400).json({ success: false, message: "invalid id" });
+      return;
+    }
+    try {
+      await prisma.app.delete({ where: { id: idNum } });
 
-    // Invalidate cache since app was deleted
-    invalidateFeaturesCache();
+      // Invalidate cache since app was deleted
+      invalidateFeaturesCache();
 
-    res.json({ success: true });
-  } catch (e: unknown) {
-    res.status(404).json({ success: false, message: "App not found" });
-  }
-});
+      res.json({ success: true });
+    } catch (e: unknown) {
+      res.status(404).json({ success: false, message: "App not found" });
+    }
+  },
+);
 
 // Get app analytics (API call stats)
 router.get(
@@ -447,7 +453,7 @@ router.get(
         .status(500)
         .json({ success: false, message: "Failed to get app analytics" });
     }
-  }
+  },
 );
 
 export default router;

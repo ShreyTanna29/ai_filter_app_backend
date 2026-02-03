@@ -3,6 +3,7 @@ import prisma from "../lib/prisma";
 import axios from "axios";
 import { uploadStream, publicUrlFor, makeKey, deleteObject } from "../lib/s3";
 import { deriveKey, signKey } from "../middleware/signedUrl";
+import { requirePermission } from "../middleware/roles";
 import { Readable } from "stream";
 import { GetObjectCommand } from "@aws-sdk/client-s3";
 
@@ -67,7 +68,7 @@ async function registerTemplateEndpoint(template: any) {
   // Remove existing route if present
   if (templateRouteMap[endpoint]) {
     router.stack = router.stack.filter(
-      (layer: any) => !(layer.route && layer.route.path === endpoint)
+      (layer: any) => !(layer.route && layer.route.path === endpoint),
     );
     delete templateRouteMap[endpoint];
   }
@@ -100,7 +101,7 @@ async function registerTemplateEndpoint(template: any) {
             signedUrl = await signKey(key);
           } catch {}
           return { ...v, signedUrl };
-        })
+        }),
       );
       res.json({
         id: dbTemplate.id,
@@ -123,7 +124,7 @@ function unregisterTemplateEndpoint(template: any) {
   const endpoint = `/template-endpoint/${sanitizedName}`;
   if (templateRouteMap[endpoint]) {
     router.stack = router.stack.filter(
-      (layer: any) => !(layer.route && layer.route.path === endpoint)
+      (layer: any) => !(layer.route && layer.route.path === endpoint),
     );
     delete templateRouteMap[endpoint];
   }
@@ -141,6 +142,7 @@ async function getOrCreateMainCategory(name: string) {
 // Create a new template (admin only)
 router.post(
   "/templates",
+  requirePermission("templates", "CREATE"),
   async (req: Request, res: Response): Promise<void> => {
     try {
       const { name, description, subcategories } = req.body;
@@ -171,7 +173,7 @@ router.post(
                       prompt: feat?.prompt || "",
                       order: idx,
                     };
-                  })
+                  }),
                 );
                 return {
                   name: subcat.name,
@@ -180,7 +182,7 @@ router.post(
                     create: steps,
                   },
                 };
-              })
+              }),
             ),
           },
         },
@@ -198,7 +200,7 @@ router.post(
       console.error("Error creating template:", error);
       res.status(500).json({ error: "Failed to create template" });
     }
-  }
+  },
 );
 
 // Get all templates (with subcategories and steps)
@@ -233,12 +235,13 @@ router.get(
       console.error("Error fetching endpoints:", error);
       res.status(500).json({ error: "Failed to fetch endpoints" });
     }
-  }
+  },
 );
 
 // Update a template (admin only)
 router.put(
   "/templates/:id",
+  requirePermission("templates", "UPDATE"),
   async (req: Request, res: Response): Promise<void> => {
     try {
       const { id } = req.params;
@@ -295,7 +298,7 @@ router.put(
                       prompt: feat?.prompt || "",
                       order: idx,
                     };
-                  })
+                  }),
                 );
                 return {
                   name: subcat.name,
@@ -304,7 +307,7 @@ router.put(
                     create: steps,
                   },
                 };
-              })
+              }),
             ),
           },
         },
@@ -326,12 +329,13 @@ router.put(
       console.error("Error updating template:", error);
       res.status(500).json({ error: "Failed to update template" });
     }
-  }
+  },
 );
 
 // Delete a template (admin only)
 router.delete(
   "/templates/:id",
+  requirePermission("templates", "DELETE"),
   async (req: Request, res: Response): Promise<void> => {
     try {
       const { id } = req.params;
@@ -375,7 +379,7 @@ router.delete(
       console.error("Error deleting template:", error);
       res.status(500).json({ error: "Failed to delete template" });
     }
-  }
+  },
 );
 // On server start, register endpoints for all templates
 async function registerAllTemplateEndpoints() {
@@ -439,7 +443,7 @@ router.post(
               headers: {
                 "Content-Type": "application/json",
               },
-            }
+            },
           );
 
           const result = response.data;
@@ -475,7 +479,7 @@ router.post(
         res.status(500).json({ error: "Failed to execute template" });
       }
     }
-  }
+  },
 );
 
 // Upload and persist a template step video
@@ -511,7 +515,7 @@ router.post("/templates/:templateId/step-video", function (req, res) {
           const uploadRes = await uploadStream(
             key,
             response.data as Readable,
-            "video/mp4"
+            "video/mp4",
           );
           finalUrl = uploadRes.url;
         } catch (e) {
@@ -558,7 +562,7 @@ router.get("/templates/:templateId/step-videos", function (req, res) {
             signedUrl = await signKey(key);
           } catch {}
           return { ...v, signedUrl };
-        })
+        }),
       );
       res.json(enriched);
     } catch (e) {
@@ -596,7 +600,7 @@ router.delete(
         res.status(500).json({ error: "Failed to delete step video" });
       }
     })();
-  }
+  },
 );
 
 export default router;

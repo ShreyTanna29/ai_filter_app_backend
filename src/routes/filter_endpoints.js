@@ -17,6 +17,7 @@ const axios_1 = __importDefault(require("axios"));
 // S3 migration: replace Cloudinary deletion with S3 object removal
 const s3_1 = require("../lib/s3");
 const signedUrl_1 = require("../middleware/signedUrl");
+const roles_1 = require("../middleware/roles");
 const prisma_1 = __importDefault(require("../lib/prisma"));
 const router = (0, express_1.Router)();
 // Duplicate endpoint validation is now handled by the database unique constraint
@@ -245,7 +246,7 @@ router.post("/videos/app-permission", (req, res) => __awaiter(void 0, void 0, vo
     }
 }));
 // Dynamic route to support renamed endpoints without server restart
-router.post("/:endpoint", (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
+router.post("/:endpoint", (0, roles_1.requirePermission)("video_filters", "CREATE"), (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const requested = req.params.endpoint;
         const feature = yield prisma_1.default.features.findUnique({
@@ -312,7 +313,7 @@ router.get("/videos/:endpoint", (req, res) => __awaiter(void 0, void 0, void 0, 
     }
 }));
 // Delete a generated video from S3 by key (passed as base64-encoded query param or in body)
-router.delete("/videos/:endpoint", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+router.delete("/videos/:endpoint", (0, roles_1.requirePermission)("generated_videos", "DELETE"), (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const { key } = req.body;
         if (!key) {

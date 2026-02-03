@@ -14,6 +14,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
 const prisma_1 = __importDefault(require("../lib/prisma"));
+const roles_1 = require("../middleware/roles");
 const router = (0, express_1.Router)();
 // Get all photo templates
 router.get("/photo-templates", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
@@ -34,15 +35,19 @@ router.get("/photo-templates", (req, res) => __awaiter(void 0, void 0, void 0, f
     }
 }));
 // Create a new photo template
-router.post("/photo-templates", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+router.post("/photo-templates", (0, roles_1.requirePermission)("photo_templates", "CREATE"), (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const { name, description, subcategories } = req.body;
         if (!name || !subcategories || !Array.isArray(subcategories)) {
-            res.status(400).json({ error: "Name and subcategories array are required" });
+            res
+                .status(400)
+                .json({ error: "Name and subcategories array are required" });
             return;
         }
         // Get or create main category
-        let mainCategory = yield prisma_1.default.photo_Category.findFirst({ where: { name } });
+        let mainCategory = yield prisma_1.default.photo_Category.findFirst({
+            where: { name },
+        });
         if (!mainCategory) {
             mainCategory = yield prisma_1.default.photo_Category.create({ data: { name } });
         }
@@ -89,12 +94,14 @@ router.post("/photo-templates", (req, res) => __awaiter(void 0, void 0, void 0, 
     }
 }));
 // Update a photo template
-router.put("/photo-templates/:id", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+router.put("/photo-templates/:id", (0, roles_1.requirePermission)("photo_templates", "UPDATE"), (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const { id } = req.params;
         const { name, description, subcategories } = req.body;
         if (!name || !subcategories || !Array.isArray(subcategories)) {
-            res.status(400).json({ error: "Name and subcategories array are required" });
+            res
+                .status(400)
+                .json({ error: "Name and subcategories array are required" });
             return;
         }
         const oldTemplate = yield prisma_1.default.photo_Template.findUnique({
@@ -102,7 +109,9 @@ router.put("/photo-templates/:id", (req, res) => __awaiter(void 0, void 0, void 
         });
         let mainCategoryId = oldTemplate === null || oldTemplate === void 0 ? void 0 : oldTemplate.categoryId;
         if (!mainCategoryId) {
-            let mainCategory = yield prisma_1.default.photo_Category.findFirst({ where: { name } });
+            let mainCategory = yield prisma_1.default.photo_Category.findFirst({
+                where: { name },
+            });
             if (!mainCategory) {
                 mainCategory = yield prisma_1.default.photo_Category.create({ data: { name } });
             }
@@ -164,7 +173,7 @@ router.put("/photo-templates/:id", (req, res) => __awaiter(void 0, void 0, void 
     }
 }));
 // Delete a photo template
-router.delete("/photo-templates/:id", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+router.delete("/photo-templates/:id", (0, roles_1.requirePermission)("photo_templates", "DELETE"), (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const { id } = req.params;
         // Delete all step photos for this template

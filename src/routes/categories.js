@@ -14,6 +14,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
 const prisma_1 = __importDefault(require("../lib/prisma"));
+const roles_1 = require("../middleware/roles");
 const router = (0, express_1.Router)();
 // Get all categories with subcategories and templates
 router.get("/", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
@@ -32,7 +33,7 @@ router.get("/", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     }
 }));
 // Create a new category
-router.post("/", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+router.post("/", (0, roles_1.requirePermission)("categories", "CREATE"), (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const { name } = req.body;
         const category = yield prisma_1.default.category.create({
@@ -45,7 +46,7 @@ router.post("/", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     }
 }));
 // Update a category
-router.put("/:id", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+router.put("/:id", (0, roles_1.requirePermission)("categories", "UPDATE"), (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const { id } = req.params;
         const { name } = req.body;
@@ -60,11 +61,13 @@ router.put("/:id", (req, res) => __awaiter(void 0, void 0, void 0, function* () 
     }
 }));
 // Delete a category (and all its subcategories)
-router.delete("/:id", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+router.delete("/:id", (0, roles_1.requirePermission)("categories", "DELETE"), (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const { id } = req.params;
         // Delete all subcategories for this category
-        yield prisma_1.default.subcategory.deleteMany({ where: { categoryId: Number(id) } });
+        yield prisma_1.default.subcategory.deleteMany({
+            where: { categoryId: Number(id) },
+        });
         // Delete the category
         yield prisma_1.default.category.delete({ where: { id: Number(id) } });
         res.json({ message: "Category deleted successfully" });
@@ -74,7 +77,7 @@ router.delete("/:id", (req, res) => __awaiter(void 0, void 0, void 0, function* 
     }
 }));
 // Create a new subcategory for a category
-router.post("/:categoryId/subcategories", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+router.post("/:categoryId/subcategories", (0, roles_1.requirePermission)("categories", "CREATE"), (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const { categoryId } = req.params;
         const { name, templateId } = req.body;

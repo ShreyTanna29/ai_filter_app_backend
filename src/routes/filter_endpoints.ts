@@ -8,6 +8,7 @@ import {
   getVideosForFeatureFromS3,
 } from "../lib/s3";
 import { signKey, deriveKey } from "../middleware/signedUrl";
+import { requirePermission } from "../middleware/roles";
 import prisma from "../lib/prisma";
 
 const router = Router();
@@ -26,7 +27,7 @@ if (!ALIBABA_API_KEY) {
 // Create video generation task
 async function createVideoTask(
   imageUrl: string,
-  prompt: string
+  prompt: string,
 ): Promise<string> {
   const response = await axios.post(
     `${ALIBABA_API_BASE}/services/aigc/video-generation/video-synthesis`,
@@ -49,7 +50,7 @@ async function createVideoTask(
         "Content-Type": "application/json",
         "X-DashScope-Async": "enable",
       },
-    }
+    },
   );
 
   return response.data.output.task_id;
@@ -98,7 +99,7 @@ async function pollTaskStatus(taskId: string): Promise<any> {
 async function alibabaImageToVideo(
   req: Request,
   res: Response,
-  prompt: string
+  prompt: string,
 ) {
   try {
     const { image_url, prompt: customPrompt } = req.body;
@@ -120,7 +121,7 @@ async function alibabaImageToVideo(
       // Check if it's a direct image file URL
       const imageExtensions = [".jpg", ".jpeg", ".png", ".bmp", ".webp"];
       const hasImageExtension = imageExtensions.some((ext) =>
-        url.pathname.toLowerCase().endsWith(ext)
+        url.pathname.toLowerCase().endsWith(ext),
       );
 
       if (!hasImageExtension) {
@@ -276,20 +277,24 @@ router.post("/videos/app-permission", async (req: Request, res: Response) => {
 });
 
 // Dynamic route to support renamed endpoints without server restart
-router.post("/:endpoint", async (req: Request, res: Response, next) => {
-  try {
-    const requested = req.params.endpoint;
-    const feature = await prisma.features.findUnique({
-      where: { endpoint: requested },
-    });
-    if (!feature) {
-      return next(); // not a known feature endpoint; allow other routes to handle
+router.post(
+  "/:endpoint",
+  requirePermission("video_filters", "CREATE"),
+  async (req: Request, res: Response, next) => {
+    try {
+      const requested = req.params.endpoint;
+      const feature = await prisma.features.findUnique({
+        where: { endpoint: requested },
+      });
+      if (!feature) {
+        return next(); // not a known feature endpoint; allow other routes to handle
+      }
+      return alibabaImageToVideo(req, res, feature.prompt);
+    } catch (e) {
+      return next(e);
     }
-    return alibabaImageToVideo(req, res, feature.prompt);
-  } catch (e) {
-    return next(e);
-  }
-});
+  },
+);
 
 // Endpoint to get all generated videos for a feature directly from S3
 router.get("/videos/:endpoint", async (req: Request, res: Response) => {
@@ -338,7 +343,7 @@ router.get("/videos/:endpoint", async (req: Request, res: Response) => {
           apps: dbRecord?.apps || [], // Include app permissions
           audioUrl: dbRecord?.audioUrl || null, // Include audio URL from database
         };
-      })
+      }),
     );
     res.json(out);
   } catch (error) {
@@ -348,37 +353,41 @@ router.get("/videos/:endpoint", async (req: Request, res: Response) => {
 });
 
 // Delete a generated video from S3 by key (passed as base64-encoded query param or in body)
-router.delete("/videos/:endpoint", async (req: Request, res: Response) => {
-  try {
-    const { key } = req.body as { key?: string };
-    if (!key) {
-      res.status(400).json({ error: "Missing S3 key in request body" });
-      return;
+router.delete(
+  "/videos/:endpoint",
+  requirePermission("generated_videos", "DELETE"),
+  async (req: Request, res: Response) => {
+    try {
+      const { key } = req.body as { key?: string };
+      if (!key) {
+        res.status(400).json({ error: "Missing S3 key in request body" });
+        return;
+      }
+
+      // Validate that the key belongs to the specified endpoint
+      const endpoint = req.params.endpoint;
+      const normalizedEndpoint = endpoint.replace(/[^a-zA-Z0-9_-]/g, "-");
+      const validPrefixes = [
+        `videos/${normalizedEndpoint}/`,
+        `generated-videos/${normalizedEndpoint}/`,
+      ];
+
+      const isValidKey = validPrefixes.some((prefix) => key.startsWith(prefix));
+      if (!isValidKey) {
+        res
+          .status(400)
+          .json({ error: "Key does not match the specified endpoint" });
+        return;
+      }
+
+      await deleteObject(key);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting generated video:", error);
+      res.status(500).json({ error: "Failed to delete video" });
     }
-
-    // Validate that the key belongs to the specified endpoint
-    const endpoint = req.params.endpoint;
-    const normalizedEndpoint = endpoint.replace(/[^a-zA-Z0-9_-]/g, "-");
-    const validPrefixes = [
-      `videos/${normalizedEndpoint}/`,
-      `generated-videos/${normalizedEndpoint}/`,
-    ];
-
-    const isValidKey = validPrefixes.some((prefix) => key.startsWith(prefix));
-    if (!isValidKey) {
-      res
-        .status(400)
-        .json({ error: "Key does not match the specified endpoint" });
-      return;
-    }
-
-    await deleteObject(key);
-    res.json({ success: true });
-  } catch (error) {
-    console.error("Error deleting generated video:", error);
-    res.status(500).json({ error: "Failed to delete video" });
-  }
-});
+  },
+);
 
 // Return latest S3 video per endpoint directly from S3 bucket
 router.get("/feature-graphic", async (req: Request, res: Response) => {
@@ -396,7 +405,7 @@ router.get("/feature-graphic", async (req: Request, res: Response) => {
           console.warn("[feature-graphic] Failed to sign URL:", v.url, e);
         }
         return { endpoint: v.endpoint, graphicUrl: signed };
-      })
+      }),
     );
 
     res.json(result);
@@ -426,7 +435,7 @@ router.post(
         ];
 
         const isValidKey = validPrefixes.some((prefix) =>
-          key.startsWith(prefix)
+          key.startsWith(prefix),
         );
         if (!isValidKey) {
           res
@@ -450,7 +459,7 @@ router.post(
       console.error("Error setting feature graphic:", error);
       res.status(500).json({ error: "Failed to set feature graphic" });
     }
-  }
+  },
 );
 
 router.get("/photo-graphic", async (req: Request, res: Response) => {
@@ -478,7 +487,7 @@ router.get("/photo-graphic", async (req: Request, res: Response) => {
           graphicUrl: signed,
           createdAt: photo.createdAt,
         };
-      })
+      }),
     );
 
     res.json(result);
@@ -506,7 +515,7 @@ router.get("/photo-graphic/:endpoint", async (req: Request, res: Response) => {
           }
         } catch {}
         return { ...p, signedUrl: signed };
-      })
+      }),
     );
     res.json(out);
   } catch (error) {

@@ -17,6 +17,7 @@ const prisma_1 = __importDefault(require("../lib/prisma"));
 const crypto_1 = __importDefault(require("crypto"));
 const signedUrl_1 = require("../middleware/signedUrl");
 const cache_1 = require("../lib/cache");
+const roles_1 = require("../middleware/roles");
 const router = (0, express_1.Router)();
 function generateApiKey() {
     return crypto_1.default.randomBytes(32).toString("hex");
@@ -125,7 +126,7 @@ router.get("/:id", (req, res) => __awaiter(void 0, void 0, void 0, function* () 
     }
 }));
 // Update app permissions
-router.put("/:id/permissions", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+router.put("/:id/permissions", (0, roles_1.requirePermission)("apps", "UPDATE"), (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     const idNum = Number(req.params.id);
     if (Number.isNaN(idNum) || idNum <= 0) {
         res.status(400).json({ success: false, message: "invalid id" });
@@ -265,7 +266,7 @@ router.post("/:id/rotate", (req, res) => __awaiter(void 0, void 0, void 0, funct
     }
 }));
 // Delete app (requires API key)
-router.delete("/:id", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+router.delete("/:id", (0, roles_1.requirePermission)("apps", "DELETE"), (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     const idNum = Number(req.params.id);
     if (Number.isNaN(idNum) || idNum <= 0) {
         res.status(400).json({ success: false, message: "invalid id" });

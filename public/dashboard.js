@@ -269,16 +269,16 @@ function buildIdeogramDimensionOptions(list) {
 }
 
 const IDEOGRAM_DIMENSION_OPTIONS = buildIdeogramDimensionOptions(
-  IDEOGRAM_BASE_DIMENSIONS
+  IDEOGRAM_BASE_DIMENSIONS,
 );
 const IDEOGRAM_REMIX_DIMENSION_OPTIONS = buildIdeogramDimensionOptions(
-  IDEOGRAM_REMIX_BASE_DIMENSIONS
+  IDEOGRAM_REMIX_BASE_DIMENSIONS,
 );
 const IDEOGRAM_EDIT_DIMENSION_OPTIONS = buildIdeogramDimensionOptions(
-  IDEOGRAM_EDIT_BASE_DIMENSIONS
+  IDEOGRAM_EDIT_BASE_DIMENSIONS,
 );
 const IDEOGRAM_REFRAME_DIMENSION_OPTIONS = buildIdeogramDimensionOptions(
-  IDEOGRAM_REFRAME_BASE_DIMENSIONS
+  IDEOGRAM_REFRAME_BASE_DIMENSIONS,
 );
 
 function pickIdeogramDefault(options) {
@@ -289,16 +289,16 @@ function pickIdeogramDefault(options) {
 }
 
 const IDEOGRAM_DEFAULT_DIMENSION = pickIdeogramDefault(
-  IDEOGRAM_DIMENSION_OPTIONS
+  IDEOGRAM_DIMENSION_OPTIONS,
 );
 const IDEOGRAM_REMIX_DEFAULT_DIMENSION = pickIdeogramDefault(
-  IDEOGRAM_REMIX_DIMENSION_OPTIONS
+  IDEOGRAM_REMIX_DIMENSION_OPTIONS,
 );
 const IDEOGRAM_EDIT_DEFAULT_DIMENSION = pickIdeogramDefault(
-  IDEOGRAM_EDIT_DIMENSION_OPTIONS
+  IDEOGRAM_EDIT_DIMENSION_OPTIONS,
 );
 const IDEOGRAM_REFRAME_DEFAULT_DIMENSION = pickIdeogramDefault(
-  IDEOGRAM_REFRAME_DIMENSION_OPTIONS
+  IDEOGRAM_REFRAME_DIMENSION_OPTIONS,
 );
 
 function getIdeogramDimensionOptions(modelId) {
@@ -331,7 +331,7 @@ function initializeIdeogramDropdown(modelId = IDEOGRAM_MODEL_ID) {
       (dim) =>
         `<option value="${dim.width}x${
           dim.height
-        }">${formatIdeogramDimensionLabel(dim)}</option>`
+        }">${formatIdeogramDimensionLabel(dim)}</option>`,
     )
     .join("");
   const defaultDim = getIdeogramDefaultDimension(targetModel);
@@ -352,7 +352,7 @@ function formatAspectRatio(width, height) {
 function formatIdeogramDimensionLabel(dim) {
   return `${dim.width}×${dim.height} (${formatAspectRatio(
     dim.width,
-    dim.height
+    dim.height,
   )})`;
 }
 
@@ -442,7 +442,7 @@ const PHOTO_MODEL_OPTIONS = [
   },
 ];
 const PHOTO_MODEL_META = new Map(
-  PHOTO_MODEL_OPTIONS.map((opt) => [opt.value, opt])
+  PHOTO_MODEL_OPTIONS.map((opt) => [opt.value, opt]),
 );
 let featureModelSelectVideoOptionsHtml = "";
 
@@ -621,7 +621,7 @@ window.addEventListener("DOMContentLoaded", function () {
     // Hide dashboard and show login modal
     document
       .querySelectorAll(
-        "main, aside, header, .tab-content, #tab-dashboard, #tab-filters, #tab-photo-filters, #tab-templates"
+        "main, aside, header, .tab-content, #tab-dashboard, #tab-filters, #tab-photo-filters, #tab-templates",
       )
       .forEach((el) => {
         if (el) el.style.display = "none";
@@ -807,7 +807,7 @@ window.addEventListener("DOMContentLoaded", function () {
         // Show main UI and initialize
         document
           .querySelectorAll(
-            "main, aside, header, .tab-content, #tab-dashboard, #tab-filters, #tab-photo-filters, #tab-templates"
+            "main, aside, header, .tab-content, #tab-dashboard, #tab-filters, #tab-photo-filters, #tab-templates",
           )
           .forEach((el) => {
             if (el) el.style.display = "";
@@ -829,7 +829,7 @@ window.addEventListener("DOMContentLoaded", function () {
     // Hide dashboard content and force sign in
     document
       .querySelectorAll(
-        "main, aside, header, .tab-content, #tab-dashboard, #tab-filters, #tab-photo-filters, #tab-templates"
+        "main, aside, header, .tab-content, #tab-dashboard, #tab-filters, #tab-photo-filters, #tab-templates",
       )
       .forEach((el) => {
         if (el) el.style.display = "none";
@@ -860,12 +860,12 @@ window.addEventListener("DOMContentLoaded", function () {
 
   // Wire up Add Cartoon Character button to open the modal
   const addCartoonCharacterBtn = document.getElementById(
-    "addCartoonCharacterBtn"
+    "addCartoonCharacterBtn",
   );
   if (addCartoonCharacterBtn) {
     addCartoonCharacterBtn.addEventListener(
       "click",
-      openCartoonCharacterCrudModal
+      openCartoonCharacterCrudModal,
     );
   }
 
@@ -896,8 +896,9 @@ window.switchTab = function (tabName) {
     "tab-photo-templates", // 4
     "tab-photo-packs", // 5
     "tab-cartoon-characters", // 6
-    "tab-apps", // 7
-    "tab-ai-workflows", // 8
+    "tab-sub-admins", // 7
+    "tab-apps", // 8
+    "tab-ai-workflows", // 9
   ];
   const tabIndex = tabIds.findIndex((id) => id === `tab-${tabName}`);
 
@@ -905,7 +906,7 @@ window.switchTab = function (tabName) {
     "[SWITCH TAB] Tab index:",
     tabIndex,
     "for tab:",
-    `tab-${tabName}`
+    `tab-${tabName}`,
   );
 
   if (tabIndex === -1) {
@@ -916,7 +917,7 @@ window.switchTab = function (tabName) {
   // Remove active class from all sidebar buttons
   const sidebarButtons = document.querySelectorAll("aside nav ul li button");
   sidebarButtons.forEach((b) =>
-    b.classList.remove("bg-blue-50", "text-blue-600", "font-medium")
+    b.classList.remove("bg-blue-50", "text-blue-600", "font-medium"),
   );
 
   // Find and highlight the correct button by matching the onclick attribute
@@ -958,7 +959,7 @@ window.switchTab = function (tabName) {
   } else if (showId === "tab-photo-filters") {
     if (!photoFeaturesInitialRequested) {
       Promise.all([loadAllPhotoFeatures(), loadPhotoGraphics()]).then(() =>
-        displayPhotoFeatures()
+        displayPhotoFeatures(),
       );
       photoFeaturesInitialRequested = true;
     } else if (!isReturningFromDetailPage) {
@@ -1011,6 +1012,11 @@ window.switchTab = function (tabName) {
     } else {
       displayPhotoPacks();
     }
+  } else if (showId === "tab-sub-admins") {
+    console.log("[SWITCH TAB] Loading sub-admins...");
+    if (!subAdminsInitialRequested) {
+      initSubAdminsTab();
+    }
   }
 
   console.log("[SWITCH TAB] Switch complete");
@@ -1024,7 +1030,7 @@ async function initializeDashboard() {
   console.log("Showing dashboard UI elements");
   document
     .querySelectorAll(
-      "main, aside, header, .tab-content, #tab-dashboard, #tab-filters, #tab-photo-filters, #tab-templates"
+      "main, aside, header, .tab-content, #tab-dashboard, #tab-filters, #tab-photo-filters, #tab-templates",
     )
     .forEach((el) => {
       if (el) {
@@ -1115,6 +1121,13 @@ let photoPacksLoading = false;
 let photoPacksInitialRequested = false;
 let currentPhotoPack = null;
 
+// === Sub-Admins tab state ===
+let subAdmins = [];
+let subAdminsLoading = false;
+let subAdminsInitialRequested = false;
+let availablePermissions = [];
+let editingSubAdminId = null;
+
 function getStoredApiKey() {
   return "supersecretadminkey12345";
 }
@@ -1129,8 +1142,8 @@ function isAdmin() {
 function applyRoleBasedUI() {
   const hideForUser = !isAdmin();
 
-  // Hide Templates and Apps navigation tabs for non-admin users
-  const adminOnlyNavItems = ["nav-templates", "nav-apps"];
+  // Hide Templates, Apps, and Sub-Admins navigation tabs for non-admin users
+  const adminOnlyNavItems = ["nav-templates", "nav-apps", "nav-sub-admins"];
   adminOnlyNavItems.forEach((id) => {
     const navItem = document.getElementById(id);
     if (navItem) navItem.style.display = hideForUser ? "none" : "";
@@ -1167,7 +1180,7 @@ function applyRoleBasedUI() {
 
   // Hide rename/edit buttons for non-admins
   const editBtns = document.querySelectorAll(
-    "#editFeatureNameBtn, #editCartoonCharacterNameBtn, #editFeaturePromptBtn, #editCartoonCharacterPromptBtn"
+    "#editFeatureNameBtn, #editCartoonCharacterNameBtn, #editFeaturePromptBtn, #editCartoonCharacterPromptBtn",
   );
   editBtns.forEach((btn) => {
     if (btn) btn.style.display = hideForUser ? "none" : "";
@@ -1182,7 +1195,7 @@ function applyRoleBasedUI() {
 
   // Hide save prompt buttons for non-admins
   const savePromptBtns = document.querySelectorAll(
-    "#featureModalSavePrompt, #cartoonCharacterSavePromptBtn"
+    "#featureModalSavePrompt, #cartoonCharacterSavePromptBtn",
   );
   savePromptBtns.forEach((btn) => {
     if (btn) btn.style.display = hideForUser ? "none" : "";
@@ -1553,18 +1566,18 @@ function renderAppDetailPage() {
 
   // Get currently allowed IDs
   const allowedFeatureIds = new Set(
-    (currentAppDetail.allowedFeatures || []).map((af) => af.featureId)
+    (currentAppDetail.allowedFeatures || []).map((af) => af.featureId),
   );
   const allowedPhotoFeatureIds = new Set(
     (currentAppDetail.allowedPhotoFeatures || []).map(
-      (apf) => apf.photoFeatureId
-    )
+      (apf) => apf.photoFeatureId,
+    ),
   );
   const allowedVideoIds = new Set(
-    (currentAppDetail.allowedVideos || []).map((av) => av.generatedVideoId)
+    (currentAppDetail.allowedVideos || []).map((av) => av.generatedVideoId),
   );
   const allowedPhotoIds = new Set(
-    (currentAppDetail.allowedPhotos || []).map((ap) => ap.generatedPhotoId)
+    (currentAppDetail.allowedPhotos || []).map((ap) => ap.generatedPhotoId),
   );
 
   const keyMasked = currentAppDetail.apiKey
@@ -1629,13 +1642,13 @@ function renderAppDetailPage() {
                   (f) => `
               <label class="flex items-center gap-2 text-sm cursor-pointer hover:bg-white p-1 rounded">
                 <input type="checkbox" name="feature" value="${f.id}" ${
-                    allowedFeatureIds.has(f.id) ? "checked" : ""
-                  } class="rounded text-blue-600">
+                  allowedFeatureIds.has(f.id) ? "checked" : ""
+                } class="rounded text-blue-600">
                 <span class="truncate" title="${f.endpoint}">${
-                    f.endpoint
-                  }</span>
+                  f.endpoint
+                }</span>
               </label>
-            `
+            `,
                 )
                 .join("") ||
               '<span class="text-gray-400 text-sm">No video filters available</span>'
@@ -1659,13 +1672,13 @@ function renderAppDetailPage() {
                   (pf) => `
               <label class="flex items-center gap-2 text-sm cursor-pointer hover:bg-white p-1 rounded">
                 <input type="checkbox" name="photoFeature" value="${pf.id}" ${
-                    allowedPhotoFeatureIds.has(pf.id) ? "checked" : ""
-                  } class="rounded text-green-600">
+                  allowedPhotoFeatureIds.has(pf.id) ? "checked" : ""
+                } class="rounded text-green-600">
                 <span class="truncate" title="${pf.endpoint}">${
-                    pf.endpoint
-                  }</span>
+                  pf.endpoint
+                }</span>
               </label>
-            `
+            `,
                 )
                 .join("") ||
               '<span class="text-gray-400 text-sm">No photo filters available</span>'
@@ -1689,19 +1702,17 @@ function renderAppDetailPage() {
                   (v) => `
               <label class="flex items-center gap-2 text-sm cursor-pointer hover:bg-white p-1 rounded">
                 <input type="checkbox" name="generatedVideo" value="${v.id}" ${
-                    allowedVideoIds.has(v.id) ? "checked" : ""
-                  } class="rounded text-purple-600">
+                  allowedVideoIds.has(v.id) ? "checked" : ""
+                } class="rounded text-purple-600">
                 <span class="truncate text-blue-600 hover:underline cursor-pointer" title="${
                   v.feature
                 } - ${
-                    v.id
-                  }" onclick="event.preventDefault(); event.stopPropagation(); showAppMediaPreview('video', '${encodeURIComponent(
-                    v.signedUrl || v.url
-                  )}', '${v.feature} (#${v.id})')">${v.feature} (#${
-                    v.id
-                  })</span>
+                  v.id
+                }" onclick="event.preventDefault(); event.stopPropagation(); showAppMediaPreview('video', '${encodeURIComponent(
+                  v.signedUrl || v.url,
+                )}', '${v.feature} (#${v.id})')">${v.feature} (#${v.id})</span>
               </label>
-            `
+            `,
                 )
                 .join("") ||
               '<span class="text-gray-400 text-sm">No generated videos available</span>'
@@ -1725,19 +1736,17 @@ function renderAppDetailPage() {
                   (p) => `
               <label class="flex items-center gap-2 text-sm cursor-pointer hover:bg-white p-1 rounded">
                 <input type="checkbox" name="generatedPhoto" value="${p.id}" ${
-                    allowedPhotoIds.has(p.id) ? "checked" : ""
-                  } class="rounded text-orange-600">
+                  allowedPhotoIds.has(p.id) ? "checked" : ""
+                } class="rounded text-orange-600">
                 <span class="truncate text-blue-600 hover:underline cursor-pointer" title="${
                   p.feature
                 } - ${
-                    p.id
-                  }" onclick="event.preventDefault(); event.stopPropagation(); showAppMediaPreview('image', '${encodeURIComponent(
-                    p.signedUrl || p.url
-                  )}', '${p.feature} (#${p.id})')">${p.feature} (#${
-                    p.id
-                  })</span>
+                  p.id
+                }" onclick="event.preventDefault(); event.stopPropagation(); showAppMediaPreview('image', '${encodeURIComponent(
+                  p.signedUrl || p.url,
+                )}', '${p.feature} (#${p.id})')">${p.feature} (#${p.id})</span>
               </label>
-            `
+            `,
                 )
                 .join("") ||
               '<span class="text-gray-400 text-sm">No generated photos available</span>'
@@ -1770,7 +1779,7 @@ function renderAppDetailPage() {
     // Hide select/deselect all buttons for non-admins
     page
       .querySelectorAll(
-        '[onclick*="selectAllPermissions"], [onclick*="deselectAllPermissions"]'
+        '[onclick*="selectAllPermissions"], [onclick*="deselectAllPermissions"]',
       )
       .forEach((btn) => {
         btn.style.display = "none";
@@ -1819,7 +1828,7 @@ function renderAppAnalyticsSection() {
       <span class="text-sm text-gray-700 truncate flex-1" title="${item.endpoint}">${item.endpoint}</span>
       <span class="text-sm font-semibold text-blue-600 ml-2">${item.count}</span>
     </div>
-  `
+  `,
       )
       .join("") || '<p class="text-gray-400 text-sm">No filter usage yet</p>';
 
@@ -1831,10 +1840,10 @@ function renderAppAnalyticsSection() {
           item.featureType === "video"
             ? "fa-film text-purple-500"
             : item.featureType === "photo"
-            ? "fa-image text-green-500"
-            : item.featureType === "cartoon"
-            ? "fa-paint-brush text-orange-500"
-            : "fa-question text-gray-400";
+              ? "fa-image text-green-500"
+              : item.featureType === "cartoon"
+                ? "fa-paint-brush text-orange-500"
+                : "fa-question text-gray-400";
         return `
       <div class="flex items-center gap-2 px-3 py-2 bg-gray-50 rounded">
         <i class="fa ${icon}"></i>
@@ -1863,7 +1872,7 @@ function renderAppAnalyticsSection() {
         item.count
       }</span>
     </div>
-  `
+  `,
       )
       .join("") || '<p class="text-gray-400 text-sm">No model usage data</p>';
 
@@ -1893,7 +1902,7 @@ function renderAppAnalyticsSection() {
           call.model
         }">${call.model || "N/A"}</td>
         <td class="py-2 px-2 text-sm text-gray-500">${formatTime(
-          call.responseTime
+          call.responseTime,
         )}</td>
         <td class="py-2 px-2 text-sm text-gray-400">${timeAgo}</td>
         <td class="py-2 px-2 text-sm text-red-500 truncate max-w-[150px]" title="${
@@ -1937,7 +1946,7 @@ function renderAppAnalyticsSection() {
       <div class="mb-6 bg-white p-3 rounded-lg border inline-block">
         <span class="text-gray-600"><i class="fa fa-clock mr-2"></i>Avg Response Time:</span>
         <span class="font-semibold text-blue-600 ml-2">${formatTime(
-          avgResponseTime
+          avgResponseTime,
         )}</span>
       </div>
 
@@ -2097,23 +2106,23 @@ async function saveAppPermissions() {
   // Gather selected IDs
   const featureIds = Array.from(
     document.querySelectorAll(
-      '#appFeaturesCheckboxes input[name="feature"]:checked'
-    )
+      '#appFeaturesCheckboxes input[name="feature"]:checked',
+    ),
   ).map((cb) => parseInt(cb.value));
   const photoFeatureIds = Array.from(
     document.querySelectorAll(
-      '#appPhotoFeaturesCheckboxes input[name="photoFeature"]:checked'
-    )
+      '#appPhotoFeaturesCheckboxes input[name="photoFeature"]:checked',
+    ),
   ).map((cb) => parseInt(cb.value));
   const generatedVideoIds = Array.from(
     document.querySelectorAll(
-      '#appGeneratedVideosCheckboxes input[name="generatedVideo"]:checked'
-    )
+      '#appGeneratedVideosCheckboxes input[name="generatedVideo"]:checked',
+    ),
   ).map((cb) => parseInt(cb.value));
   const generatedPhotoIds = Array.from(
     document.querySelectorAll(
-      '#appGeneratedPhotosCheckboxes input[name="generatedPhoto"]:checked'
-    )
+      '#appGeneratedPhotosCheckboxes input[name="generatedPhoto"]:checked',
+    ),
   ).map((cb) => parseInt(cb.value));
 
   if (saveBtn) saveBtn.disabled = true;
@@ -2215,8 +2224,8 @@ function showAppMediaPreview(type, encodedUrl, title) {
     } else {
       contentEl.innerHTML = `
         <img src="${url}" alt="${
-        title || "Image preview"
-      }" class="max-w-full max-h-full rounded object-contain" style="max-height: 60vh;" />
+          title || "Image preview"
+        }" class="max-w-full max-h-full rounded object-contain" style="max-height: 60vh;" />
       `;
     }
   }
@@ -2365,7 +2374,7 @@ function displayFeatures() {
   const graphicsCount = Object.keys(featureGraphics).length;
   const videosCount = Object.keys(latestVideos).length;
   console.log(
-    `displayFeatures: ${graphicsCount} graphics, ${videosCount} videos available`
+    `displayFeatures: ${graphicsCount} graphics, ${videosCount} videos available`,
   );
   if (graphicsCount > 0) {
     console.log("Sample graphics:", Object.keys(featureGraphics).slice(0, 3));
@@ -2443,7 +2452,7 @@ function displayPhotoFeatures() {
 
   const graphicsCount = Object.keys(photoGraphics).length;
   console.log(
-    `displayPhotoFeatures: ${graphicsCount} photo graphics available`
+    `displayPhotoFeatures: ${graphicsCount} photo graphics available`,
   );
 
   const searchInput = document.getElementById("photoFeatureSearch");
@@ -2540,7 +2549,7 @@ function initializeStatusFilters() {
           "bg-green-500",
           "bg-red-500",
           "bg-yellow-500",
-          "text-white"
+          "text-white",
         );
         // Reset all buttons to outline style
         filterButtons.forEach((b) => {
@@ -2548,7 +2557,7 @@ function initializeStatusFilters() {
             "bg-green-500",
             "bg-red-500",
             "bg-yellow-500",
-            "text-white"
+            "text-white",
           );
         });
       } else {
@@ -2559,7 +2568,7 @@ function initializeStatusFilters() {
             "bg-green-500",
             "bg-red-500",
             "bg-yellow-500",
-            "text-white"
+            "text-white",
           );
         });
         // Highlight the active button
@@ -2595,7 +2604,7 @@ function updateFeatureStatusButtons(currentStatus) {
       "bg-green-500",
       "bg-red-500",
       "bg-yellow-500",
-      "text-white"
+      "text-white",
     );
 
     // Add active style if this is the current status
@@ -2628,7 +2637,7 @@ async function updateFeatureStatus(newStatus) {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({ status: newStatus }),
-      }
+      },
     );
 
     const data = await response.json();
@@ -2647,7 +2656,7 @@ async function updateFeatureStatus(newStatus) {
 
     // Also check photo features
     const photoFeatureIndex = photoFeatures.findIndex(
-      (f) => f.endpoint === endpoint
+      (f) => f.endpoint === endpoint,
     );
     if (photoFeatureIndex !== -1) {
       photoFeatures[photoFeatureIndex].status = newStatus;
@@ -2679,7 +2688,7 @@ function showFeatureDetailPage(endpoint, sourceTab = "filters") {
     "showFeatureDetailPage called with endpoint:",
     endpoint,
     "from",
-    featureDetailOriginTab
+    featureDetailOriginTab,
   );
   console.log("Current features array:", features);
 
@@ -2702,7 +2711,7 @@ function showFeatureDetailPage(endpoint, sourceTab = "filters") {
     // Hide all tab content and modals (but not the page we want to show)
     console.log("Hiding other elements...");
     const elementsToHide = document.querySelectorAll(
-      ".tab-content, #featureCrudModal, #createTemplateModal, #stepDetailPage"
+      ".tab-content, #featureCrudModal, #createTemplateModal, #stepDetailPage",
     );
     console.log("Elements to hide:", elementsToHide);
     elementsToHide.forEach((el) => {
@@ -2753,7 +2762,7 @@ function showFeatureDetailPage(endpoint, sourceTab = "filters") {
         "Checking parent:",
         parent.tagName,
         parent.id,
-        parent.className
+        parent.className,
       );
       parent.style.display = "";
       parent.classList.remove("hidden");
@@ -2789,7 +2798,7 @@ function showFeatureDetailPage(endpoint, sourceTab = "filters") {
       if (!videoUrl) {
         try {
           const res = await fetch(
-            `/api/videos/${encodeURIComponent(feature.endpoint)}`
+            `/api/videos/${encodeURIComponent(feature.endpoint)}`,
           );
           const videos = await res.json();
           if (Array.isArray(videos) && videos.length > 0) {
@@ -2853,40 +2862,40 @@ function showFeatureDetailPage(endpoint, sourceTab = "filters") {
     const genStatus = document.getElementById("featureGenStatus");
     const featureModelSelect = document.getElementById("featureModelSelect");
     const featureLastFrameWrapper = document.getElementById(
-      "featureLastFrameWrapper"
+      "featureLastFrameWrapper",
     );
     const ideogramOptionsPanel = document.getElementById(
-      "ideogramOptionsPanel"
+      "ideogramOptionsPanel",
     );
     const ideogramDimensionSelect = document.getElementById(
-      "ideogramDimensionSelect"
+      "ideogramDimensionSelect",
     );
     if (ideogramDimensionSelect && !window.__ideogramDimensionSelect) {
       window.__ideogramDimensionSelect = ideogramDimensionSelect;
     }
     const ideogramReferenceUuidInput = document.getElementById(
-      "ideogramReferenceUuidInput"
+      "ideogramReferenceUuidInput",
     );
     const ideogramRenderingSpeedSelect = document.getElementById(
-      "ideogramRenderingSpeedSelect"
+      "ideogramRenderingSpeedSelect",
     );
     const ideogramMagicPromptToggle = document.getElementById(
-      "ideogramMagicPromptToggle"
+      "ideogramMagicPromptToggle",
     );
     const ideogramStyleTypeInput = document.getElementById(
-      "ideogramStyleTypeInput"
+      "ideogramStyleTypeInput",
     );
     const ideogramStylePresetInput = document.getElementById(
-      "ideogramStylePresetInput"
+      "ideogramStylePresetInput",
     );
     const ideogramStyleCodeInput = document.getElementById(
-      "ideogramStyleCodeInput"
+      "ideogramStyleCodeInput",
     );
     const ideogramRemixStrengthInput = document.getElementById(
-      "ideogramRemixStrengthInput"
+      "ideogramRemixStrengthInput",
     );
     const ideogramReferenceNotice = document.getElementById(
-      "ideogramReferenceNotice"
+      "ideogramReferenceNotice",
     );
     const ideogramReferenceLabel = ideogramReferenceUuidInput
       ? ideogramReferenceUuidInput.closest("label")
@@ -2902,13 +2911,13 @@ function showFeatureDetailPage(endpoint, sourceTab = "filters") {
     const featureRef2Preview = document.getElementById("featureRef2Preview");
     const featureRef3Preview = document.getElementById("featureRef3Preview");
     const featureLastFrameInput = document.getElementById(
-      "featureLastFrameInput"
+      "featureLastFrameInput",
     );
     const featureLastFramePreview = document.getElementById(
-      "featureLastFramePreview"
+      "featureLastFramePreview",
     );
     const featureAudioUploadSection = document.getElementById(
-      "featureAudioUploadSection"
+      "featureAudioUploadSection",
     );
     const featureAudioInput = document.getElementById("featureAudioInput");
     const featureAudioPreview = document.getElementById("featureAudioPreview");
@@ -3007,7 +3016,7 @@ function showFeatureDetailPage(endpoint, sourceTab = "filters") {
         uploadSection.classList.add("dragover");
       });
       uploadSection.addEventListener("dragleave", () =>
-        uploadSection.classList.remove("dragover")
+        uploadSection.classList.remove("dragover"),
       );
       uploadSection.addEventListener("drop", (e) => {
         e.preventDefault();
@@ -3033,7 +3042,7 @@ function showFeatureDetailPage(endpoint, sourceTab = "filters") {
     const maskImagePreview = document.getElementById("featureMaskImagePreview");
     const maskUploadStatus = document.getElementById("featureMaskUploadStatus");
     const maskImageUploadSection = document.getElementById(
-      "featureMaskImageUploadSection"
+      "featureMaskImageUploadSection",
     );
 
     let featureMaskImageFile = null;
@@ -3120,7 +3129,7 @@ function showFeatureDetailPage(endpoint, sourceTab = "filters") {
 
       // Query the element each time instead of using cached reference
       const maskSection = document.getElementById(
-        "featureMaskImageUploadSection"
+        "featureMaskImageUploadSection",
       );
       const maskPreview = document.getElementById("featureMaskImagePreview");
       const maskStatus = document.getElementById("featureMaskUploadStatus");
@@ -3248,7 +3257,7 @@ function showFeatureDetailPage(endpoint, sourceTab = "filters") {
     if (featureModelSelect) {
       if (isPhotoFeature) {
         featureModelSelect.innerHTML = PHOTO_MODEL_OPTIONS.map(
-          (opt) => `<option value="${opt.value}">${opt.label}</option>`
+          (opt) => `<option value="${opt.value}">${opt.label}</option>`,
         ).join("");
         featureModelSelect.value = PHOTO_MODEL_OPTIONS[0]?.value || "";
         // Initialize mask image visibility after populating options
@@ -3271,7 +3280,7 @@ function showFeatureDetailPage(endpoint, sourceTab = "filters") {
         // Add listener for mask image visibility when model changes
         featureModelSelect.addEventListener(
           "change",
-          updateMaskImageVisibility
+          updateMaskImageVisibility,
         );
       }
       toggleIdeogramOptions();
@@ -3325,7 +3334,7 @@ function showFeatureDetailPage(endpoint, sourceTab = "filters") {
       // Get all config field references
       const resolutionField = document.getElementById("resolutionField");
       const cameraMovementField = document.getElementById(
-        "cameraMovementField"
+        "cameraMovementField",
       );
       const styleField = document.getElementById("styleField");
       const motionModeField = document.getElementById("motionModeField");
@@ -3337,21 +3346,21 @@ function showFeatureDetailPage(endpoint, sourceTab = "filters") {
       const cfgScaleField = document.getElementById("cfgScaleField");
       const stepsField = document.getElementById("stepsField");
       const movementAmplitudeField = document.getElementById(
-        "movementAmplitudeField"
+        "movementAmplitudeField",
       );
       const bgmField = document.getElementById("bgmField");
       const orientationField = document.getElementById("orientationField");
       const promptOptimizerField = document.getElementById(
-        "promptOptimizerField"
+        "promptOptimizerField",
       );
       const cameraFixedField = document.getElementById("cameraFixedField");
       const publicFigureThresholdField = document.getElementById(
-        "publicFigureThresholdField"
+        "publicFigureThresholdField",
       );
       const controlModeField = document.getElementById("controlModeField");
       const seedField = document.getElementById("seedField");
       const negativePromptField = document.getElementById(
-        "negativePromptField"
+        "negativePromptField",
       );
 
       function updateModelConfigPanel() {
@@ -3388,7 +3397,7 @@ function showFeatureDetailPage(endpoint, sourceTab = "filters") {
         // Reset dropdowns to default options (will be overridden for specific models like Wan 2.5)
         const durationSelect = document.getElementById("modelDurationSelect");
         const resolutionSelect = document.getElementById(
-          "modelResolutionSelect"
+          "modelResolutionSelect",
         );
 
         // Only reset if not Wan 2.5 (Wan 2.5 has custom options)
@@ -3450,7 +3459,7 @@ function showFeatureDetailPage(endpoint, sourceTab = "filters") {
         // Google Veo 3 / 3.1 / 3.1 Fast models (native audio support)
         else if (
           /google:3@0|google:3@2|google:3@3|veo.*3.*(?:image|fast)|veo3@fast|veo.*3\.1/i.test(
-            selectedModel
+            selectedModel,
           )
         ) {
           showPanel = true;
@@ -3589,7 +3598,7 @@ function showFeatureDetailPage(endpoint, sourceTab = "filters") {
 
           // Populate resolution dropdown with only 480p, 720p, 1080p for Wan 2.5
           const resolutionSelect = document.getElementById(
-            "modelResolutionSelect"
+            "modelResolutionSelect",
           );
           if (resolutionSelect) {
             const currentValue = resolutionSelect.value;
@@ -3624,7 +3633,7 @@ function showFeatureDetailPage(endpoint, sourceTab = "filters") {
         featureModelSelect.addEventListener("change", updateModelConfigPanel);
         featureModelSelect.addEventListener(
           "change",
-          updateMaskImageVisibility
+          updateMaskImageVisibility,
         );
         setTimeout(updateModelConfigPanel, 0);
         setTimeout(updateMaskImageVisibility, 100);
@@ -3867,7 +3876,7 @@ function showFeatureDetailPage(endpoint, sourceTab = "filters") {
           }
 
           const featurePromptEl = document.getElementById(
-            "featureDetailPrompt"
+            "featureDetailPrompt",
           );
           const promptText =
             (featurePromptEl && featurePromptEl.textContent) || feature.prompt;
@@ -3888,7 +3897,7 @@ function showFeatureDetailPage(endpoint, sourceTab = "filters") {
               }
               if (!featureRunwareImageUUID) {
                 throw new Error(
-                  "This model requires a reference image. Please upload an image first."
+                  "This model requires a reference image. Please upload an image first.",
                 );
               }
 
@@ -4041,7 +4050,7 @@ function showFeatureDetailPage(endpoint, sourceTab = "filters") {
                 if (isIdeogramRemixModel) {
                   if (!featureRunwareImageUUID) {
                     throw new Error(
-                      "Remix requires an uploaded Runware reference. Please upload an image first."
+                      "Remix requires an uploaded Runware reference. Please upload an image first.",
                     );
                   }
                   requestPayload.referenceImages = [featureRunwareImageUUID];
@@ -4118,7 +4127,7 @@ function showFeatureDetailPage(endpoint, sourceTab = "filters") {
               (Array.isArray(data?.images) && data.images[0]?.url);
             if (!response.ok || !imageUrl) {
               throw new Error(
-                data?.error || data?.message || "Failed to generate photo"
+                data?.error || data?.message || "Failed to generate photo",
               );
             }
             if (featurePhotoEl) {
@@ -4154,7 +4163,7 @@ function showFeatureDetailPage(endpoint, sourceTab = "filters") {
             const modelSelect = document.getElementById("featureModelSelect");
             const selectedModel = modelSelect ? modelSelect.value : undefined;
             const featurePromptEl = document.getElementById(
-              "featureDetailPrompt"
+              "featureDetailPrompt",
             );
             const promptOverride = featurePromptEl
               ? featurePromptEl.textContent
@@ -4178,7 +4187,7 @@ function showFeatureDetailPage(endpoint, sourceTab = "filters") {
                   method: "POST",
                   headers: { ...apiKeyHeaders() },
                   body: formData,
-                }
+                },
               );
               data = await response.json();
             } else {
@@ -4200,21 +4209,21 @@ function showFeatureDetailPage(endpoint, sourceTab = "filters") {
 
                       // Add model configuration parameters if set
                       const durationSelect = document.getElementById(
-                        "modelDurationSelect"
+                        "modelDurationSelect",
                       );
                       const resolutionSelect = document.getElementById(
-                        "modelResolutionSelect"
+                        "modelResolutionSelect",
                       );
                       const cameraMovementSelect = document.getElementById(
-                        "modelCameraMovementSelect"
+                        "modelCameraMovementSelect",
                       );
                       const styleSelect =
                         document.getElementById("modelStyleSelect");
                       const motionModeSelect = document.getElementById(
-                        "modelMotionModeSelect"
+                        "modelMotionModeSelect",
                       );
                       const generateAudioCheck = document.getElementById(
-                        "modelGenerateAudioCheck"
+                        "modelGenerateAudioCheck",
                       );
                       const qualitySelect =
                         document.getElementById("modelQualitySelect");
@@ -4228,29 +4237,29 @@ function showFeatureDetailPage(endpoint, sourceTab = "filters") {
                       const stepsInput =
                         document.getElementById("modelStepsInput");
                       const movementAmplitudeSelect = document.getElementById(
-                        "modelMovementAmplitudeSelect"
+                        "modelMovementAmplitudeSelect",
                       );
                       const bgmCheck = document.getElementById("modelBgmCheck");
                       const orientationSelect = document.getElementById(
-                        "modelOrientationSelect"
+                        "modelOrientationSelect",
                       );
                       const promptOptimizerCheck = document.getElementById(
-                        "modelPromptOptimizerCheck"
+                        "modelPromptOptimizerCheck",
                       );
                       const cameraFixedCheck = document.getElementById(
-                        "modelCameraFixedCheck"
+                        "modelCameraFixedCheck",
                       );
                       const publicFigureThresholdInput =
                         document.getElementById(
-                          "modelPublicFigureThresholdInput"
+                          "modelPublicFigureThresholdInput",
                         );
                       const controlModeSelect = document.getElementById(
-                        "modelControlModeSelect"
+                        "modelControlModeSelect",
                       );
                       const seedInput =
                         document.getElementById("modelSeedInput");
                       const negativePromptInput = document.getElementById(
-                        "modelNegativePromptInput"
+                        "modelNegativePromptInput",
                       );
 
                       // Basic parameters
@@ -4310,7 +4319,7 @@ function showFeatureDetailPage(endpoint, sourceTab = "filters") {
                       }
                       if (publicFigureThresholdInput?.value) {
                         payload.publicFigureThreshold = Number(
-                          publicFigureThresholdInput.value
+                          publicFigureThresholdInput.value,
                         );
                       }
                       if (controlModeSelect?.value) {
@@ -4337,9 +4346,9 @@ function showFeatureDetailPage(endpoint, sourceTab = "filters") {
                         if (featureRef3Url) payload.image_url3 = featureRef3Url;
                       }
                       return payload;
-                    })()
+                    })(),
                   ),
-                }
+                },
               );
               data = await response.json();
             }
@@ -4406,7 +4415,7 @@ function showFeatureDetailPage(endpoint, sourceTab = "filters") {
         parent.replaceChild(input, titleEl);
         parent.insertBefore(
           saveBtn,
-          parent.querySelector("#editFeatureNameBtn")
+          parent.querySelector("#editFeatureNameBtn"),
         );
         parent.insertBefore(cancelBtn, saveBtn.nextSibling);
         parent.querySelector("#editFeatureNameBtn").style.display = "none";
@@ -4427,7 +4436,7 @@ function showFeatureDetailPage(endpoint, sourceTab = "filters") {
               method: "PUT",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ newEndpoint: newName }),
-            }
+            },
           );
           if (res.ok) {
             feature.endpoint = newName;
@@ -4492,7 +4501,7 @@ function showFeatureDetailPage(endpoint, sourceTab = "filters") {
               method: "PUT",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ prompt: newPrompt }),
-            }
+            },
           );
           if (res.ok) {
             feature.prompt = newPrompt;
@@ -4528,7 +4537,7 @@ function showFeatureDetailPage(endpoint, sourceTab = "filters") {
             `${deleteApiPath}/${encodeURIComponent(feature.endpoint)}`,
             {
               method: "DELETE",
-            }
+            },
           );
           page.classList.add("hidden");
           loadFeatures();
@@ -4572,12 +4581,12 @@ async function loadFeatureGraphics() {
     console.log(
       "Feature graphics loaded:",
       Object.keys(featureGraphics).length,
-      "items"
+      "items",
     );
     console.log(
       "Latest videos loaded:",
       Object.keys(latestVideos).length,
-      "items"
+      "items",
     );
   } catch (e) {
     console.error("Error loading feature graphics:", e);
@@ -4604,7 +4613,7 @@ async function loadPhotoGraphics() {
     console.log(
       "Photo graphics loaded:",
       Object.keys(photoGraphics).length,
-      "items"
+      "items",
     );
   } catch (e) {
     console.error("Error loading photo graphics:", e);
@@ -4680,7 +4689,7 @@ function closeFeatureDetailPage() {
   console.log("Restoring main UI elements...");
   document
     .querySelectorAll(
-      "main, aside, header, .tab-content, #tab-dashboard, #tab-filters, #tab-photo-filters, #tab-templates"
+      "main, aside, header, .tab-content, #tab-dashboard, #tab-filters, #tab-photo-filters, #tab-templates",
     )
     .forEach((el) => {
       if (el) {
@@ -4722,7 +4731,7 @@ function closeFeatureDetailPage() {
           // Scroll didn't reach target, try again with longer delay
           setTimeout(
             () => attemptScrollRestore(attempt + 1),
-            100 + attempt * 50
+            100 + attempt * 50,
           );
         } else {
           console.log("Scroll restored successfully to:", currentScroll);
@@ -4748,7 +4757,7 @@ async function promptRenameEndpoint(oldEndpoint) {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ newEndpoint }),
-      }
+      },
     );
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
@@ -4799,7 +4808,7 @@ function displayTemplates() {
     (template) =>
       template.name.toLowerCase().includes(searchTerm) ||
       (template.description &&
-        template.description.toLowerCase().includes(searchTerm))
+        template.description.toLowerCase().includes(searchTerm)),
   );
 
   const adminUser = isAdmin();
@@ -4807,7 +4816,7 @@ function displayTemplates() {
     .map((template) => {
       // Flatten all steps from all subcategories for step count
       const allSteps = (template.subcategories || []).flatMap(
-        (subcat) => subcat.steps || []
+        (subcat) => subcat.steps || [],
       );
       return `
         <div class="bg-white rounded-xl shadow-md p-6 mb-6 hover:shadow-lg transition-shadow border border-gray-100">
@@ -4836,8 +4845,8 @@ function displayTemplates() {
           <div class="mb-4">
             <div class="font-semibold text-gray-700 mb-2 flex items-center gap-2">
               <i class="fas fa-list-ol"></i> ${allSteps.length} ${
-        allSteps.length === 1 ? "step" : "steps"
-      }
+                allSteps.length === 1 ? "step" : "steps"
+              }
             </div>
             <div class="space-y-2">
               ${(template.subcategories || [])
@@ -4863,10 +4872,10 @@ function displayTemplates() {
                                 
                               </div>
                             </div>
-                          `
+                          `,
                         )
                         .join("")}
-                    </div>`
+                    </div>`,
                 )
                 .join("")}
             </div>
@@ -4929,7 +4938,7 @@ function showStepDetailPage(templateId, stepIndex, subcatIndex) {
     // Load both videos and apps in parallel
     Promise.all([
       fetch(`/api/videos/${encodeURIComponent(step.endpoint)}`).then((r) =>
-        r.json()
+        r.json(),
       ),
       fetch("/api/apps", { headers: apiKeyHeaders() }).then((r) => r.json()),
     ])
@@ -4991,7 +5000,7 @@ function showStepDetailPage(templateId, stepIndex, subcatIndex) {
                           app.name
                         }">${app.name}</span>
                       </label>
-                    `
+                    `,
                       )
                       .join("")}
                   </div>
@@ -5059,12 +5068,12 @@ function showStepDetailPage(templateId, stepIndex, subcatIndex) {
 
             return `<div class="step-video-card transition-all hover:scale-[1.02]" style="display: flex; flex-direction: column;">
               <div class="relative rounded-xl overflow-hidden border-2 border-gray-200 hover:border-blue-400 hover:shadow-xl group step-detail-thumb transition-all" data-url="${vidUrl}" data-audio-url="${
-              v.audioUrl || ""
-            }" data-key="${v.key || ""}" data-endpoint="${
-              v.feature || ""
-            }" data-video-id="${
-              v.id
-            }" style="width:140px;height:249px;background:#000;cursor:pointer;">
+                v.audioUrl || ""
+              }" data-key="${v.key || ""}" data-endpoint="${
+                v.feature || ""
+              }" data-video-id="${
+                v.id
+              }" style="width:140px;height:249px;background:#000;cursor:pointer;">
                 <video src="${vidUrl}" class="w-full h-full object-cover" preload="metadata" muted playsinline style="width:100%;height:100%;object-fit:cover;pointer-events:none;"></video>
                 ${audioIndicator}
                 ${deleteBtn}
@@ -5201,7 +5210,7 @@ function showStepDetailPage(templateId, stepIndex, subcatIndex) {
                     method: "DELETE",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ key }),
-                  }
+                  },
                 );
                 if (!resp.ok) throw new Error("Failed");
                 wrapper.remove();
@@ -5288,7 +5297,7 @@ function showStepDetailPage(templateId, stepIndex, subcatIndex) {
   const stepImagePreview = document.getElementById("stepImagePreview");
   const stepUploadStatus = document.getElementById("stepUploadStatus");
   const stepImageUploadSection = document.getElementById(
-    "stepImageUploadSection"
+    "stepImageUploadSection",
   );
   const stepModelSelect = document.getElementById("stepModelSelect");
   const stepLastFrameWrapper = document.getElementById("stepLastFrameWrapper");
@@ -5309,7 +5318,7 @@ function showStepDetailPage(templateId, stepIndex, subcatIndex) {
     const newSection = stepImageUploadSection.cloneNode(true);
     stepImageUploadSection.parentNode.replaceChild(
       newSection,
-      stepImageUploadSection
+      stepImageUploadSection,
     );
     const newInput = newSection.querySelector("#stepImageInput");
     const newPreview = newSection.querySelector("#stepImagePreview");
@@ -5319,7 +5328,7 @@ function showStepDetailPage(templateId, stepIndex, subcatIndex) {
       newSection.classList.add("dragover");
     });
     newSection.addEventListener("dragleave", () =>
-      newSection.classList.remove("dragover")
+      newSection.classList.remove("dragover"),
     );
     newSection.addEventListener("drop", (e) => {
       e.preventDefault();
@@ -5407,7 +5416,7 @@ function showStepDetailPage(templateId, stepIndex, subcatIndex) {
       const isVidu = /vidu-q1-reference-to-video/i.test(val);
       const isViduImage2Video =
         /vidu-(1\.5|q1)-image-to-video|veo-2-image-to-video|veo-3-image-to-video/i.test(
-          val
+          val,
         );
       stepLastFrameWrapper.style.display = isPixTrans ? "flex" : "none";
       if (!isPixTrans) {
@@ -5520,7 +5529,7 @@ async function fetchSounds() {
 function showVideoAudioModal(
   videoId,
   existingAudioUrl = null,
-  callback = null
+  callback = null,
 ) {
   const modal = document.getElementById("videoAudioModal");
   const categorySelect = document.getElementById("videoAudioCategorySelect");
@@ -5578,7 +5587,7 @@ function showVideoAudioModal(
           body: JSON.stringify({
             audioUrl: window._selectedAudioUrl || null,
           }),
-        }
+        },
       );
 
       if (!response.ok) {
@@ -5646,7 +5655,8 @@ async function initializeVideoAudioDropdowns(existingAudioUrl = null) {
       '<option value="">Select sound...</option>' +
       categorySounds
         .map(
-          (sound) => `<option value="${sound.signedUrl}">${sound.name}</option>`
+          (sound) =>
+            `<option value="${sound.signedUrl}">${sound.name}</option>`,
         )
         .join("");
     soundSelect.disabled = false;
@@ -5675,7 +5685,7 @@ async function initializeVideoAudioDropdowns(existingAudioUrl = null) {
     // Try to find and select the matching category and sound
     for (const [category, categorySounds] of Object.entries(sounds)) {
       const matchingSound = categorySounds.find(
-        (s) => s.signedUrl === existingAudioUrl || s.url === existingAudioUrl
+        (s) => s.signedUrl === existingAudioUrl || s.url === existingAudioUrl,
       );
       if (matchingSound) {
         categorySelect.value = category;
@@ -5703,7 +5713,7 @@ function closeStepDetailPage() {
   console.log("Restoring main UI elements...");
   document
     .querySelectorAll(
-      "main, aside, header, .tab-content, #tab-dashboard, #tab-filters, #tab-photo-filters, #tab-templates"
+      "main, aside, header, .tab-content, #tab-dashboard, #tab-filters, #tab-photo-filters, #tab-templates",
     )
     .forEach((el) => {
       if (el) {
@@ -5753,7 +5763,7 @@ async function saveStepDetail() {
   const updatedSteps = template.steps.map((s, idx) =>
     idx === stepIndex
       ? { endpoint, prompt }
-      : { endpoint: s.endpoint, prompt: s.prompt || "" }
+      : { endpoint: s.endpoint, prompt: s.prompt || "" },
   );
   try {
     const res = await fetch(`/api/templates/${templateId}`, {
@@ -5782,7 +5792,7 @@ async function promptRenameStep(templateId, stepIndex) {
   const updatedSteps = template.steps.map((s, idx) =>
     idx === stepIndex
       ? { endpoint: newEndpoint, prompt: s.prompt || "" }
-      : { endpoint: s.endpoint, prompt: s.prompt || "" }
+      : { endpoint: s.endpoint, prompt: s.prompt || "" },
   );
   try {
     const res = await fetch(`/api/templates/${templateId}`, {
@@ -5835,7 +5845,7 @@ function openCreateTemplateModal() {
     createSaveBtn.textContent = "Save Template";
   } else {
     const fallbackBtn = document.querySelector(
-      "#createTemplateModal .btn-primary"
+      "#createTemplateModal .btn-primary",
     );
     if (fallbackBtn) fallbackBtn.textContent = "Save Template";
   }
@@ -5940,7 +5950,7 @@ async function editTemplate(templateId) {
     removeSubcatBtn.onclick = () => {
       if (
         confirm(
-          "Are you sure you want to remove this subcategory and all its steps?"
+          "Are you sure you want to remove this subcategory and all its steps?",
         )
       ) {
         subcatDiv.remove();
@@ -5962,7 +5972,7 @@ async function editTemplate(templateId) {
     editSaveBtn.textContent = "Update Template";
   } else {
     const fallbackBtn = document.querySelector(
-      "#createTemplateModal .btn-primary"
+      "#createTemplateModal .btn-primary",
     );
     if (fallbackBtn) fallbackBtn.textContent = "Update Template";
     else console.warn("Save button not found in #createTemplateModal");
@@ -5990,7 +6000,7 @@ async function loadAvailableEndpoints() {
     } else {
       // Merge new endpoints (dedupe by endpoint key)
       const existing = new Set(
-        window.featureEndpointsFull.map((e) => e.endpoint)
+        window.featureEndpointsFull.map((e) => e.endpoint),
       );
       availableEndpoints.forEach((e) => {
         if (!existing.has(e.endpoint)) window.featureEndpointsFull.push(e);
@@ -6004,7 +6014,7 @@ async function loadAvailableEndpoints() {
           '<option value="">Select endpoint...</option>' +
           (availableEndpoints || [])
             .map(
-              (ep) => `<option value="${ep.endpoint}">${ep.endpoint}</option>`
+              (ep) => `<option value="${ep.endpoint}">${ep.endpoint}</option>`,
             )
             .join("");
       }
@@ -6183,7 +6193,7 @@ function renderStepGeneratedVideos(containerEl, endpoint, onSelect) {
           (v) =>
             `<div class="rounded-lg overflow-hidden border border-gray-200 bg-white hover:border-blue-300 hover:shadow cursor-pointer step-gen-video-item" data-url="${v.url}">
                <video src="${v.url}#t=0.1" class="w-full" style="aspect-ratio:16/9" preload="none"></video>
-             </div>`
+             </div>`,
         )
         .join("");
       containerEl.innerHTML = "";
@@ -6191,7 +6201,7 @@ function renderStepGeneratedVideos(containerEl, endpoint, onSelect) {
       containerEl.querySelectorAll(".step-gen-video-item").forEach((el) => {
         el.addEventListener(
           "click",
-          () => onSelect && onSelect(el.dataset.url)
+          () => onSelect && onSelect(el.dataset.url),
         );
       });
     })
@@ -6244,7 +6254,7 @@ async function deleteTemplate(templateId) {
   // Confirm before deleting
   if (
     !confirm(
-      "Are you sure you want to delete this template? This action cannot be undone."
+      "Are you sure you want to delete this template? This action cannot be undone.",
     )
   ) {
     return;
@@ -6252,7 +6262,7 @@ async function deleteTemplate(templateId) {
 
   // Find the delete button and show loading state
   const deleteBtn = document.querySelector(
-    `button[onclick="deleteTemplate(${templateId})"]`
+    `button[onclick="deleteTemplate(${templateId})"]`,
   );
   let originalText = null;
   if (deleteBtn) {
@@ -6424,7 +6434,7 @@ async function generateVideo(endpoint, event) {
               if (stepRef3) payload.image_url3 = stepRef3;
             }
             return payload;
-          })()
+          })(),
         ),
       });
       result = await response.json();
@@ -6470,7 +6480,7 @@ function updateStats() {
   document.getElementById("activeFeatures").textContent = totalFeatures;
   document.getElementById("totalTemplates").textContent = templates.length;
   document.getElementById("activeTemplates").textContent = templates.filter(
-    (t) => t.active !== false
+    (t) => t.active !== false,
   ).length;
   // Demo values for the rest
   document.getElementById("wordsUsed").textContent = 1548;
@@ -6550,7 +6560,7 @@ function openFeatureModal(endpoint) {
                     v.signedUrl || v.url
                   }" controls style="width:100%;max-width:400px;"></video>
                   <div style="font-size:12px;color:#888">${new Date(
-                    v.createdAt
+                    v.createdAt,
                   ).toLocaleString()}</div>
                   <button class="btn btn-secondary set-graphic-btn" data-video-url="${
                     v.signedUrl || v.url
@@ -6558,7 +6568,7 @@ function openFeatureModal(endpoint) {
                     <i class="fas fa-image"></i> Set as Graphic
                   </button>
                 </div>
-              `
+              `,
             )
             .join("");
         // Add event listeners for set as graphic buttons
@@ -6567,7 +6577,7 @@ function openFeatureModal(endpoint) {
             setFeatureCardGraphic(
               endpoint,
               btn.getAttribute("data-video-url"),
-              btn.getAttribute("data-video-key")
+              btn.getAttribute("data-video-key"),
             );
           };
         });
@@ -6806,8 +6816,8 @@ function createEndpointAutocomplete(initialValue = "") {
       window.featureEndpointsFull.length
       ? window.featureEndpointsFull
       : Array.isArray(availableEndpoints)
-      ? availableEndpoints
-      : [];
+        ? availableEndpoints
+        : [];
   };
 
   // Filter and display options
@@ -6942,7 +6952,7 @@ function createSubcategoryElement(subcatName = "") {
   removeBtn.onclick = () => {
     if (
       confirm(
-        "Are you sure you want to remove this subcategory and all its steps?"
+        "Are you sure you want to remove this subcategory and all its steps?",
       )
     ) {
       subcatDiv.remove();
@@ -7114,7 +7124,7 @@ function openFeatureCrudModal() {
           } else {
             // Response is likely HTML (404 page)
             alert(
-              "Feature creation is not currently supported. The API endpoint does not exist."
+              "Feature creation is not currently supported. The API endpoint does not exist.",
             );
           }
         }
@@ -7122,7 +7132,7 @@ function openFeatureCrudModal() {
         console.error("Error creating feature:", error);
         if (error.message.includes("Unexpected token '<'")) {
           alert(
-            "Feature creation is not currently supported. The API endpoint does not exist."
+            "Feature creation is not currently supported. The API endpoint does not exist.",
           );
         } else {
           alert("Failed to create feature: " + error.message);
@@ -7274,7 +7284,7 @@ window.debugVideoData = function () {
   if (Object.keys(featureGraphics).length > 0) {
     console.log(
       "Sample featureGraphics:",
-      Object.keys(featureGraphics).slice(0, 5)
+      Object.keys(featureGraphics).slice(0, 5),
     );
     console.log("Sample URLs:", Object.values(featureGraphics).slice(0, 2));
   }
@@ -7282,15 +7292,15 @@ window.debugVideoData = function () {
   if (features.length > 0) {
     console.log(
       "Sample features:",
-      features.slice(0, 3).map((f) => f.endpoint)
+      features.slice(0, 3).map((f) => f.endpoint),
     );
 
     // Check overlap
     const featuresWithVideos = features.filter(
-      (f) => featureGraphics[f.endpoint] || latestVideos[f.endpoint]
+      (f) => featureGraphics[f.endpoint] || latestVideos[f.endpoint],
     );
     console.log(
-      `Features with videos: ${featuresWithVideos.length}/${features.length}`
+      `Features with videos: ${featuresWithVideos.length}/${features.length}`,
     );
 
     if (featuresWithVideos.length > 0) {
@@ -7299,7 +7309,7 @@ window.debugVideoData = function () {
         featuresWithVideos.slice(0, 3).map((f) => ({
           endpoint: f.endpoint,
           videoUrl: featureGraphics[f.endpoint] || latestVideos[f.endpoint],
-        }))
+        })),
       );
     }
   }
@@ -7401,7 +7411,7 @@ window.refreshDisplayTest = function () {
           tempVideo.currentTime = 0.01;
         } catch (_) {}
       },
-      { once: true }
+      { once: true },
     );
     tempVideo.addEventListener(
       "seeked",
@@ -7409,7 +7419,7 @@ window.refreshDisplayTest = function () {
         // Allow paint of frame before using video as thumbnail
         requestAnimationFrame(finalize);
       },
-      { once: true }
+      { once: true },
     );
     tempVideo.addEventListener("error", finalize, { once: true });
     setTimeout(finalize, 4500); // timeout fallback
@@ -7457,7 +7467,7 @@ window.refreshDisplayTest = function () {
           }
         });
       },
-      { rootMargin: "200px 0px", threshold: 0.01 }
+      { rootMargin: "200px 0px", threshold: 0.01 },
     );
     nodes.forEach((n) => observer.observe(n));
   }
@@ -7609,7 +7619,7 @@ function displayCartoonCharacters() {
 
 // Cartoon Character search handling
 const cartoonCharacterSearchInput = document.getElementById(
-  "cartoonCharacterSearch"
+  "cartoonCharacterSearch",
 );
 if (cartoonCharacterSearchInput) {
   cartoonCharacterSearchInput.addEventListener("input", () => {
@@ -7792,13 +7802,13 @@ function showCartoonCharacterDetailPage(endpoint) {
 
         const response = await fetch(
           `/api/generate-video/${encodeURIComponent(
-            character.endpoint
+            character.endpoint,
           )}?type=cartoon`,
           {
             method: "POST",
             headers: { "Content-Type": "application/json", ...apiKeyHeaders() },
             body: JSON.stringify(payload),
-          }
+          },
         );
 
         const data = await response.json();
@@ -7868,7 +7878,7 @@ function showCartoonCharacterDetailPage(endpoint) {
       parent.replaceChild(input, titleEl);
       parent.insertBefore(
         saveBtn,
-        parent.querySelector("#editCartoonCharacterNameBtn")
+        parent.querySelector("#editCartoonCharacterNameBtn"),
       );
       parent.insertBefore(cancelBtn, saveBtn.nextSibling);
       parent.querySelector("#editCartoonCharacterNameBtn").style.display =
@@ -7884,13 +7894,13 @@ function showCartoonCharacterDetailPage(endpoint) {
         }
         const res = await fetch(
           `/api/cartoon-characters/${encodeURIComponent(
-            character.endpoint
+            character.endpoint,
           )}/rename`,
           {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ newEndpoint: newName }),
-          }
+          },
         );
         if (res.ok) {
           character.endpoint = newName;
@@ -7919,7 +7929,7 @@ function showCartoonCharacterDetailPage(endpoint) {
 
   // Edit prompt button
   const editPromptBtn = document.getElementById(
-    "editCartoonCharacterPromptBtn"
+    "editCartoonCharacterPromptBtn",
   );
   if (editPromptBtn && promptEl) {
     editPromptBtn.onclick = function () {
@@ -7959,7 +7969,7 @@ function showCartoonCharacterDetailPage(endpoint) {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ prompt: newPrompt }),
-          }
+          },
         );
         if (res.ok) {
           character.prompt = newPrompt;
@@ -7993,7 +8003,7 @@ function showCartoonCharacterDetailPage(endpoint) {
           `/api/cartoon-characters/${encodeURIComponent(character.endpoint)}`,
           {
             method: "DELETE",
-          }
+          },
         );
         if (res.ok) {
           closeCartoonCharacterDetailPage();
@@ -8231,7 +8241,7 @@ async function verify2FASetup() {
     // Show main UI and initialize
     document
       .querySelectorAll(
-        "main, aside, header, .tab-content, #tab-dashboard, #tab-filters, #tab-photo-filters, #tab-templates"
+        "main, aside, header, .tab-content, #tab-dashboard, #tab-filters, #tab-photo-filters, #tab-templates",
       )
       .forEach((el) => {
         if (el) el.style.display = "";
@@ -8329,7 +8339,7 @@ async function verify2FALogin() {
     // Show main UI and initialize
     document
       .querySelectorAll(
-        "main, aside, header, .tab-content, #tab-dashboard, #tab-filters, #tab-photo-filters, #tab-templates"
+        "main, aside, header, .tab-content, #tab-dashboard, #tab-filters, #tab-photo-filters, #tab-templates",
       )
       .forEach((el) => {
         if (el) el.style.display = "";
@@ -8409,13 +8419,13 @@ async function loadWorkflows() {
             ? "bg-purple-600 text-white"
             : "bg-gray-200 text-gray-700"
         } text-sm font-medium hover:bg-purple-500 hover:text-white transition-colors" data-category="all" onclick="filterWorkflowsByCategory('all')">All (${
-        allWorkflows.length
-      })</button>
+          allWorkflows.length
+        })</button>
         ${Array.from(categories)
           .sort()
           .map((cat) => {
             const count = allWorkflows.filter(
-              (wf) => wf.category?.name === cat
+              (wf) => wf.category?.name === cat,
             ).length;
             return `<button class="workflow-category-btn px-4 py-2 rounded-full ${
               selectedCategory === cat
@@ -8532,7 +8542,7 @@ function renderWorkflows(workflows) {
           </div>
         </div>
       </div>
-    `
+    `,
     )
     .join("");
 }
@@ -8585,17 +8595,17 @@ function openWorkflowDetail(workflowId) {
             return `
               <div class="space-y-1">
                 <label for="${inputId}" class="block text-sm font-medium text-gray-700">${formatInputName(
-              input.name
-            )}</label>
+                  input.name,
+                )}</label>
                 <div class="flex items-center gap-2">
                   <input type="file" id="${inputId}" name="${
-              input.name
-            }" accept="image/*" class="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-400" />
+                    input.name
+                  }" accept="image/*" class="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-400" />
                   <span class="text-xs text-gray-400">or paste URL below</span>
                 </div>
                 <input type="text" id="${inputId}-url" name="${
-              input.name
-            }-url" placeholder="Or enter image URL..." class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-400" />
+                  input.name
+                }-url" placeholder="Or enter image URL..." class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-400" />
               </div>
             `;
           }
@@ -8604,11 +8614,11 @@ function openWorkflowDetail(workflowId) {
             return `
               <div class="flex items-center gap-2">
                 <input type="checkbox" id="${inputId}" name="${input.name}" ${
-              defaultValue === "true" ? "checked" : ""
-            } class="h-4 w-4 text-purple-600 focus:ring-purple-500 border-gray-300 rounded" />
+                  defaultValue === "true" ? "checked" : ""
+                } class="h-4 w-4 text-purple-600 focus:ring-purple-500 border-gray-300 rounded" />
                 <label for="${inputId}" class="text-sm font-medium text-gray-700">${formatInputName(
-              input.name
-            )}</label>
+                  input.name,
+                )}</label>
               </div>
             `;
           }
@@ -8620,13 +8630,13 @@ function openWorkflowDetail(workflowId) {
             return `
               <div class="space-y-1">
                 <label for="${inputId}" class="block text-sm font-medium text-gray-700">${formatInputName(
-              input.name
-            )}</label>
+                  input.name,
+                )}</label>
                 <textarea id="${inputId}" name="${
-              input.name
-            }" rows="3" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-400" placeholder="Enter ${formatInputName(
-              input.name
-            ).toLowerCase()}...">${defaultValue}</textarea>
+                  input.name
+                }" rows="3" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-400" placeholder="Enter ${formatInputName(
+                  input.name,
+                ).toLowerCase()}...">${defaultValue}</textarea>
               </div>
             `;
           }
@@ -8634,13 +8644,13 @@ function openWorkflowDetail(workflowId) {
           return `
             <div class="space-y-1">
               <label for="${inputId}" class="block text-sm font-medium text-gray-700">${formatInputName(
-            input.name
-          )}</label>
+                input.name,
+              )}</label>
               <input type="${inputType}" id="${inputId}" name="${
-            input.name
-          }" value="${defaultValue}" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-400" placeholder="Enter ${formatInputName(
-            input.name
-          ).toLowerCase()}..." />
+                input.name
+              }" value="${defaultValue}" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-400" placeholder="Enter ${formatInputName(
+                input.name,
+              ).toLowerCase()}..." />
             </div>
           `;
         })
@@ -8734,7 +8744,7 @@ async function triggerCurrentWorkflow() {
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({ parameters }),
-      }
+      },
     );
 
     const data = await res.json();
@@ -8812,7 +8822,7 @@ function renderWorkflowOutput(output) {
     return `<pre class="bg-gray-100 p-3 rounded-lg overflow-x-auto text-xs">${JSON.stringify(
       output,
       null,
-      2
+      2,
     )}</pre>`;
   }
 
@@ -8886,7 +8896,7 @@ async function loadPhotoTemplates() {
     console.log(
       "[PHOTO TEMPLATES] Loaded",
       photoTemplates.length,
-      "photo templates"
+      "photo templates",
     );
     displayPhotoTemplates();
     updateStats();
@@ -8905,7 +8915,7 @@ function displayPhotoTemplates() {
   console.log(
     "[PHOTO TEMPLATES] Displaying",
     photoTemplates.length,
-    "photo templates"
+    "photo templates",
   );
 
   const searchInput = document.getElementById("photoTemplateSearch");
@@ -8915,13 +8925,13 @@ function displayPhotoTemplates() {
     (template) =>
       template.name.toLowerCase().includes(searchTerm) ||
       (template.description &&
-        template.description.toLowerCase().includes(searchTerm))
+        template.description.toLowerCase().includes(searchTerm)),
   );
 
   console.log(
     "[PHOTO TEMPLATES] Filtered to",
     filteredTemplates.length,
-    "templates"
+    "templates",
   );
 
   if (filteredTemplates.length === 0) {
@@ -8939,7 +8949,7 @@ function displayPhotoTemplates() {
   grid.innerHTML = filteredTemplates
     .map((template) => {
       const allSteps = (template.subcategories || []).flatMap(
-        (subcat) => subcat.steps || []
+        (subcat) => subcat.steps || [],
       );
       return `
         <div class="bg-white rounded-xl shadow-md p-6 mb-6 hover:shadow-lg transition-shadow border border-gray-100">
@@ -8968,8 +8978,8 @@ function displayPhotoTemplates() {
           <div class="mb-4">
             <div class="font-semibold text-gray-700 mb-2 flex items-center gap-2">
               <i class="fas fa-list-ol"></i> ${allSteps.length} ${
-        allSteps.length === 1 ? "step" : "steps"
-      }
+                allSteps.length === 1 ? "step" : "steps"
+              }
             </div>
             <div class="space-y-2">
               ${(template.subcategories || [])
@@ -8994,11 +9004,11 @@ function displayPhotoTemplates() {
                         }</div>
                       </div>
                     </div>
-                  `
+                  `,
                     )
                     .join("")}
                 </div>
-              `
+              `,
                 )
                 .join("")}
             </div>
@@ -9014,14 +9024,14 @@ function displayPhotoTemplates() {
 async function deletePhotoTemplate(templateId) {
   if (
     !confirm(
-      "Are you sure you want to delete this photo template? This action cannot be undone."
+      "Are you sure you want to delete this photo template? This action cannot be undone.",
     )
   ) {
     return;
   }
 
   const deleteBtn = document.querySelector(
-    `button[onclick="deletePhotoTemplate(${templateId})"]`
+    `button[onclick="deletePhotoTemplate(${templateId})"]`,
   );
   let originalText = null;
   if (deleteBtn) {
@@ -9076,7 +9086,7 @@ async function loadPhotoFeatureEndpoints() {
     });
     const data = await response.json();
     photoFeatureEndpoints = (data.features || data || []).map(
-      (f) => f.endpoint || f
+      (f) => f.endpoint || f,
     );
     window.photoFeatureEndpoints = photoFeatureEndpoints;
     window.photoFeatureDetails = data.features || data || [];
@@ -9111,7 +9121,7 @@ function openPhotoTemplateModal() {
 
   // Clear subcategories container
   const subcatsContainer = document.getElementById(
-    "photoSubcategoriesContainer"
+    "photoSubcategoriesContainer",
   );
   if (subcatsContainer) subcatsContainer.innerHTML = "";
 
@@ -9157,7 +9167,7 @@ function addPhotoSubcategoryFromModal() {
   subcatError.textContent = "";
 
   const subcatsContainer = document.getElementById(
-    "photoSubcategoriesContainer"
+    "photoSubcategoriesContainer",
   );
 
   // Create subcategory section
@@ -9194,7 +9204,7 @@ function addPhotoSubcategoryFromModal() {
   removeBtn.onclick = () => {
     if (
       confirm(
-        "Are you sure you want to remove this subcategory and all its steps?"
+        "Are you sure you want to remove this subcategory and all its steps?",
       )
     ) {
       subcatDiv.remove();
@@ -9250,7 +9260,7 @@ function addPhotoTemplateStep(stepsDiv, initialValue = "") {
 
   const updateDropdown = (searchTerm = "") => {
     const filtered = photoFeatureEndpoints.filter((e) =>
-      e.toLowerCase().includes(searchTerm.toLowerCase())
+      e.toLowerCase().includes(searchTerm.toLowerCase()),
     );
     if (searchTerm === "" || filtered.length === 0) {
       dropdown.classList.add("hidden");
@@ -9259,7 +9269,7 @@ function addPhotoTemplateStep(stepsDiv, initialValue = "") {
     dropdown.innerHTML = filtered
       .map(
         (e) =>
-          `<div class="px-3 py-2 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0" data-endpoint="${e}"><div class="text-sm">${e}</div></div>`
+          `<div class="px-3 py-2 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0" data-endpoint="${e}"><div class="text-sm">${e}</div></div>`,
       )
       .join("");
     dropdown.classList.remove("hidden");
@@ -9331,7 +9341,7 @@ async function editPhotoTemplate(templateId) {
 
   // Clear and rebuild subcategories
   const subcatsContainer = document.getElementById(
-    "photoSubcategoriesContainer"
+    "photoSubcategoriesContainer",
   );
   if (subcatsContainer) subcatsContainer.innerHTML = "";
 
@@ -9401,7 +9411,7 @@ async function savePhotoTemplate(event) {
 
   // Gather subcategories and steps
   const subcategoriesContainer = document.getElementById(
-    "photoSubcategoriesContainer"
+    "photoSubcategoriesContainer",
   );
   const subcatDivs = subcategoriesContainer.querySelectorAll(":scope > div");
 
@@ -9466,7 +9476,7 @@ async function savePhotoTemplate(event) {
     alert(
       editingPhotoTemplateId
         ? "Photo template updated successfully!"
-        : "Photo template created successfully!"
+        : "Photo template created successfully!",
     );
   } catch (error) {
     console.error("Error saving photo template:", error);
@@ -9502,7 +9512,7 @@ async function showPhotoStepDetails(endpoint) {
 
   // Find details
   const details = (window.photoFeatureDetails || []).find(
-    (f) => f.endpoint === endpoint
+    (f) => f.endpoint === endpoint,
   ) || { endpoint };
 
   // Create modal if not exists
@@ -9581,7 +9591,7 @@ async function showPhotoStepDetails(endpoint) {
                   <i class="fas fa-external-link-alt text-xs"></i>
                 </a>
               </div>
-            `
+            `,
               )
               .join("")}
             ${
@@ -9666,7 +9676,7 @@ function displayPhotoPacks(searchTerm = "") {
     filtered = photoPacks.filter(
       (pack) =>
         pack.name.toLowerCase().includes(term) ||
-        (pack.description && pack.description.toLowerCase().includes(term))
+        (pack.description && pack.description.toLowerCase().includes(term)),
     );
   }
 
@@ -9690,7 +9700,7 @@ function displayPhotoPacks(searchTerm = "") {
             <img src="${
               img.signedUrl || img.url
             }" alt="" class="w-full h-20 object-cover rounded" />
-          `
+          `,
             )
             .join("")}
         </div>`
@@ -9711,8 +9721,8 @@ function displayPhotoPacks(searchTerm = "") {
           }</p>
           <div class="flex items-center justify-between">
             <span class="bg-pink-100 text-pink-700 text-xs px-2 py-1 rounded-full">${imageCount} / ${
-        pack.photoCount
-      } photos</span>
+              pack.photoCount
+            } photos</span>
             <div class="flex gap-2">
               <button onclick="event.stopPropagation(); editPhotoPack(${
                 pack.id
@@ -9838,7 +9848,7 @@ async function savePhotoPack() {
           console.error("Failed to add selected images to pack:", imgErr);
           // Don't fail the whole operation, just warn
           alert(
-            "Photo pack created, but failed to add selected images. You can try adding them manually."
+            "Photo pack created, but failed to add selected images. You can try adding them manually.",
           );
         }
       }
@@ -9864,7 +9874,7 @@ window.editPhotoPack = function (packId) {
 window.deletePhotoPack = async function (packId) {
   if (
     !confirm(
-      "Are you sure you want to delete this photo pack? This will also delete all associated images."
+      "Are you sure you want to delete this photo pack? This will also delete all associated images.",
     )
   ) {
     return;
@@ -9924,7 +9934,7 @@ window.showPhotoPackDetail = async function (packId) {
         <span class="text-gray-400 mr-2">${idx + 1}.</span>
         <span class="text-gray-700">${p.prompt}</span>
       </div>
-    `
+    `,
       )
       .join("");
 
@@ -9947,7 +9957,7 @@ window.showPhotoPackDetail = async function (packId) {
             <i class="fa fa-times text-xs"></i>
           </button>
         </div>
-      `
+      `,
         )
         .join("");
     }
@@ -10094,7 +10104,7 @@ window.confirmImageSelection = function () {
       <div class="relative aspect-square rounded overflow-hidden">
         <img src="${url}" class="w-full h-full object-cover" />
       </div>
-    `
+    `,
       )
       .join("");
   }
@@ -10128,7 +10138,7 @@ window.confirmImageSelection = async function () {
     }
 
     const confirmBtn = document.querySelector(
-      '#generatedImagesModal button[onclick="confirmImageSelection()"]'
+      '#generatedImagesModal button[onclick="confirmImageSelection()"]',
     );
     if (confirmBtn) {
       confirmBtn.disabled = true;
@@ -10144,7 +10154,7 @@ window.confirmImageSelection = async function () {
           method: "POST",
           headers: { "Content-Type": "application/json", ...apiKeyHeaders() },
           body: JSON.stringify({ urls: imageUrls }),
-        }
+        },
       );
 
       const data = await res.json();
@@ -10202,7 +10212,7 @@ window.syncS3Images = async function () {
   } catch (error) {
     console.error("Error syncing S3 images:", error);
     alert(
-      "Failed to sync images from S3: " + (error.message || "Unknown error")
+      "Failed to sync images from S3: " + (error.message || "Unknown error"),
     );
   } finally {
     btn.innerHTML = originalText;
@@ -10271,7 +10281,7 @@ window.editCurrentPhotoPack = function () {
 window.removePhotoPackImage = async function (packId, imageId) {
   if (
     !confirm(
-      "Remove this image from the pack? (The image will still be available in 'Generated Images')"
+      "Remove this image from the pack? (The image will still be available in 'Generated Images')",
     )
   ) {
     return;
@@ -10301,7 +10311,7 @@ window.deleteCurrentPhotoPack = async function () {
   if (!currentPhotoPack) return;
   if (
     !confirm(
-      `Are you sure you want to delete "${currentPhotoPack.name}"? This will also delete all associated images.`
+      `Are you sure you want to delete "${currentPhotoPack.name}"? This will also delete all associated images.`,
     )
   ) {
     return;
@@ -10323,3 +10333,451 @@ window.deleteCurrentPhotoPack = async function () {
     alert(error.message || "Failed to delete photo pack");
   }
 };
+
+// ============================================
+// === SUB-ADMINS MANAGEMENT ===
+// ============================================
+
+// Resources and actions for permission management
+const RESOURCES = {
+  TEMPLATES: "templates",
+  VIDEO_FILTERS: "video_filters",
+  PHOTO_FILTERS: "photo_filters",
+  CATEGORIES: "categories",
+  PHOTO_CATEGORIES: "photo_categories",
+  APPS: "apps",
+  GENERATED_VIDEOS: "generated_videos",
+  GENERATED_PHOTOS: "generated_photos",
+  PHOTO_PACKS: "photo_packs",
+  CARTOON_CHARACTERS: "cartoon_characters",
+  PHOTO_TEMPLATES: "photo_templates",
+};
+
+const ACTIONS = ["CREATE", "READ", "UPDATE", "DELETE"];
+
+// Resource display names
+const RESOURCE_NAMES = {
+  templates: "Templates",
+  video_filters: "Video Filters",
+  photo_filters: "Photo Filters",
+  categories: "Categories",
+  photo_categories: "Photo Categories",
+  apps: "Apps",
+  generated_videos: "Generated Videos",
+  generated_photos: "Generated Photos",
+  photo_packs: "Photo Packs",
+  cartoon_characters: "Cartoon Characters",
+  photo_templates: "Photo Templates",
+};
+
+// Load all sub-admins
+async function loadSubAdmins() {
+  if (subAdminsLoading) return;
+
+  subAdminsLoading = true;
+
+  try {
+    const res = await fetch("/api/sub-admins", {
+      headers: apiKeyHeaders(),
+    });
+
+    if (!res.ok) {
+      throw new Error("Failed to load sub-admins");
+    }
+
+    const data = await res.json();
+    subAdmins = data.subAdmins || [];
+    renderSubAdmins();
+  } catch (error) {
+    console.error("Error loading sub-admins:", error);
+    alert("Failed to load sub-admins");
+  } finally {
+    subAdminsLoading = false;
+  }
+}
+
+// Render sub-admins table
+function renderSubAdmins() {
+  const tbody = document.getElementById("subAdminsTableBody");
+
+  if (!tbody) return;
+
+  if (subAdmins.length === 0) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="5" class="px-6 py-8 text-center text-gray-500">
+          <i class="fa fa-users-cog text-4xl mb-2 opacity-50"></i>
+          <p>No sub-admins created yet</p>
+          <button onclick="openSubAdminModal()" class="mt-3 text-indigo-600 hover:text-indigo-800 font-medium">
+            Create your first sub-admin
+          </button>
+        </td>
+      </tr>
+    `;
+    return;
+  }
+
+  tbody.innerHTML = subAdmins
+    .map((sa) => {
+      const permissions = sa.permissions || [];
+      const permCount = permissions.length;
+      const statusClass = sa.isActive
+        ? "bg-green-100 text-green-800"
+        : "bg-red-100 text-red-800";
+      const statusText = sa.isActive ? "Active" : "Inactive";
+
+      return `
+      <tr class="hover:bg-gray-50">
+        <td class="px-6 py-4">
+          <div class="flex items-center">
+            <div class="flex-shrink-0 h-10 w-10 rounded-full bg-indigo-100 flex items-center justify-center">
+              <i class="fa fa-user text-indigo-600"></i>
+            </div>
+            <div class="ml-4">
+              <div class="text-sm font-medium text-gray-900">${sa.user.email}</div>
+              <div class="text-xs text-gray-500">ID: ${sa.user.id}</div>
+            </div>
+          </div>
+        </td>
+        <td class="px-6 py-4">
+          <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${statusClass}">
+            ${statusText}
+          </span>
+        </td>
+        <td class="px-6 py-4 text-sm text-gray-500">
+          ${permCount} permission${permCount !== 1 ? "s" : ""}
+        </td>
+        <td class="px-6 py-4 text-sm text-gray-500">
+          ${new Date(sa.createdAt).toLocaleDateString()}
+        </td>
+        <td class="px-6 py-4 text-right text-sm font-medium">
+          <button
+            onclick="editSubAdmin(${sa.id})"
+            class="text-indigo-600 hover:text-indigo-900 mr-3"
+            title="Edit Permissions"
+          >
+            <i class="fa fa-edit"></i>
+          </button>
+          <button
+            onclick="toggleSubAdminStatus(${sa.id}, ${!sa.isActive})"
+            class="text-${sa.isActive ? "orange" : "green"}-600 hover:text-${sa.isActive ? "orange" : "green"}-900 mr-3"
+            title="${sa.isActive ? "Deactivate" : "Activate"}"
+          >
+            <i class="fa fa-${sa.isActive ? "ban" : "check-circle"}"></i>
+          </button>
+          <button
+            onclick="deleteSubAdmin(${sa.id}, '${sa.user.email}')"
+            class="text-red-600 hover:text-red-900"
+            title="Delete"
+          >
+            <i class="fa fa-trash"></i>
+          </button>
+        </td>
+      </tr>
+    `;
+    })
+    .join("");
+}
+
+// Open sub-admin modal (create or edit)
+async function openSubAdminModal(subAdminId = null) {
+  editingSubAdminId = subAdminId;
+  const modal = document.getElementById("subAdminModal");
+  const title = document.getElementById("subAdminModalTitle");
+  const saveBtn = document.getElementById("subAdminSaveBtn");
+  const passwordField = document.getElementById("subAdminPasswordField");
+  const emailInput = document.getElementById("subAdminEmail");
+
+  // Load available permissions if not already loaded
+  if (availablePermissions.length === 0) {
+    await loadAvailablePermissions();
+  }
+
+  if (subAdminId) {
+    // Edit mode
+    title.textContent = "Edit Sub-Admin Permissions";
+    saveBtn.textContent = "Update Permissions";
+    passwordField.style.display = "none";
+    emailInput.disabled = true;
+
+    // Load sub-admin data
+    const subAdmin = subAdmins.find((sa) => sa.id === subAdminId);
+    if (subAdmin) {
+      emailInput.value = subAdmin.user.email;
+      renderPermissionsGrid(
+        subAdmin.permissions.map((p) => ({
+          resource: p.permission.resource,
+          action: p.permission.action,
+        })),
+      );
+    }
+  } else {
+    // Create mode
+    title.textContent = "Create Sub-Admin";
+    saveBtn.textContent = "Create Sub-Admin";
+    passwordField.style.display = "block";
+    emailInput.disabled = false;
+    emailInput.value = "";
+    document.getElementById("subAdminPassword").value = "";
+    renderPermissionsGrid([]);
+  }
+
+  modal.classList.remove("hidden");
+}
+
+// Close sub-admin modal
+function closeSubAdminModal() {
+  const modal = document.getElementById("subAdminModal");
+  modal.classList.add("hidden");
+  editingSubAdminId = null;
+}
+
+// Load available permissions
+async function loadAvailablePermissions() {
+  try {
+    // Initialize default permissions first
+    const initRes = await fetch("/api/sub-admins/permissions/initialize", {
+      method: "POST",
+      headers: apiKeyHeaders(),
+    });
+
+    if (initRes.ok) {
+      console.log("Permissions initialized");
+    }
+
+    // Load all permissions
+    const res = await fetch("/api/sub-admins/permissions/available", {
+      headers: apiKeyHeaders(),
+    });
+
+    if (!res.ok) {
+      throw new Error("Failed to load permissions");
+    }
+
+    const data = await res.json();
+    availablePermissions = data.permissions || [];
+  } catch (error) {
+    console.error("Error loading permissions:", error);
+  }
+}
+
+// Render permissions grid
+function renderPermissionsGrid(selectedPermissions = []) {
+  const grid = document.getElementById("subAdminPermissionsGrid");
+  if (!grid) return;
+
+  const resources = Object.values(RESOURCES);
+
+  grid.innerHTML = resources
+    .map((resource) => {
+      return `
+      <div class="border border-gray-200 rounded-lg p-3">
+        <h4 class="font-semibold text-sm text-gray-800 mb-2">${RESOURCE_NAMES[resource] || resource}</h4>
+        <div class="space-y-1">
+          ${ACTIONS.map((action) => {
+            const isChecked = selectedPermissions.some(
+              (p) => p.resource === resource && p.action === action,
+            );
+            return `
+              <label class="flex items-center cursor-pointer hover:bg-gray-50 rounded px-2 py-1">
+                <input
+                  type="checkbox"
+                  class="permission-checkbox mr-2"
+                  data-resource="${resource}"
+                  data-action="${action}"
+                  ${isChecked ? "checked" : ""}
+                />
+                <span class="text-xs text-gray-700">${action}</span>
+              </label>
+            `;
+          }).join("")}
+        </div>
+      </div>
+    `;
+    })
+    .join("");
+}
+
+// Select all permissions
+function selectAllSubAdminPermissions() {
+  const checkboxes = document.querySelectorAll(".permission-checkbox");
+  checkboxes.forEach((cb) => (cb.checked = true));
+}
+
+// Deselect all permissions
+function deselectAllSubAdminPermissions() {
+  const checkboxes = document.querySelectorAll(".permission-checkbox");
+  checkboxes.forEach((cb) => (cb.checked = false));
+}
+
+// Get selected permissions from checkboxes
+function getSelectedPermissions() {
+  const checkboxes = document.querySelectorAll(".permission-checkbox:checked");
+  const permissions = [];
+
+  checkboxes.forEach((cb) => {
+    permissions.push({
+      resource: cb.dataset.resource,
+      action: cb.dataset.action,
+    });
+  });
+
+  return permissions;
+}
+
+// Save sub-admin (create or update)
+async function saveSubAdmin(event) {
+  event.preventDefault();
+
+  const email = document.getElementById("subAdminEmail").value.trim();
+  const password = document.getElementById("subAdminPassword").value;
+  const permissions = getSelectedPermissions();
+
+  if (!email) {
+    alert("Email is required");
+    return;
+  }
+
+  if (!editingSubAdminId && !password) {
+    alert("Password is required");
+    return;
+  }
+
+  try {
+    if (editingSubAdminId) {
+      // Update permissions
+      const res = await fetch(
+        `/api/sub-admins/${editingSubAdminId}/permissions`,
+        {
+          method: "PUT",
+          headers: {
+            ...apiKeyHeaders(),
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ permissions }),
+        },
+      );
+
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.message || "Failed to update permissions");
+      }
+
+      alert("Permissions updated successfully");
+    } else {
+      // Create new sub-admin
+      const res = await fetch("/api/sub-admins", {
+        method: "POST",
+        headers: {
+          ...apiKeyHeaders(),
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ email, password, permissions }),
+      });
+
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.message || "Failed to create sub-admin");
+      }
+
+      alert("Sub-admin created successfully");
+    }
+
+    closeSubAdminModal();
+    await loadSubAdmins();
+  } catch (error) {
+    console.error("Error saving sub-admin:", error);
+    alert(error.message || "Failed to save sub-admin");
+  }
+}
+
+// Edit sub-admin (load and show modal)
+async function editSubAdmin(subAdminId) {
+  await openSubAdminModal(subAdminId);
+}
+
+// Toggle sub-admin status (active/inactive)
+async function toggleSubAdminStatus(subAdminId, isActive) {
+  if (
+    !confirm(
+      `Are you sure you want to ${isActive ? "activate" : "deactivate"} this sub-admin?`,
+    )
+  ) {
+    return;
+  }
+
+  try {
+    const res = await fetch(`/api/sub-admins/${subAdminId}/status`, {
+      method: "PATCH",
+      headers: {
+        ...apiKeyHeaders(),
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ isActive }),
+    });
+
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.message || "Failed to update status");
+    }
+
+    await loadSubAdmins();
+  } catch (error) {
+    console.error("Error toggling status:", error);
+    alert(error.message || "Failed to update status");
+  }
+}
+
+// Delete sub-admin
+async function deleteSubAdmin(subAdminId, email) {
+  if (
+    !confirm(
+      `Are you sure you want to delete sub-admin "${email}"? This action cannot be undone.`,
+    )
+  ) {
+    return;
+  }
+
+  try {
+    const res = await fetch(`/api/sub-admins/${subAdminId}`, {
+      method: "DELETE",
+      headers: apiKeyHeaders(),
+    });
+
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.message || "Failed to delete sub-admin");
+    }
+
+    alert("Sub-admin deleted successfully");
+    await loadSubAdmins();
+  } catch (error) {
+    console.error("Error deleting sub-admin:", error);
+    alert(error.message || "Failed to delete sub-admin");
+  }
+}
+
+// Initialize sub-admins tab
+function initSubAdminsTab() {
+  if (!subAdminsInitialRequested) {
+    subAdminsInitialRequested = true;
+    loadSubAdmins();
+  }
+}
+
+// Attach form submit handler
+const subAdminForm = document.getElementById("subAdminForm");
+if (subAdminForm) {
+  subAdminForm.addEventListener("submit", saveSubAdmin);
+}
+
+// Make functions globally available
+window.openSubAdminModal = openSubAdminModal;
+window.closeSubAdminModal = closeSubAdminModal;
+window.selectAllSubAdminPermissions = selectAllSubAdminPermissions;
+window.deselectAllSubAdminPermissions = deselectAllSubAdminPermissions;
+window.saveSubAdmin = saveSubAdmin;
+window.editSubAdmin = editSubAdmin;
+window.toggleSubAdminStatus = toggleSubAdminStatus;
+window.deleteSubAdmin = deleteSubAdmin;
+window.initSubAdminsTab = initSubAdminsTab;

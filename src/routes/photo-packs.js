@@ -16,6 +16,7 @@ const express_1 = require("express");
 const prisma_1 = __importDefault(require("../lib/prisma"));
 const signedUrl_1 = require("../middleware/signedUrl");
 const s3_1 = require("../lib/s3");
+const roles_1 = require("../middleware/roles");
 const router = (0, express_1.Router)();
 // Get all photo packs
 router.get("/", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
@@ -116,7 +117,7 @@ router.get("/:id", (req, res) => __awaiter(void 0, void 0, void 0, function* () 
     }
 }));
 // Create a new photo pack
-router.post("/", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+router.post("/", (0, roles_1.requirePermission)("photo_packs", "CREATE"), (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const { name, description, emoji, photoCount, prompts } = req.body;
         if (!name) {
@@ -157,7 +158,7 @@ router.post("/", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     }
 }));
 // Update a photo pack
-router.put("/:id", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+router.put("/:id", (0, roles_1.requirePermission)("photo_packs", "UPDATE"), (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const id = parseInt(req.params.id);
         if (isNaN(id)) {
@@ -229,7 +230,7 @@ router.put("/:id", (req, res) => __awaiter(void 0, void 0, void 0, function* () 
     }
 }));
 // Delete a photo pack
-router.delete("/:id", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+router.delete("/:id", (0, roles_1.requirePermission)("photo_packs", "DELETE"), (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const id = parseInt(req.params.id);
         if (isNaN(id)) {

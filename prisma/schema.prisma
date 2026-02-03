@@ -34,6 +34,43 @@ model User {
   updatedAt    DateTime      @updatedAt
   sessions     Session[]
   refreshToken RefreshToken?
+  subAdmin     SubAdmin? // If role is "sub-admin", this will contain their permissions
+}
+
+model SubAdmin {
+  id          Int                  @id @default(autoincrement())
+  user        User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId      Int                  @unique
+  createdBy   Int // Admin user ID who created this sub-admin
+  isActive    Boolean              @default(true)
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+  permissions SubAdminPermission[]
+}
+
+model Permission {
+  id          Int                  @id @default(autoincrement())
+  resource    String // e.g., "templates", "video_filters", "photo_filters", "categories", "photo_categories", "apps", "generated_videos", "generated_photos", "photo_packs", "cartoon_characters"
+  action      String // "CREATE", "READ", "UPDATE", "DELETE"
+  description String?
+  createdAt   DateTime             @default(now())
+  subAdmins   SubAdminPermission[]
+
+  @@unique([resource, action])
+}
+
+// Junction table for SubAdmin <-> Permission (many-to-many)
+model SubAdminPermission {
+  id           Int        @id @default(autoincrement())
+  subAdmin     SubAdmin   @relation(fields: [subAdminId], references: [id], onDelete: Cascade)
+  subAdminId   Int
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+  permissionId Int
+  createdAt    DateTime   @default(now())
+
+  @@unique([subAdminId, permissionId])
+  @@index([subAdminId])
+  @@index([permissionId])
 }
 
 model Session {
@@ -139,29 +176,29 @@ model TemplateStepVideo {
 
 // Photo Template Models (mirroring video template structure)
 model Photo_Template {
-  id            Int                         @id @default(autoincrement())
+  id            Int                          @id @default(autoincrement())
   name          String
   description   String?
   categoryId    Int?
-  category      Photo_Category?             @relation(fields: [categoryId], references: [id])
+  category      Photo_Category?              @relation(fields: [categoryId], references: [id])
   subcategories Photo_Template_Subcategory[]
-  createdAt     DateTime                    @default(now())
-  updatedAt     DateTime                    @updatedAt
+  createdAt     DateTime                     @default(now())
+  updatedAt     DateTime                     @updatedAt
   stepPhotos    Photo_Template_Step_Photo[]
 
   @@index([categoryId])
 }
 
 model Photo_Template_Subcategory {
-  id         Int                    @id @default(autoincrement())
+  id         Int                   @id @default(autoincrement())
   name       String
-  category   Photo_Category         @relation(fields: [categoryId], references: [id])
+  category   Photo_Category        @relation(fields: [categoryId], references: [id])
   categoryId Int
-  template   Photo_Template         @relation(fields: [templateId], references: [id])
+  template   Photo_Template        @relation(fields: [templateId], references: [id])
   templateId Int
   steps      Photo_Template_Step[]
-  createdAt  DateTime               @default(now())
-  updatedAt  DateTime               @updatedAt
+  createdAt  DateTime              @default(now())
+  updatedAt  DateTime              @updatedAt
 
   @@index([categoryId])
   @@index([templateId])
@@ -181,12 +218,12 @@ model Photo_Template_Step {
 }
 
 model Photo_Template_Step_Photo {
-  id         Int            @id @default(autoincrement())
+  id         Int      @id @default(autoincrement())
   templateId Int
   stepIndex  Int
   endpoint   String
   photoUrl   String
-  createdAt  DateTime       @default(now())
+  createdAt  DateTime @default(now())
 
   template Photo_Template @relation(fields: [templateId], references: [id], onDelete: Cascade)
 }
@@ -387,14 +424,14 @@ model AppGeneratedCartoonVideo {
 
 // Photo Packs feature - themed collections of generated photos
 model Photo_Pack {
-  id          Int               @id @default(autoincrement())
+  id          Int                 @id @default(autoincrement())
   name        String
   description String?
-  emoji       String?           @default("📸")
-  photoCount  Int               @default(15)
-  isActive    Boolean           @default(true)
-  createdAt   DateTime          @default(now())
-  updatedAt   DateTime          @updatedAt
+  emoji       String?             @default("📸")
+  photoCount  Int                 @default(15)
+  isActive    Boolean             @default(true)
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
   prompts     Photo_Pack_Prompt[]
   images      Photo_Pack_Image[]
 }
@@ -414,7 +451,7 @@ model Photo_Pack_Image {
   id        Int        @id @default(autoincrement())
   pack      Photo_Pack @relation(fields: [packId], references: [id], onDelete: Cascade)
   packId    Int
-  url       String     // S3 URL
+  url       String // S3 URL
   createdAt DateTime   @default(now())
 
   @@index([packId, createdAt])
