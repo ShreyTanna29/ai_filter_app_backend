@@ -10487,10 +10487,37 @@ async function openSubAdminModal(subAdminId = null) {
   const saveBtn = document.getElementById("subAdminSaveBtn");
   const passwordField = document.getElementById("subAdminPasswordField");
   const emailInput = document.getElementById("subAdminEmail");
+  const permissionsGrid = document.getElementById("subAdminPermissionsGrid");
+  const createBtn = document.getElementById("createSubAdminBtn");
+
+  // Show loader on create button if not in edit mode
+  let originalCreateBtnText = "";
+  if (createBtn && !subAdminId) {
+    originalCreateBtnText = createBtn.innerHTML;
+    createBtn.disabled = true;
+    createBtn.innerHTML =
+      '<i class="fa fa-spinner fa-spin mr-2"></i>Loading...';
+  }
+
+  // Show modal immediately with loading state
+  modal.classList.remove("hidden");
 
   // Load available permissions if not already loaded
   if (availablePermissions.length === 0) {
+    // Show loading in permissions grid
+    permissionsGrid.innerHTML = `
+      <div class="col-span-2 flex items-center justify-center py-8">
+        <i class="fa fa-spinner fa-spin text-2xl text-indigo-600 mr-3"></i>
+        <span class="text-gray-600">Loading permissions...</span>
+      </div>
+    `;
     await loadAvailablePermissions();
+  }
+
+  // Restore create button state
+  if (createBtn && !subAdminId) {
+    createBtn.disabled = false;
+    createBtn.innerHTML = originalCreateBtnText;
   }
 
   if (subAdminId) {
@@ -10521,8 +10548,6 @@ async function openSubAdminModal(subAdminId = null) {
     document.getElementById("subAdminPassword").value = "";
     renderPermissionsGrid([]);
   }
-
-  modal.classList.remove("hidden");
 }
 
 // Close sub-admin modal
@@ -10643,6 +10668,12 @@ async function saveSubAdmin(event) {
     return;
   }
 
+  // Get the save button and show loader
+  const saveBtn = document.getElementById("subAdminSaveBtn");
+  const originalBtnText = saveBtn.innerHTML;
+  saveBtn.disabled = true;
+  saveBtn.innerHTML = '<i class="fa fa-spinner fa-spin mr-2"></i>Saving...';
+
   try {
     if (editingSubAdminId) {
       // Update permissions
@@ -10688,6 +10719,10 @@ async function saveSubAdmin(event) {
   } catch (error) {
     console.error("Error saving sub-admin:", error);
     alert(error.message || "Failed to save sub-admin");
+  } finally {
+    // Restore button state
+    saveBtn.disabled = false;
+    saveBtn.innerHTML = originalBtnText;
   }
 }
 
