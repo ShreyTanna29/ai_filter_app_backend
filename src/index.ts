@@ -40,6 +40,14 @@ app.use(cors());
 app.use(express.json({ limit: "10mb" }));
 app.use(express.static("public")); // Serve static files from public directory
 
+// Global debug middleware
+app.use((req, res, next) => {
+  if (req.originalUrl.includes("sub-admins")) {
+    console.log(`[GLOBAL DEBUG] ${req.method} ${req.originalUrl}`);
+  }
+  next();
+});
+
 // Feature management routes
 // Get all features without pagination (with optional status filter)
 // If ADMIN_API_KEY is provided, returns all features
@@ -916,17 +924,20 @@ app.get("/api/cartoon-character-graphic", async (req, res) => {
   }
 });
 
-app.use("/api", facetrixfiltersRouter);
-app.use("/api", photoTemplatesRouter);
-app.use("/api", templatesRouter);
+// Mount specific routes BEFORE catch-all routes to avoid routing conflicts
+app.use("/api/sub-admins", subAdminsRouter);
 app.use("/api/generate-video", videoGenerationRouter);
-app.use("/api", runwareRouter);
 app.use("/api/auth", simpleAuthRouter);
 app.use("/api/categories", categoriesRouter);
 app.use("/api/apps", appsRouter);
-app.use("/api", workflowsRouter);
 app.use("/api/photo-packs", photoPacksRouter);
-app.use("/api/sub-admins", subAdminsRouter);
+
+// These routers have catch-all routes like /:endpoint, so mount them last
+app.use("/api", facetrixfiltersRouter);
+app.use("/api", photoTemplatesRouter);
+app.use("/api", templatesRouter);
+app.use("/api", runwareRouter);
+app.use("/api", workflowsRouter);
 
 // Get all sounds organized by category from S3
 app.get("/api/sounds", async (req, res) => {

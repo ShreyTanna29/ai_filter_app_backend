@@ -39,6 +39,13 @@ const PORT = process.env.PORT || 3000;
 app.use((0, cors_1.default)());
 app.use(express_1.default.json({ limit: "10mb" }));
 app.use(express_1.default.static("public")); // Serve static files from public directory
+// Global debug middleware
+app.use((req, res, next) => {
+    if (req.originalUrl.includes("sub-admins")) {
+        console.log(`[GLOBAL DEBUG] ${req.method} ${req.originalUrl}`);
+    }
+    next();
+});
 // Feature management routes
 // Get all features without pagination (with optional status filter)
 // If ADMIN_API_KEY is provided, returns all features
@@ -819,17 +826,19 @@ app.get("/api/cartoon-character-graphic", (req, res) => __awaiter(void 0, void 0
         res.status(500).json({ error: "Failed to get cartoon character graphics" });
     }
 }));
-app.use("/api", filter_endpoints_1.default);
-app.use("/api", photo_templates_1.default);
-app.use("/api", templates_1.default);
+// Mount specific routes BEFORE catch-all routes to avoid routing conflicts
+app.use("/api/sub-admins", sub_admins_1.default);
 app.use("/api/generate-video", generate_video_1.default);
-app.use("/api", runware_1.default);
 app.use("/api/auth", simple_auth_1.default);
 app.use("/api/categories", categories_1.default);
 app.use("/api/apps", apps_1.default);
-app.use("/api", workflows_1.default);
 app.use("/api/photo-packs", photo_packs_1.default);
-app.use("/api/sub-admins", sub_admins_1.default);
+// These routers have catch-all routes like /:endpoint, so mount them last
+app.use("/api", filter_endpoints_1.default);
+app.use("/api", photo_templates_1.default);
+app.use("/api", templates_1.default);
+app.use("/api", runware_1.default);
+app.use("/api", workflows_1.default);
 // Get all sounds organized by category from S3
 app.get("/api/sounds", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
