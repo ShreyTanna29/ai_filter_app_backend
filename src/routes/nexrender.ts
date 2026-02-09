@@ -834,7 +834,7 @@ router.get(
             },
           );
 
-          const nexrenderJob = response.data;
+          const nexrenderJob: any = response.data;
 
           // Update local database
           dbJob = await prisma.nexrenderJob.update({

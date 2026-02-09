@@ -27,6 +27,7 @@ const apps_1 = __importDefault(require("./routes/apps"));
 const workflows_1 = __importDefault(require("./routes/workflows"));
 const photo_packs_1 = __importDefault(require("./routes/photo-packs"));
 const sub_admins_1 = __importDefault(require("./routes/sub-admins"));
+const nexrender_1 = __importDefault(require("./routes/nexrender"));
 const multer_1 = __importDefault(require("multer"));
 const s3_1 = require("./lib/s3");
 const signedUrl_1 = require("./middleware/signedUrl");
@@ -833,6 +834,7 @@ app.use("/api/auth", simple_auth_1.default);
 app.use("/api/categories", categories_1.default);
 app.use("/api/apps", apps_1.default);
 app.use("/api/photo-packs", photo_packs_1.default);
+app.use("/api/nexrender", nexrender_1.default);
 // These routers have catch-all routes like /:endpoint, so mount them last
 app.use("/api", filter_endpoints_1.default);
 app.use("/api", photo_templates_1.default);
