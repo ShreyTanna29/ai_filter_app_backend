@@ -13,6 +13,7 @@ import appsRouter from "./routes/apps";
 import workflowsRouter from "./routes/workflows";
 import photoPacksRouter from "./routes/photo-packs";
 import subAdminsRouter from "./routes/sub-admins";
+import nexrenderRouter from "./routes/nexrender";
 import multer from "multer";
 import {
   uploadBuffer,
@@ -931,6 +932,7 @@ app.use("/api/auth", simpleAuthRouter);
 app.use("/api/categories", categoriesRouter);
 app.use("/api/apps", appsRouter);
 app.use("/api/photo-packs", photoPacksRouter);
+app.use("/api/nexrender", nexrenderRouter);
 
 // These routers have catch-all routes like /:endpoint, so mount them last
 app.use("/api", facetrixfiltersRouter);

@@ -52,6 +52,10 @@ SENDGRID_API_KEY=your_sendgrid_api_key
 LUMA_API_KEY=your_luma_api_key
 MINIMAX_API_KEY=your_minimax_api_key
 PIXVERSE_API_KEY=your_eachlabs_or_pixverse_api_key
+# Nexrender Cloud integration
+NEXRENDER_API_KEY=your_nexrender_cloud_api_key
+NEXRENDER_API_URL=https://api.nexrender.com/api/v2
+WEBHOOK_BASE_URL=https://your-server.com
 # Optional Pixverse tuning
 PIXVERSE_DURATION=5                 # default 5
 PIXVERSE_QUALITY=540p               # 540p or 720p etc.
@@ -212,6 +216,287 @@ Take a look at `src/filters/features.ts` for all available endpoints and their d
   "actual_prompt": "A white cat running on the grass, with its tail held high and a light breeze"
 }
 ```
+
+---
+
+## Nexrender Cloud Integration
+
+The API provides integration with Nexrender Cloud for rendering After Effects templates with dynamic content.
+
+### Environment Variables for Nexrender
+
+Add these environment variables to your `.env` file:
+
+```env
+NEXRENDER_API_KEY=your_nexrender_cloud_api_key
+NEXRENDER_API_URL=https://api.nexrender.com/api/v2  # optional, uses default
+WEBHOOK_BASE_URL=https://your-server.com            # for receiving webhook callbacks
+```
+
+### Nexrender Endpoints
+
+#### 1. List All Templates
+
+**GET** `/api/nexrender/templates`
+
+Get all available After Effects templates from Nexrender Cloud.
+
+**Query Parameters:**
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `status` | string | Filter by status (e.g., "ready", "processing", "error") |
+
+**Response (200):**
+
+```json
+{
+  "success": true,
+  "templates": [
+    {
+      "id": "01JTGM9GCR71JV7EJYDF45QAFD",
+      "type": "aep",
+      "displayName": "My Template",
+      "status": "ready",
+      "createdAt": "2026-02-09T10:00:00.000Z",
+      "updatedAt": "2026-02-09T10:00:00.000Z",
+      "compositions": ["main", "intro", "outro"],
+      "layers": ["title", "subtitle", "logo", "background"],
+      "mogrt": {},
+      "error": null
+    }
+  ],
+  "total": 1
+}
+```
+
+#### 2. Get Template Details
+
+**GET** `/api/nexrender/templates/:id`
+
+Get detailed information about a specific template including its compositions and layers.
+
+**Response (200):**
+
+```json
+{
+  "success": true,
+  "template": {
+    "id": "01JTGM9GCR71JV7EJYDF45QAFD",
+    "type": "aep",
+    "displayName": "My Template",
+    "status": "ready",
+    "createdAt": "2026-02-09T10:00:00.000Z",
+    "updatedAt": "2026-02-09T10:00:00.000Z",
+    "compositions": ["main", "intro", "outro"],
+    "layers": ["title", "subtitle", "logo", "background"],
+    "mogrt": {},
+    "error": null,
+    "uploadInfo": {
+      "url": "...",
+      "method": "PUT",
+      "expiresIn": 123,
+      "key": "...",
+      "fields": {}
+    }
+  }
+}
+```
+
+**Template Status Values:**
+| Status | Description |
+|--------|-------------|
+| `ready` | Template is ready for rendering |
+| `processing` | Template is being processed |
+| `error` | Template has an error (see `error` field) |
+
+#### 3. Submit a Render Job
+
+**POST** `/api/nexrender/jobs`
+
+Submit a render job to Nexrender Cloud with full control over assets and settings.
+
+**Request Body:**
+
+```json
+{
+  "templateId": "01JTGM9GCR71JV7EJYDF45QAFD",
+  "composition": "main",
+  "assets": [
+    { "type": "text", "layerName": "title", "value": "Hello World!" },
+    {
+      "type": "image",
+      "layerName": "logo",
+      "src": "https://example.com/logo.png"
+    },
+    {
+      "type": "video",
+      "layerName": "background",
+      "src": "https://example.com/video.mp4"
+    }
+  ],
+  "preview": false,
+  "settings": {
+    "outputModule": "H.264"
+  }
+}
+```
+
+**Response (201):**
+
+```json
+{
+  "success": true,
+  "job": {
+    "id": 1,
+    "nexrenderId": "01JTRDF7HCR8QAHYW8GPCP4S9Y",
+    "templateId": "01JTGM9GCR71JV7EJYDF45QAFD",
+    "composition": "main",
+    "status": "queued",
+    "progress": 0,
+    "outputUrl": null,
+    "createdAt": "2026-02-09T12:00:00.000Z"
+  }
+}
+```
+
+#### 4. Render Template (Simplified)
+
+**POST** `/api/nexrender/render-template`
+
+A simplified endpoint for common use cases with text, image, video and audio replacements.
+
+**Request Body:**
+
+```json
+{
+  "templateId": "01JTGM9GCR71JV7EJYDF45QAFD",
+  "composition": "main",
+  "textReplacements": {
+    "title": "My Video Title",
+    "subtitle": "Made with AI"
+  },
+  "imageReplacements": {
+    "logo": "https://example.com/logo.png",
+    "background": "https://example.com/bg.jpg"
+  },
+  "videoReplacements": {
+    "mainVideo": "https://example.com/video.mp4"
+  },
+  "audioReplacements": {
+    "music": "https://example.com/audio.mp3"
+  }
+}
+```
+
+#### 5. Get Job Status
+
+**GET** `/api/nexrender/jobs/:id`
+
+Get the current status of a render job. Supports both internal database ID and Nexrender job ID.
+
+**Response (200):**
+
+```json
+{
+  "success": true,
+  "job": {
+    "id": 1,
+    "nexrenderId": "01JTRDF7HCR8QAHYW8GPCP4S9Y",
+    "templateId": "01JTGM9GCR71JV7EJYDF45QAFD",
+    "status": "finished",
+    "progress": 100,
+    "outputUrl": "https://nx1-outputs-eu.nexrender.com/01K4B3YH2GP21...",
+    "renderDuration": 45,
+    "createdAt": "2026-02-09T12:00:00.000Z",
+    "finishedAt": "2026-02-09T12:00:45.000Z"
+  }
+}
+```
+
+**Job Status Values:**
+| Status | Description |
+|--------|-------------|
+| `queued` | Job is waiting to be picked up by render engine |
+| `render:dorender` | Currently being processed |
+| `finished` | Successfully rendered; `outputUrl` available |
+| `error` | Encountered an error (see `error` field) |
+
+#### 6. Wait for Job Completion
+
+**GET** `/api/nexrender/jobs/:id/wait`
+
+Poll and wait for a job to complete. Useful for synchronous workflows.
+
+**Query Parameters:**
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `timeout` | number | 300 | Max seconds to wait (max: 600) |
+| `interval` | number | 5 | Polling interval in seconds (min: 2) |
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "timedOut": false,
+  "job": {
+    "id": 1,
+    "status": "finished",
+    "outputUrl": "https://nx1-outputs-eu.nexrender.com/..."
+  }
+}
+```
+
+#### 7. List Jobs
+
+**GET** `/api/nexrender/jobs`
+
+List all render jobs with pagination and optional filtering.
+
+**Query Parameters:**
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `status` | string | — | Filter by status |
+| `page` | number | 1 | Page number |
+| `limit` | number | 20 | Items per page (max: 100) |
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "jobs": [...],
+  "pagination": {
+    "page": 1,
+    "limit": 20,
+    "total": 50,
+    "totalPages": 3
+  }
+}
+```
+
+#### 8. Cancel Job
+
+**DELETE** `/api/nexrender/jobs/:id`
+
+Cancel a render job. Only works for jobs that haven't started rendering yet.
+
+#### 9. Webhook Endpoint
+
+**POST** `/api/nexrender/webhook`
+
+Receives webhook notifications from Nexrender Cloud when job status changes. This endpoint is called automatically by Nexrender Cloud and updates the job status in the database.
+
+### Asset Types
+
+| Type     | Description                | Required Fields      |
+| -------- | -------------------------- | -------------------- |
+| `text`   | Replace text layer content | `layerName`, `value` |
+| `image`  | Replace image layer source | `layerName`, `src`   |
+| `video`  | Replace video layer source | `layerName`, `src`   |
+| `audio`  | Replace audio layer source | `layerName`, `src`   |
+| `data`   | JSON data for expressions  | `layerName`, `value` |
+| `script` | Run ExtendScript code      | `layerName`, `src`   |
 
 ---
 

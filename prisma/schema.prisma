@@ -456,3 +456,26 @@ model Photo_Pack_Image {
 
   @@index([packId, createdAt])
 }
+
+// Nexrender render job tracking
+model NexrenderJob {
+  id              Int       @id @default(autoincrement())
+  nexrenderId     String    @unique // Nexrender Cloud job ID (e.g., "01JTGM9GCR71JV7EJYDF45QAFD")
+  templateId      String // Nexrender template ID used
+  composition     String    @default("main") // AE composition name
+  status          String    @default("queued") // "queued", "render:dorender", "finished", "error"
+  progress        Int       @default(0) // Progress percentage (0-100)
+  outputUrl       String? // Final rendered video URL (available when finished)
+  error           String? // Error message if failed
+  assets          Json? // JSON of assets used in the render
+  renderDuration  Int? // Duration of render in seconds
+  webhookReceived Boolean   @default(false) // Whether webhook callback was received
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  startedAt       DateTime?
+  finishedAt      DateTime?
+
+  @@index([nexrenderId])
+  @@index([status])
+  @@index([createdAt])
+}
