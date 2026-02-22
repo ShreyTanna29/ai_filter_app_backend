@@ -4,7 +4,7 @@
   "main": "index.js",
   "scripts": {
     "start": "ts-node src/index.ts",
-    "dev": "npx tsc && nodemon src/index.ts",
+    "dev": "npx tsc --no-emit && nodemon src/index.ts",
     "test": "echo \"Error: no test specified\" && exit 1",
     "generate-videos": "ts-node src/scripts/generate-videos.ts",
     "migrate:cloudinary-videos-to-s3": "ts-node scripts/migrate-cloudinary-videos-to-s3.ts"
